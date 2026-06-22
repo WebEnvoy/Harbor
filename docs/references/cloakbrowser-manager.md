@@ -1,34 +1,12 @@
 # CloakBrowser-Manager 参考
 
-CloakBrowser-Manager 对 Harbor 的主要参考价值在 Server Runtime、Docker、CDP、VNC / noVNC 和远程会话管理。
+外部项目调研不再在 Harbor public docs 中维护。
 
-## 可吸收方向
+Harbor 只保留已经采纳的设计结论。CloakBrowser-Manager 的详细调研、对比和决策候选统一沉淀在 `WebEnvoy/research`。
 
-- Docker 化运行；
-- Runtime Server；
-- Profile launch / stop / status；
-- CDP endpoint；
-- VNC / noVNC viewer；
-- 远程浏览器会话；
-- 进程生命周期管理；
-- 基础认证和本地存储方式。
+当前 Harbor 设计中已经吸收的稳定结论包括：
 
-## 局限
-
-CloakBrowser-Manager 更接近浏览器 Server Runtime，不是完整的 Profile Browser 产品。
-
-它通常不覆盖或不足以覆盖：
-
-- 深层 Profile 产品体验；
-- 分组 / 标签 / 批量配置；
-- 扩展管理；
-- 复杂 Cookie 管理；
-- Execution Identity；
-- Site-bound Profile；
-- Resource Requirement；
-- Capability Execution Context；
-- Evidence Store。
-
-## Harbor 的处理方式
-
-Harbor 可以吸收其 Server Runtime 经验，但需要自建 WebEnvoy 特有语义层。
+- Server Runtime、Docker、CDP endpoint、VNC / noVNC 和 Session API 值得参考；
+- CloakBrowser-Manager 不作为 Harbor 的直接运行时依赖；
+- Harbor 不应绑定单一浏览器 provider；
+- VNC / noVNC 可后置，不作为 P0 硬前提。
