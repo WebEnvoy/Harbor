@@ -61,7 +61,7 @@ Harbor 适合那些需要让 Agent 使用真实浏览器账号的场景：
 
 Harbor 不负责理解具体网站业务，也不决定一个任务应该怎样完成。它不会替用户设计发布策略、运营账号或编排业务流程。
 
-Harbor 负责的是浏览器账号和运行环境：这个账号用哪个 Profile、哪个代理、哪个浏览器、哪个会话，Agent 如何连接，人类如何接管，执行后留下哪些证据。具体网站任务由 WebEnvoy 和 Lode 定义。
+Harbor 负责的是浏览器账号和运行环境：这个账号用哪个 Profile、哪个代理、哪个浏览器、哪个会话，Agent 如何连接，人类如何接管，执行后留下哪些证据。具体网站任务由 WebEnvoy Core 执行，normalized result schema 由 Lode 定义。Harbor 只提供 raw_payload_ref、source_trace 和 evidence_ref，不解释站点业务字段。
 
 ## 本仓库包含什么
 
@@ -72,7 +72,7 @@ Harbor 负责的是浏览器账号和运行环境：这个账号用哪个 Profil
 - Runtime Session：一次可连接、可观察、可接管、可释放的浏览器会话；
 - Browser Drivers：连接 Chrome Official、CloakBrowser、Camoufox、Remote CDP 或其他 provider；
 - CDP / VNC / Viewer：让 Agent、上层系统和人类用户连接、观察和接管浏览器；
-- Evidence Store：保存运行证据、错误状态和关键运行事实；
+- Evidence Store：保存运行证据、错误状态、raw_payload_ref、source_trace 和关键运行事实；
 - Runtime API：向 WebEnvoy Core、Agent、CLI、MCP、SDK 和 WebEnvoy App 暴露稳定能力。
 
 ## 与 WebEnvoy / Lode 的关系
@@ -81,8 +81,8 @@ Harbor 管浏览器账号和运行现场，不理解具体网站业务。
 
 - WebEnvoy 负责让用户和上游系统调用网站工作能力，并组织执行过程和结果；
 - WebEnvoy App 可以呈现 Harbor 的 Profile、Runtime Session、Viewer 和人工接管界面；
-- Lode 负责沉淀可复用的网站经验、能力包、原子动作、任务封装和测试样例；
-- Harbor 负责提供可持续使用的浏览器身份、可连接的运行会话、人工接管入口和运行证据。
+- Lode 负责沉淀可复用的网站经验、能力包、原子动作、任务封装、输出契约和测试样例；
+- Harbor 负责提供可持续使用的浏览器身份、可连接的运行会话、人工接管入口、raw_payload_ref、source_trace 和运行证据。
 
 ## 文档
 

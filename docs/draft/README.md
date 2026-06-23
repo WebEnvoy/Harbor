@@ -10,4 +10,5 @@
 - [Browser Drivers](browser-drivers.md)
 - [Evidence Store](evidence-store.md)
 - [Profile 与 Execution Identity 模型](profile-identity-model.md)
+- [Resource Lifecycle](resource-lifecycle.md)
 - [Runtime Capability Facts](runtime-capability-facts.md)

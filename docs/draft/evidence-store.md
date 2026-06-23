@@ -34,6 +34,31 @@ Evidence Store 负责保存 Harbor 与 WebEnvoy Core 执行过程中的关键证
 
 本地保存敏感信息也应有明确授权、加密策略和保留周期。
 
+## Evidence、Raw Reference 与 Normalized Result 的边界
+
+Harbor 保存和暴露的是执行现场事实，例如 Runtime Session、Profile 状态、截图引用、Snapshot 引用、network 摘要、console 错误、raw payload 引用和 source trace。
+
+Harbor 不解释站点业务字段，不定义 normalized result，也不判断某条结果是内容、评论、作者还是媒体资产。这些公共结果契约属于 Lode，运行时校验和封装属于 WebEnvoy Core。
+
+Harbor 可以提供：
+
+- `raw_payload_ref`；
+- `evidence_ref`；
+- `snapshot_ref`；
+- `network_summary_ref`；
+- `screenshot_ref`；
+- `source_trace`；
+- Runtime Session 与 Profile / Identity 引用。
+
+Harbor 不应提供：
+
+- normalized result；
+- collection item schema；
+- comment item schema；
+- dataset record schema；
+- 站点业务字段映射；
+- cursor / continuation 业务语义。
+
 ## Evidence 与 Core 的关系
 
 Core 负责告诉 Harbor 本次能力执行需要怎样的 evidence_policy。
