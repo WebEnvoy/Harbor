@@ -1,6 +1,6 @@
 # Harbor 架构
 
-Harbor 的架构目标是同时支持桌面产品形态、Server / Docker Runtime 形态，以及面向 Core / Agent 的自动化 API。
+Harbor 的架构目标是同时支持 WebEnvoy App 中的浏览器身份区域、未来独立 Desktop / Local Console、Server / Docker Runtime 形态，以及面向 Core / Agent 的自动化 API。
 
 ## 建议目录结构
 
@@ -19,7 +19,6 @@ packages/
     chrome/
     cloakbrowser/
     camoufox/
-    wayfern/
     remote-cdp/
   session-manager/
   cdp-gateway/

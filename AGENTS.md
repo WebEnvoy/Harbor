@@ -2,7 +2,7 @@
 
 ## 项目结构与模块组织
 
-本仓库是 `WebEnvoy/Harbor`，负责 Profile Runtime、Execution Identity、Runtime Session、Browser Drivers、CDP / VNC、Evidence 和 Runtime API。当前文档位于 `README.md` 和 `docs/`；后续代码建议按以下方向组织：`packages/runtime-api/` 放 Runtime API，`packages/profile-manager/`、`packages/identity-manager/`、`packages/session-manager/` 放核心对象，`packages/browser-drivers/` 放 chrome、cloakbrowser、camoufox、wayfern、remote-cdp 等 driver，`packages/evidence-store/` 放证据存储，`examples/` 放启动示例。
+本仓库是 `WebEnvoy/Harbor`，负责 Profile Runtime、Execution Identity、Runtime Session、Browser Drivers、CDP / VNC、Evidence 和 Runtime API。当前文档位于 `README.md` 和 `docs/`；后续代码建议按以下方向组织：`packages/runtime-api/` 放 Runtime API，`packages/profile-manager/`、`packages/identity-manager/`、`packages/session-manager/` 放核心对象，`packages/browser-drivers/` 放 chrome-official、cloakbrowser、camoufox、remote-cdp 等 driver，`packages/evidence-store/` 放证据存储，`examples/` 放启动示例。
 
 ## 构建、测试与开发命令
 
