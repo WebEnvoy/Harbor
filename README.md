@@ -87,6 +87,7 @@ Harbor 管浏览器账号和运行现场，不理解具体网站业务。
 ## 文档
 
 - [愿景](VISION.md)
+- [架构决策记录](docs/adr/0001-record-architecture-decisions.md)
 
 ## 许可证
 

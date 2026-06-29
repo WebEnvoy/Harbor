@@ -56,12 +56,12 @@ App 需要清楚展示 provider mode 和 control owner，因为 “local user Ch
 
 ## 研究证据
 
-- `docs/draft/browser-drivers.md` 将 Browser Drivers 定义为 launch/connect/configure/health/facts adapters，而不是站点任务执行器。
-- `docs/draft/resource-lifecycle.md` 将 Profile、Execution Identity、Runtime Session、Viewer、proxy binding、evidence policy 和 snapshot context 定义为 Harbor resources，并通过 acquire/release/invalidate traces 追踪。
-- `browser-identity-and-runtime.md` 将 local Chrome、extension bridge、CDP launch 和 remote container sessions 作为不同 provider boundaries 比较。
-- `browser-identity-and-runtime.md` 标记 daily Chrome reuse 有价值但隐私敏感，因为它携带真实 history、extensions 和 login state。
-- `human-handoff-and-recovery.md` 显示 VNC/noVNC viewers 和 local Profile Browser windows 解决观察/控制，但它们本身不是完整 task recovery。
-- `human-handoff-and-recovery.md` 指出 explicit control ownership 与 handoff/takeover state 是 Viewer 与 recoverable task 之间缺失的部分。
+- [docs/draft/browser-drivers.md](../draft/browser-drivers.md) 将 Browser Drivers 定义为 launch/connect/configure/health/facts adapters，而不是站点任务执行器。
+- [docs/draft/resource-lifecycle.md](../draft/resource-lifecycle.md) 将 Profile、Execution Identity、Runtime Session、Viewer、proxy binding、evidence policy 和 snapshot context 定义为 Harbor resources，并通过 acquire/release/invalidate traces 追踪。
+- [browser-identity-and-runtime.md](https://github.com/WebEnvoy/research/blob/main/absorability/themes/browser-identity-and-runtime.md) 将 local Chrome、extension bridge、CDP launch 和 remote container sessions 作为不同 provider boundaries 比较。
+- [browser-identity-and-runtime.md](https://github.com/WebEnvoy/research/blob/main/absorability/themes/browser-identity-and-runtime.md) 标记 daily Chrome reuse 有价值但隐私敏感，因为它携带真实 history、extensions 和 login state。
+- [human-handoff-and-recovery.md](https://github.com/WebEnvoy/research/blob/main/absorability/themes/human-handoff-and-recovery.md) 显示 VNC/noVNC viewers 和 local Profile Browser windows 解决观察/控制，但它们本身不是完整 task recovery。
+- [human-handoff-and-recovery.md](https://github.com/WebEnvoy/research/blob/main/absorability/themes/human-handoff-and-recovery.md) 指出 explicit control ownership 与 handoff/takeover state 是 Viewer 与 recoverable task 之间缺失的部分。
 
 ## 未决问题
 

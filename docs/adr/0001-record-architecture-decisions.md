@@ -48,9 +48,9 @@ ADR 只描述产品和架构边界。它不替代 schema、测试、迁移说明
 
 ## 研究证据
 
-- `docs/draft/README.md` 说明当前草稿是规划候选，不是稳定规格。
-- `README.md` 定义 Harbor 是 runtime/profile/evidence 边界，并把站点业务逻辑排除在 Harbor 外。
-- `AGENTS.md` 要求涉及低层 runtime、proxy、sandbox 或 evidence 的设计变化先更新设计文档。
+- [docs/draft/README.md](../draft/README.md) 说明当前草稿是规划候选，不是稳定规格。
+- [README.md](../../README.md) 定义 Harbor 是 runtime/profile/evidence 边界，并把站点业务逻辑排除在 Harbor 外。
+- [AGENTS.md](../../AGENTS.md) 要求涉及低层 runtime、proxy、sandbox 或 evidence 的设计变化先更新设计文档。
 
 ## 未决问题
 

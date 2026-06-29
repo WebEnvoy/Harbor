@@ -56,12 +56,12 @@ RefMap 可以服务 action execution 和 authoring，但仍被视为临时 runti
 
 ## 研究证据
 
-- `docs/draft/evidence-store.md` 说明 Harbor 提供 `raw_payload_ref`、`evidence_ref`、`snapshot_ref`、`network_summary_ref`、`screenshot_ref` 和 `source_trace` 等 refs，但不提供 normalized results 或站点业务 schemas。
-- `docs/draft/runtime-capability-facts.md` 将 Snapshot、network summary、logs、screenshot、handoff 和 evidence policy 定义为 session/evidence facts。
-- `execution-space-and-context.md` 显示多个项目收敛到 snapshot/ref/index/uid models，用于低噪音页面上下文和元素引用。
-- `execution-space-and-context.md` 拒绝把 snapshots、browser primitives 或 Playwright locators 当作稳定业务结果 schemas。
-- `evidence-and-observability.md` 认为 screenshot、trace、HAR、video、console 和 network capture 是有价值证据，但警告不要默认持久化敏感 artifacts。
-- `synthesis.md` 接受 Snapshot/RefMap 作为产品方向，同时把精确 contract 留给 Harbor/Core 后续规格。
+- [docs/draft/evidence-store.md](../draft/evidence-store.md) 说明 Harbor 提供 `raw_payload_ref`、`evidence_ref`、`snapshot_ref`、`network_summary_ref`、`screenshot_ref` 和 `source_trace` 等 refs，但不提供 normalized results 或站点业务 schemas。
+- [docs/draft/runtime-capability-facts.md](../draft/runtime-capability-facts.md) 将 Snapshot、network summary、logs、screenshot、handoff 和 evidence policy 定义为 session/evidence facts。
+- [execution-space-and-context.md](https://github.com/WebEnvoy/research/blob/main/absorability/themes/execution-space-and-context.md) 显示多个项目收敛到 snapshot/ref/index/uid models，用于低噪音页面上下文和元素引用。
+- [execution-space-and-context.md](https://github.com/WebEnvoy/research/blob/main/absorability/themes/execution-space-and-context.md) 拒绝把 snapshots、browser primitives 或 Playwright locators 当作稳定业务结果 schemas。
+- [evidence-and-observability.md](https://github.com/WebEnvoy/research/blob/main/absorability/themes/evidence-and-observability.md) 认为 screenshot、trace、HAR、video、console 和 network capture 是有价值证据，但警告不要默认持久化敏感 artifacts。
+- [synthesis.md](https://github.com/WebEnvoy/research/blob/main/synthesis.md) 接受 Snapshot/RefMap 作为产品方向，同时把精确 contract 留给 Harbor/Core 后续规格。
 
 ## 未决问题
 
