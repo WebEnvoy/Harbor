@@ -1,79 +1,79 @@
-# 0002. Profile, Session, and Provider Facts
+# 0002. Profile、Session 与 Provider 事实
 
-## Status
+## 状态
 
-Proposed, 2026-06-29.
+草案，2026-06-29。
 
-## Context
+## 背景
 
-Harbor must provide WebEnvoy Core, Lode, and App with a stable browser runtime boundary. The existing drafts already separate Profile, Execution Identity, Runtime Session, Browser Driver, Evidence Store, and Runtime Capability Facts.
+Harbor 必须向 WebEnvoy Core、Lode 和 App 提供稳定的浏览器运行时边界。现有草稿已经拆分了 Profile、Execution Identity、Runtime Session、Browser Driver、Evidence Store 和 Runtime Capability Facts。
 
-The risk is turning Harbor into either a site-task system or a provider-specific browser wrapper. Harbor should instead expose objective runtime facts and references. Core, Lode, user policy, and App use those facts to decide whether a task can run, whether it needs handoff, and what evidence to keep.
+主要风险是把 Harbor 做成站点任务系统，或做成某个 provider 专用的浏览器 wrapper。Harbor 应暴露客观 runtime facts 和引用。Core、Lode、用户策略和 App 再基于这些 facts 判断任务是否可运行、是否需要人工接管、应保留哪些证据。
 
-## Decision
+## 决策
 
-Harbor outputs runtime facts and references. It does not output business results, site schemas, provider rankings, or task suitability conclusions.
+Harbor 输出 runtime facts 和引用。Harbor 不输出业务结果、站点 schema、provider 排名或任务适配结论。
 
-Harbor should expose these fact groups:
+Harbor 应暴露这些事实组：
 
-- `profile_ref` and Profile facts: persistent browser identity container, user data directory ownership class, cookie/storage presence, proxy binding, locale, timezone, viewport, user agent, extensions, last known normal state, running state, invalid state, and recent runtime events.
-- `identity_ref` and Execution Identity facts: `site_id`, `account_ref`, linked Profile, login state, allowed execution channels, resource requirements, evidence policy, recovery/risk events, and usage history.
-- `runtime_session_ref` and Runtime Session facts: provider, linked Profile and Execution Identity, running status, CDP availability, Viewer/VNC availability, screenshot/snapshot/network/log capture availability, handoff capability, pause/resume/close capability, current error state, lease refs, and resource trace refs.
-- `provider_facts`: provider type, browser engine, local or remote mode, persistent profile support, independent `user_data_dir` support, proxy support, environment configuration support, extension support, CDP support, viewer support, snapshot support, provider-native fingerprint or patch capability, known limitations, license/binary boundary, and validation evidence refs when available.
+- `profile_ref` 与 Profile facts：持久浏览器身份容器、user data directory 所有权类型、Cookie/storage 是否存在、proxy 绑定、locale、timezone、viewport、user agent、extensions、last known normal state、running state、invalid state 和近期 runtime events。
+- `identity_ref` 与 Execution Identity facts：`site_id`、`account_ref`、关联 Profile、login state、allowed execution channels、resource requirements、evidence policy、recovery/risk events 和 usage history。
+- `runtime_session_ref` 与 Runtime Session facts：provider、关联 Profile 和 Execution Identity、running status、CDP 可用性、Viewer/VNC 可用性、screenshot/snapshot/network/log capture 可用性、handoff capability、pause/resume/close capability、current error state、lease refs 和 resource trace refs。
+- `provider_facts`：provider type、browser engine、本地或远程模式、persistent profile 支持、独立 `user_data_dir` 支持、proxy 支持、环境配置支持、extension 支持、CDP 支持、viewer 支持、snapshot 支持、provider-native fingerprint 或 patch 能力、known limitations、license/binary boundary，以及可用时的 validation evidence refs。
 
-Provider facts must distinguish:
+Provider facts 必须区分：
 
-- configured input,
-- observed runtime fact,
-- provider claim,
-- validation evidence.
+- 配置输入；
+- 已观测 runtime fact；
+- provider claim；
+- validation evidence。
 
-Anti-detection, stealth, fingerprint, proxy, patch, and captcha/provider claims are facts and policy inputs only. Harbor must not promise detection bypass, account safety, target-site success, or provider fitness for a task.
+Anti-detection、stealth、fingerprint、proxy、patch 和 captcha/provider claims 只能作为 facts 和 policy inputs。Harbor 不承诺绕过检测、账号安全、目标站点成功率或 provider 适合某个任务。
 
-Core consumes:
+Core 消费：
 
-- Harbor refs: `bundle_ref`, `lease_ref`, `profile_ref`, `identity_ref`, `runtime_session_ref`, `evidence_policy_ref`, `resource_trace_refs`.
-- Harbor facts: provider/profile/session/evidence capability facts and current resource health facts.
-- Harbor evidence refs and runtime errors.
+- Harbor refs：`bundle_ref`、`lease_ref`、`profile_ref`、`identity_ref`、`runtime_session_ref`、`evidence_policy_ref`、`resource_trace_refs`。
+- Harbor facts：provider/profile/session/evidence capability facts 和当前 resource health facts。
+- Harbor evidence refs 和 runtime errors。
 
-Core does not consume:
+Core 默认不消费：
 
-- cookies, tokens, full browser storage, private Profile files, or provider secrets by default.
-- normalized result envelopes, collection/comment/dataset schemas, or site business fields.
-- provider-specific launch flags as public contract.
+- Cookies、tokens、完整浏览器 storage、私有 Profile 文件或 provider secrets。
+- normalized result envelopes、collection/comment/dataset schemas 或站点业务字段。
+- 作为公共 contract 的 provider-specific launch flags。
 
-Lode may declare runtime requirements such as persistent Profile, logged-in identity, proxy binding, snapshot support, manual takeover, or write verification. Lode does not manage Harbor resources or store real Profile state.
+Lode 可以声明 runtime requirements，例如 persistent Profile、已登录 identity、proxy binding、snapshot support、manual takeover 或 write verification。Lode 不管理 Harbor resources，也不保存真实 Profile state。
 
-App may display and manage Profile, Identity, Session, Viewer, handoff, and evidence policy state through Harbor APIs, but it should not reinterpret Harbor facts as task success guarantees.
+App 可以通过 Harbor API 展示和管理 Profile、Identity、Session、Viewer、handoff 和 evidence policy state，但不应把 Harbor facts 重新解释为任务成功保证。
 
-## Consequences
+## 影响
 
-Harbor providers can change without forcing Core or Lode to depend on a specific browser binary or launch flag.
+Harbor providers 可以替换，而 Core 或 Lode 不需要依赖具体 browser binary 或 launch flag。
 
-Core admission needs to compare Lode/user policy requirements against Harbor facts. That comparison belongs outside Harbor.
+Core admission 需要把 Lode/user policy requirements 与 Harbor facts 做匹配。这个匹配属于 Harbor 之外。
 
-Fact schemas will need versioning. A future schema should keep provider-specific fields behind provider details, not in the public Harbor object model.
+Facts schema 需要版本化。后续 schema 应把 provider-specific 字段放在 provider details 后面，不进入 Harbor 公共对象模型。
 
-## Alternatives Considered
+## 备选方案
 
-- One large `BrowserProfile` model containing provider, proxy, fingerprint, recording, captcha, allowed domains, and task policy: rejected because it mixes runtime facts with Core admission policy.
-- Harbor decides whether a task is safe or possible: rejected because Harbor does not understand site business, user intent, or Lode capability requirements.
-- Public Harbor schema mirrors each provider's native flags: rejected because it would leak provider details and make provider replacement expensive.
-- Anti-detect browser identity as the default runtime: rejected for now because it is a provider capability and compliance question, not a default product promise.
+- 一个包含 provider、proxy、fingerprint、recording、captcha、allowed domains 和 task policy 的大 `BrowserProfile` 模型：拒绝，因为它混合了 runtime facts 和 Core admission policy。
+- Harbor 判断任务是否安全或可执行：拒绝，因为 Harbor 不理解站点业务、用户意图或 Lode capability requirements。
+- Harbor 公共 schema 镜像每个 provider 的 native flags：拒绝，因为这会泄漏 provider 细节，并提高 provider 替换成本。
+- 默认使用 anti-detect browser identity：暂时拒绝，因为这是 provider 能力和合规问题，不是默认产品承诺。
 
-## Research Evidence
+## 研究证据
 
-- `docs/draft/runtime-capability-facts.md` defines provider, Profile, Runtime Session, automation exposure, and evidence policy facts as objective facts rather than task conclusions.
-- `docs/draft/profile-identity-model.md` separates Fingerprint, Profile, and Execution Identity, and records login/risk history on Execution Identity.
-- `docs/draft/resource-lifecycle.md` says Harbor returns bundle, lease, runtime session, Profile, Identity, capability facts, evidence policy, and resource trace refs to Core.
-- `browser-identity-and-runtime.md` shows Profile managers and browser runtimes converge on persistent Profile plus session facts such as profile id, CDP endpoint, viewer endpoint, display, and status.
-- `anti-detection-and-provider-facts.md` says provider facts should be layered by engine, fingerprint config, network path, runtime behavior, license boundary, and validation evidence; provider claims are not task success evidence.
-- `synthesis.md` accepts that runtime facts and task policy must be separated.
+- `docs/draft/runtime-capability-facts.md` 将 provider、Profile、Runtime Session、automation exposure 和 evidence policy facts 定义为客观 facts，而不是任务结论。
+- `docs/draft/profile-identity-model.md` 拆分 Fingerprint、Profile 和 Execution Identity，并把 login/risk history 记录在 Execution Identity 上。
+- `docs/draft/resource-lifecycle.md` 说明 Harbor 向 Core 返回 bundle、lease、runtime session、Profile、Identity、capability facts、evidence policy 和 resource trace refs。
+- `browser-identity-and-runtime.md` 显示 Profile managers 和 browser runtimes 都收敛到 persistent Profile 加 session facts，例如 profile id、CDP endpoint、viewer endpoint、display 和 status。
+- `anti-detection-and-provider-facts.md` 说明 provider facts 应按 engine、fingerprint config、network path、runtime behavior、license boundary 和 validation evidence 分层；provider claims 不是 task success evidence。
+- `synthesis.md` 已接受 runtime facts 与 task policy 必须拆开。
 
-## Open Questions
+## 未决问题
 
-- What is the first versioned field set for provider/profile/session/evidence facts?
-- Which health states can Core treat as admissible for read-only, write, and recovery tasks?
-- What is the minimal provider validation evidence format?
-- Where do behavior-level facts such as typing cadence belong: Harbor helper facts, Core action policy, or Lode capability requirements?
-- Which provider license and binary facts must be mandatory before a provider can be enabled?
+- provider/profile/session/evidence facts 的首版版本化字段集是什么？
+- 哪些 health states 可以被 Core 用于只读、写入和恢复任务准入？
+- 最小 provider validation evidence 格式是什么？
+- typing cadence 这类行为层 facts 属于 Harbor helper facts、Core action policy，还是 Lode capability requirements？
+- 启用 provider 前，哪些 provider license 和 binary facts 必须存在？

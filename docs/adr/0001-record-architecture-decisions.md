@@ -1,58 +1,58 @@
-# 0001. Record Architecture Decisions
+# 0001. 记录架构决策
 
-## Status
+## 状态
 
-Accepted, 2026-06-29.
+已接受，2026-06-29。
 
-## Context
+## 背景
 
-Harbor already has planning drafts under `docs/draft/`, but those drafts are explicitly not stable specs or implementation commitments. The project needs a small place to record decisions that other WebEnvoy repositories can cite without treating every draft note as accepted architecture.
+Harbor 已经在 `docs/draft/` 下保存规划草稿，但这些草稿明确不是稳定规格或实现承诺。项目需要一个小而稳定的位置记录可被其他 WebEnvoy 仓库引用的决策，避免把每一条草稿笔记都当成已接受架构。
 
-## Decision
+## 决策
 
-Architecture decisions live in `docs/adr/` as numbered Markdown files:
+架构决策记录在 `docs/adr/` 下，使用编号 Markdown 文件：
 
 ```text
 NNNN-short-kebab-title.md
 ```
 
-Each ADR uses this compact shape:
+每份 ADR 使用这个精简结构：
 
-- `Status`
-- `Context`
-- `Decision`
-- `Consequences`
-- `Alternatives Considered`
-- `Research Evidence`
-- `Open Questions`
+- `状态`
+- `背景`
+- `决策`
+- `影响`
+- `备选方案`
+- `研究证据`
+- `未决问题`
 
-Status values are:
+状态值为：
 
-- `Proposed` for drafts that need review.
-- `Accepted` for decisions the repository currently follows.
-- `Superseded by ADR NNNN` when a later decision replaces it.
+- `草案`：需要评审的决策草案。
+- `已接受`：仓库当前遵循的决策。
+- `被 ADR NNNN 取代`：后续决策替换了本决策。
 
-ADRs describe product and architecture boundaries. They do not replace schemas, tests, migration notes, API references, or implementation docs.
+ADR 只描述产品和架构边界。它不替代 schema、测试、迁移说明、API 引用或实现文档。
 
-## Consequences
+## 影响
 
-This keeps the decision record small enough to maintain. Draft docs can stay exploratory, while accepted ADRs become the reference point for Harbor, Core, Lode, and App integration work.
+这让决策记录足够小，便于维护。草稿文档可以继续探索，已接受 ADR 则作为 Harbor、Core、Lode 和 App 集成工作的引用点。
 
-Changing a decision means adding a new ADR or updating the status with a clear reason, not silently rewriting old context.
+修改决策时，应新增 ADR 或用明确理由更新状态，不应静默改写旧背景。
 
-## Alternatives Considered
+## 备选方案
 
-- Keep all decisions in `docs/draft/`: rejected because draft material mixes options, references, and open questions.
-- Adopt a larger ADR template: rejected for now because Harbor is still defining first boundaries, and extra fields would add process without improving the decision.
-- Write only final specs: rejected because boundary decisions need review before schema and implementation work.
+- 把所有决策继续放在 `docs/draft/`：拒绝，因为草稿材料混合了选项、参考和开放问题。
+- 采用更大的 ADR 模板：暂时拒绝，因为 Harbor 仍在定义第一批边界，额外字段只会增加流程，不会改善决策质量。
+- 只写最终规格：拒绝，因为边界决策需要在 schema 和实现工作前先被评审。
 
-## Research Evidence
+## 研究证据
 
-- `docs/draft/README.md` says current drafts are planning candidates, not stable specs.
-- `README.md` defines Harbor as the runtime/profile/evidence boundary and keeps site business logic outside Harbor.
-- `AGENTS.md` requires design docs to be updated before low-level runtime, proxy, sandbox, or evidence design changes.
+- `docs/draft/README.md` 说明当前草稿是规划候选，不是稳定规格。
+- `README.md` 定义 Harbor 是 runtime/profile/evidence 边界，并把站点业务逻辑排除在 Harbor 外。
+- `AGENTS.md` 要求涉及低层 runtime、proxy、sandbox 或 evidence 的设计变化先更新设计文档。
 
-## Open Questions
+## 未决问题
 
-- Where should versioned Runtime API schemas live once the ADRs are accepted?
-- Should accepted ADRs later require an owner field, or is Git history enough for now?
+- ADR 被接受后，版本化 Runtime API schema 应放在哪里？
+- 已接受 ADR 后续是否需要 owner 字段，还是 Git 历史已经足够？
