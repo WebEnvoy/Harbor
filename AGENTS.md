@@ -24,6 +24,19 @@
 
 Harbor 不理解具体站点业务，也不执行 Lode 任务封装。它只向 WebEnvoy Core 提供可执行 session、Profile / Identity 状态、资源约束、CDP / VNC 信息、Evidence 策略和 Runtime 错误。Browser Driver 只负责启动、连接、配置和返回 session，不承载站点能力逻辑。
 
+## 路线图 / 里程碑 / 功能需求 / 工作项
+
+- 跨仓长期方向以 `WebEnvoy/WebEnvoy/ROADMAP.md` 为准。
+- 当前执行状态以 GitHub Milestones、Project、issues 和 PR 为准，不在仓库文档中复制维护。
+- GitHub Milestone 只承载当前 1-3 个可交付阶段，不承载全部远期设想。
+- 功能需求（FR）issue 表达用户可见或系统可验证的能力增量。
+- 工作项（Work Item）issue 是可由一个 PR 完成的最小执行单元。
+- 新建功能需求或工作项前，先确认它属于当前活跃 Milestone；不属于则回到总 ROADMAP 或 backlog。
+- 单仓 planning 文档只能解释本仓如何服务当前活跃 Milestone，不能新增跨仓 Milestone。
+- 不允许在单仓创建与总 ROADMAP 冲突的平行路线图；不要新建单仓 `ROADMAP.md`。
+- 规格文档只服务当前或下一个活跃 Milestone，不提前铺满远期设计。
+- 涉及跨仓方向、里程碑阶梯或边界调整时，先更新或评审总 ROADMAP / 跨仓架构，再拆单仓事项。
+
 ## 安全与配置说明
 
 默认最小暴露运行证据。不要提交真实凭据、会话状态、未脱敏执行现场或用户业务数据。涉及本地加密、进程守护、低层代理或沙箱时，可以讨论 Rust / Go 等系统语言，但必须先更新设计文档。
