@@ -24,7 +24,10 @@ NNNN-short-kebab-title.md
 - `影响`
 - `备选方案`
 - `研究证据`
-- `未决问题`
+- 草案 ADR 可以使用 `未决问题`
+- 已接受 ADR 如有非阻塞后续项，使用 `后续决策`、`后续 ADR` 或 `实施期决策`
+
+所有待决策项必须同步到 [pending-decisions.md](pending-decisions.md)，并在 ADR 本文引用 pending decision ID。
 
 状态值为：
 
@@ -52,7 +55,9 @@ ADR 只描述产品和架构边界。它不替代 schema、测试、迁移说明
 - [README.md](../../README.md) 定义 Harbor 是 runtime/profile/evidence 边界，并把站点业务逻辑排除在 Harbor 外。
 - [AGENTS.md](../../AGENTS.md) 要求涉及低层 runtime、proxy、sandbox 或 evidence 的设计变化先更新设计文档。
 
-## 未决问题
+## 后续决策
 
-- ADR 被接受后，版本化 Runtime API schema 应放在哪里？
-- 已接受 ADR 后续是否需要 owner 字段，还是 Git 历史已经足够？
+这些后续项不阻塞本 ADR 的已接受状态：
+
+- [PD-0001](pending-decisions.md#pd-0001)：ADR 被接受后，版本化 Runtime API schema 应放在哪里？
+- [PD-0002](pending-decisions.md#pd-0002)：已接受 ADR 后续是否需要 owner 字段，还是 Git 历史已经足够？

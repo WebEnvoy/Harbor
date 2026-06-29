@@ -65,8 +65,8 @@ RefMap 可以服务 action execution 和 authoring，但仍被视为临时 runti
 
 ## 未决问题
 
-- 第一版 Snapshot/RefMap contract 应是 AX-first、DOM-first、semantic text，还是 provider-native？
-- 第一版 Harbor API 必须包含哪些 evidence refs？
-- 本地 evidence 的默认 retention 和 encryption 规则是什么？
-- Playwright trace/HAR/video 应在什么情况下开启，由谁请求？
-- stale RefMap failures 应如何表达，才能让 Core 安全 retry 或 resnapshot？
+- [PD-0013](pending-decisions.md#pd-0013)：第一版 Snapshot/RefMap contract 应是 AX-first、DOM-first、semantic text，还是 provider-native？
+- [PD-0014](pending-decisions.md#pd-0014)：第一版 Harbor API 必须包含哪些 evidence refs？
+- [PD-0015](pending-decisions.md#pd-0015)：本地 evidence 的默认 retention 和 encryption 规则是什么？
+- [PD-0016](pending-decisions.md#pd-0016)：Playwright trace/HAR/video 应在什么情况下开启，由谁请求？
+- [PD-0017](pending-decisions.md#pd-0017)：stale RefMap failures 应如何表达，才能让 Core 安全 retry 或 resnapshot？

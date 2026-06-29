@@ -65,8 +65,8 @@ App 需要清楚展示 provider mode 和 control owner，因为 “local user Ch
 
 ## 未决问题
 
-- 第一阶段实现应先支持 `local_dedicated_profile`、`remote_browser_session`，还是两者都支持？
-- 使用 `local_user_chrome` 前需要哪种精确用户授权？
-- 用户控制期间 Harbor 应如何 lock 或 pause automation？
-- 哪些 remote session TTL、persistence、file 和 download facts 是必需字段？
-- Viewer 支持应先从本地浏览器窗口、noVNC-style remote viewer，还是两者开始？
+- [PD-0008](pending-decisions.md#pd-0008)：第一阶段实现应先支持 `local_dedicated_profile`、`remote_browser_session`，还是两者都支持？
+- [PD-0009](pending-decisions.md#pd-0009)：使用 `local_user_chrome` 前需要哪种精确用户授权？
+- [PD-0010](pending-decisions.md#pd-0010)：用户控制期间 Harbor 应如何 lock 或 pause automation？
+- [PD-0011](pending-decisions.md#pd-0011)：哪些 remote session TTL、persistence、file 和 download facts 是必需字段？
+- [PD-0012](pending-decisions.md#pd-0012)：Viewer 支持应先从本地浏览器窗口、noVNC-style remote viewer，还是两者开始？
