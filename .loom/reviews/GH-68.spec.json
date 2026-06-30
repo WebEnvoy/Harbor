@@ -1,0 +1,15 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-68",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "Workflow-only Loom 0.22.1 maintenance spec is sufficient for PR #67.",
+  "reviewer": "codex-coordinator",
+  "reviewed_head": "99e9ac23a551b76611e9aa0ec52fc6cedaa4b3cd",
+  "reviewed_validation_summary": "Spec scope is limited to a CI workflow version pin and GH-68 carrier evidence; no product implementation is claimed.",
+  "fallback_to": null,
+  "blocking_issues": [],
+  "follow_ups": [
+    "Use a future item-specific Work Item if v0.22.1 exposes additional gate requirements."
+  ]
+}
