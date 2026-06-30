@@ -17,7 +17,7 @@
 ## Evidence
 
 - Build evidence: `.loom/specs/GH-45/build-evidence.json`
-- Validation: `git diff --check`, JSON validation, `loom fact-chain --target /Volumes/2T/.codex/worktrees/stage2/harbor-page-scene-facts --json`, `loom suite validate --target /Volumes/2T/.codex/worktrees/stage2/harbor-page-scene-facts --item GH-45 --json`, `loom suite carrier validate --target /Volumes/2T/.codex/worktrees/stage2/harbor-page-scene-facts --item GH-45 --json`, hosted basic checks after PR creation.
+- Validation: `git diff --check`, JSON validation, `loom fact-chain --target . --json`, `loom suite validate --target . --item GH-45 --json`, `loom suite carrier validate --target . --item GH-45 --json`, hosted basic checks after PR creation.
 
 ## Carrier Rows
 
