@@ -1,0 +1,26 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-41",
+  "decision": "allow",
+  "kind": "general_review",
+  "summary": "The docs-only contract and GH-41 Loom carrier stay within the allowed Harbor lane scope and do not touch runtime/provider code.",
+  "reviewer": "codex",
+  "reviewed_head": "a22316cdad6e2e43b3e3b7b531ef4185c5a71ec6",
+  "reviewed_validation_summary": "Local validation passed for git diff --check, JSON syntax, Loom fact-chain with absolute target, Loom suite validate, and Loom suite carrier validate. Loom doctor/verify blocked on workstation installed-state v2 / legacy surface, classified as environment/tooling blocker.",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "Do not treat this approval as runtime/provider implementation, API schema, browser skeleton, hosted runtime, provider evaluation, browser smoke, evidence store, or issue closeout completion."
+  ],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "ADR 0006 covers provider_ref, profile_ref, execution_identity_ref, fact source categories, observed fact vs provider claim, license/binary/secret/profile data boundaries, Runtime Session lifecycle relationship, research absorption decisions, and non-goals for GH-40/GH-41/GH-42/GH-43."
+  },
+  "consumed_inputs": {
+    "spec": ".loom/specs/GH-41/spec.md",
+    "plan": ".loom/specs/GH-41/plan.md",
+    "suite_path": "minimal",
+    "validation": "git diff --check; JSON syntax via jq empty; loom fact-chain with absolute target; loom suite validate --item GH-41; loom suite carrier validate --item GH-41; loom doctor/verify blocked by local install-surface state"
+  }
+}

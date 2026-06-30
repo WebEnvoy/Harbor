@@ -1,0 +1,15 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-41",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "GH-41 docs-only Provider/Profile/Identity facts v0 spec is scoped to the requested contract and covers GH-40/GH-41/GH-42/GH-43 without runtime/provider implementation.",
+  "reviewer": "codex",
+  "reviewed_head": "a22316cdad6e2e43b3e3b7b531ef4185c5a71ec6",
+  "reviewed_validation_summary": "Local validation passed for git diff --check, JSON syntax, Loom fact-chain with absolute target, Loom suite validate, and Loom suite carrier validate. Loom doctor/verify blocked on workstation installed-state v2 / legacy surface, classified as environment/tooling blocker.",
+  "fallback_to": null,
+  "blocking_issues": [],
+  "follow_ups": [
+    "Keep implementation code, API schema, runtime smoke, provider evaluation, and issue closeout in later Work Items."
+  ]
+}
