@@ -6,7 +6,7 @@
 - Goal: Docs-only 收敛 Stage 2 Runtime Session lifecycle v0 合同，并覆盖 GH-37/GH-38/GH-39 对 session ref、status/error/lease、continuity/unavailable 的要求。
 - Scope: 仅更新 `docs/adr/0005-runtime-session-lifecycle-v0.md` 和 GH-37 item-specific Loom carrier。
 - Execution Path: docs-only/governance
-- Workspace Entry: /Volumes/2T/.codex/worktrees/stage2/harbor-runtime-session
+- Workspace Entry: .
 - Recovery Entry: .loom/progress/GH-37.md
 - Review Entry: .loom/reviews/GH-37.json
 - Validation Entry: `git diff --check`; low-cost repo/Loom checks available in this worktree; hosted checks after PR creation
