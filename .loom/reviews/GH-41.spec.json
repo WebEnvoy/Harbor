@@ -3,13 +3,13 @@
   "item_id": "GH-41",
   "decision": "allow",
   "kind": "spec_review",
-  "summary": "GH-41 docs-only Provider/Profile/Identity facts v0 spec is scoped to the requested contract and covers GH-40/GH-41/GH-42/GH-43 without runtime/provider implementation.",
+  "summary": "Post-merge spec closeout for GH-41 is approved; the docs-only contract is merged and no implementation completion is implied.",
   "reviewer": "codex-coordinator",
-  "reviewed_head": "27fd2998c68b0c29d213d4bd12317c4575ab703e",
-  "reviewed_validation_summary": "2026-06-30 coordinator review approved PR #56 docs-only contract at product head 27fd2998c68b0c29d213d4bd12317c4575ab703e; prior branch validation covered `git diff --check`, JSON syntax, Loom fact-chain, suite validate, and carrier validate; no runtime/provider code, schema, browser skeleton, generated artifact, fixture, workflow logic, provider evaluation, browser smoke, or user-facing behavior changed.",
+  "reviewed_head": "2186e3b0de0b31e9c47452fb4762fcc1510b441a",
+  "reviewed_validation_summary": "Post-merge closeout consumed PR #56, head c1a793bb6a68d1ba14f4302e1ddb165f1b76e5d9, merge commit 2186e3b0de0b31e9c47452fb4762fcc1510b441a, target branch main, and hosted run 28440643463 with all required checks passing.",
   "fallback_to": null,
   "blocking_issues": [],
   "follow_ups": [
-    "Keep implementation code, API schema, runtime smoke, provider evaluation, and issue closeout in later Work Items."
+    "Do not treat this approval as runtime/provider implementation, API schema, browser smoke evidence, hosted runtime, provider validation, or live runtime evidence."
   ]
 }

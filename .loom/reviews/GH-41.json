@@ -3,19 +3,20 @@
   "item_id": "GH-41",
   "decision": "allow",
   "kind": "general_review",
-  "summary": "PR #56 is approved for the docs-only Provider/Profile/Identity facts contract and remains within Harbor #40/#41/#42/#43 scope.",
+  "summary": "Post-merge closeout for PR #56 is approved; the docs-only Provider/Profile/Identity facts contract and GH-41 carrier are merged to main and ready for issue closeout.",
   "reviewer": "codex-coordinator",
-  "reviewed_head": "27fd2998c68b0c29d213d4bd12317c4575ab703e",
-  "reviewed_validation_summary": "2026-06-30 coordinator review approved PR #56 docs-only contract at product head 27fd2998c68b0c29d213d4bd12317c4575ab703e; prior branch validation covered `git diff --check`, JSON syntax, Loom fact-chain, suite validate, and carrier validate; no runtime/provider code, schema, browser skeleton, generated artifact, fixture, workflow logic, provider evaluation, browser smoke, or user-facing behavior changed.",
+  "reviewed_head": "2186e3b0de0b31e9c47452fb4762fcc1510b441a",
+  "reviewed_validation_summary": "Post-merge closeout consumed PR #56, head c1a793bb6a68d1ba14f4302e1ddb165f1b76e5d9, merge commit 2186e3b0de0b31e9c47452fb4762fcc1510b441a, target branch main, and hosted run 28440643463 with all required checks passing.",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
   "follow_ups": [
-    "Do not treat this approval as runtime/provider implementation, API schema, browser skeleton, hosted runtime, provider evaluation, browser smoke, evidence store, or issue closeout completion."
+    "Do not treat this approval as runtime/provider implementation, API schema, browser smoke evidence, hosted runtime, provider validation, or live runtime evidence.",
+    "Close covered GitHub issues only after this closeout carrier PR is merged and issue comments reference PR #56, merge commit 2186e3b0de0b31e9c47452fb4762fcc1510b441a, and hosted run 28440643463."
   ],
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "ADR 0006 covers provider_ref, profile_ref, execution_identity_ref, fact source categories, observed fact vs provider claim, license/binary/secret/profile data boundaries, Runtime Session lifecycle relationship, research absorption decisions, and non-goals for GH-40/GH-41/GH-42/GH-43."
+    "reason": "ADR 0006 defines provider_ref, profile_ref, execution_identity_ref, observed facts, provider claims, and data/license/secret/profile boundaries without claiming runtime/provider implementation."
   },
   "consumed_inputs": {
     "spec": ".loom/specs/GH-41/spec.md",
