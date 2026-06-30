@@ -10,14 +10,14 @@
 - Recovery Entry: .loom/progress/GH-13.md
 - Review Entry: .loom/reviews/GH-13.json
 - Validation Entry: `git diff --check`; `loom doctor --target . --json`; `loom verify --target . --json`; `loom fact-chain --target . --json`; hosted Loom checks
-- Closing Condition: PR 合入后，issue #13 及覆盖 issue 的 closeout comment 消费 PR、merge commit、hosted run 和本 carrier；本 PR 不 merge、不关闭 issue。
-- Current Checkpoint: merge
-- Current Stop: Merge-ready carrier repair is adding the minimal GH-13 review/build evidence required by PR #34 gate.
-- Next Step: Record current-head docs-only review, update PR metadata if head changes, and rerun direct/hosted PR gate.
+- Closing Condition: PR #34 merged into `main`; hosted required checks passed; issue closeout is owned by the coordinator as the next external step.
+- Current Checkpoint: closed_out
+- Current Stop: Post-merge carrier closeout recorded for WebEnvoy/Harbor#13 via PR #34.
+- Next Step: No further action for this Work Item after coordinator issue closeout comments are posted and covered issues are closed.
 - Blockers: none
-- Latest Validation Summary: `git diff --check` passed locally; packaged `loom_flow.py fact-chain --target .` passed; PR metadata preflight/readback passed for PR #34; direct `pr-gate check` is being repaired for missing current-head authored review. Wrapper `loom verify --target . --json` remains classified as workstation installed-state / legacy-surface diagnostics, not a product docs blocker.
-- Recovery Boundary: Continue from `docs/adr/pending-decisions.md` and this GH-13 carrier; do not use `INIT-0001`.
-- Current Lane: docs-only provider baseline boundary
+- Latest Validation Summary: Post-merge closeout consumed PR #34, head 03691ddcf7c14740baf4783a8397aeef19b2a08a, merge commit 8d979c3dd6a18b6c133246b7f4396ee561c394d4, and hosted run 28427376024 with all required checks passing.
+- Recovery Boundary: Terminal carrier for this docs-only provider baseline item; open new Work Items for runtime/provider implementation.
+- Current Lane: terminal closeout
 
 ## Runtime Evidence
 
