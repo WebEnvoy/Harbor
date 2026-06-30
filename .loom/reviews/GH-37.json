@@ -5,7 +5,7 @@
   "kind": "general_review",
   "summary": "The docs-only contract and GH-37 Loom carrier stay within the allowed Harbor lane scope and do not touch runtime/provider code.",
   "reviewer": "codex-coordinator",
-  "reviewed_head": "afe4afa735138cd7f5268e5556e804c16358b8d4",
+  "reviewed_head": "5815b41ca51d70c88344269bbcfbd4d5d9f142b9",
   "reviewed_validation_summary": "On PR #54 head afe4afa735138cd7f5268e5556e804c16358b8d4, `git diff --check HEAD~3..HEAD` passed; no Python files are tracked; `loom doctor`, `loom verify`, `loom fact-chain`, and `loom suite validate --item GH-37` passed with absolute target; hosted py-compile, demo-bootstrap, repo-local-cli, and loom-check passed in run 28436515136.",
   "fallback_to": null,
   "findings": [],
