@@ -31,6 +31,45 @@
 | #18 | Snapshot refs、RefMap refs、Evidence refs and source trace、Sensitive evidence by default 四行。 |
 | #19 | Viewer facts、Handoff and control ownership facts 两行。 |
 
+## 第一阶段受控浏览器现场与 provider baseline 收口
+
+本节收口 GitHub issues #6、#7、#10、#11、#12、#13、#14、#15、#20、#21、#22、#23 的第一阶段剩余边界。来源为 2026-06-30 回读的 issue 正文、[Harbor 路线图](../../ROADMAP.md)、ADR 0002/0003/0004、`/Volumes/2T/dev/WebEnvoy/research/absorability/Harbor/runtime-provider-profile-viewer.md`、`/Volumes/2T/dev/WebEnvoy/research/absorability/themes/anti-detection-and-provider-facts.md`、`/Volumes/2T/dev/WebEnvoy/research/absorability/themes/human-handoff-and-recovery.md`，以及 issue 正文指向的只读 sources locator。
+
+CloakBrowser 可以作为第一条受控浏览器 provider baseline 的候选边界，但本阶段只接受 provider facts、license/binary facts、runtime smoke 条件和 evidence locator；不承诺反检测成功率，不打包或再分发 provider binary，不写 Harbor runtime 代码。
+
+| 检查项 | 通过条件 | 失败分类 | 所需环境 | 证据 locator | 状态 |
+|---|---|---|---|---|---|
+| Provider source and binary boundary | 记录 provider source、wrapper license、binary/license boundary、安装/更新入口和是否需要用户自带 provider。 | license/binary_unknown；redistribution_not_allowed；install_source_unknown | 只读官方仓库和本地 sources；不运行 binary。 | `sources/CloakHQ/CloakBrowser`；`sources/CloakHQ/CloakBrowser-Manager`；research `runtime-provider-profile-viewer.md`。 | accepted for baseline input; runtime adoption blocked by PD-0005/PD-0007 |
+| Minimal runtime session facts | smoke 只要求 Harbor 能引用 `profile_ref`、`runtime_session_ref`、provider mode、status、CDP capability、viewer capability、snapshot/evidence capability 和 current error。 | session_unavailable；provider_launch_failure；capability_missing；runtime_error | 后续 runtime experiment；本 PR 只定义 facts boundary。 | ADR 0002；ADR 0003；research `runtime-provider-profile-viewer.md`。 | accepted |
+| Page-site observation refs | smoke 输出页面现场引用而不是业务结果：`snapshot_ref`、`refmap_ref`、`source_trace`、可选 `screenshot_ref` / `diagnostic_ref`。 | snapshot_unavailable；refmap_stale；evidence_policy_denied；diagnostic_missing | 后续 runtime experiment；evidence policy 明确允许时才采集。 | ADR 0004；research `evidence-and-observability.md`；research `execution-space-and-context.md`。 | accepted |
+| Viewer and takeover facts | smoke 只验证 viewer ref/ws、transport、access boundary、control owner hint、handoff capability 和 user-control state 可被记录。 | viewer_unavailable；control_owner_unknown；handoff_not_supported | 后续 runtime experiment；App/Core 状态机另行决定。 | ADR 0003；research `human-handoff-and-recovery.md`；`sources/CloakHQ/CloakBrowser-Manager`；`sources/Tencent/BrowserSkill`；`sources/citrolabs/ego-lite`。 | accepted; detailed state machine blocked by PD-0010/PD-0012 |
+| Provider facts exposure | Core/App 只消费 provider type、engine/mode、profile/CDP/viewer/snapshot/evidence capabilities、known limitations、license/binary boundary 和 validation evidence refs。 | fact_missing；claim_without_evidence；secret_leak；provider_flag_leaked | docs-only boundary now；schema later。 | ADR 0002；research `anti-detection-and-provider-facts.md`。 | accepted; field schema blocked by PD-0003/PD-0005 |
+| Anti-detection claim handling | 上游 stealth、fingerprint、Cloudflare/reCAPTCHA 等声明只能标为 provider claim 或 experiment input，并附来源；不能写成 WebEnvoy success guarantee。 | unverified_success_claim；marketing_claim_as_fact；target_site_guarantee | 只读 provider docs/source；不触碰真实目标站点。 | `sources/CloakHQ/CloakBrowser`；`sources/daijro/camoufox`；`sources/Kaliiiiiiiiii-Vinyzu/patchright`；research `anti-detection-and-provider-facts.md`。 | rejected as product commitment |
+
+第一条只读纵向闭环中，Harbor 提供受控 runtime session 引用、页面现场引用、snapshot/refmap/evidence refs、viewer/takeover 的最小状态事实。Core 仍拥有 admission、Run Record、unknown outcome 和任务成功判断；Lode 仍拥有站点能力 schema；App 只展示 viewer、approval、handoff 和 evidence refs。
+
+| 研究/外部机制 | 可吸收内容 | 不吸收内容 | 来源 locator | 状态 |
+|---|---|---|---|---|
+| CloakBrowser | 作为首个 provider baseline 候选；记录 provider source、binary/license boundary、capability claims、validation evidence refs。 | 不承诺反检测成功率；不默认再分发 binary；不把 provider flags 暴露为公共 Harbor schema。 | `sources/CloakHQ/CloakBrowser`；research `anti-detection-and-provider-facts.md`。 | accepted with constraints |
+| CloakBrowser-Manager | Profile runtime、viewer/VNC、CDP proxy、provider args adapter 的机制参考；可吸收 viewer ref、CDP ref、端口隔离和 provider adapter 经验。 | 不整体迁入 backend/frontend、内存 `RunningProfile`、UI shell 或 provider-specific lifecycle。 | `sources/CloakHQ/CloakBrowser-Manager`；research `runtime-provider-profile-viewer.md`。 | accepted as reference |
+| Handoff/control ownership references | 吸收 explicit control owner、handoff/takeover、user-controlled hard stop、dashboard/live viewer/annotation 的状态事实。 | 不把 live viewer 等同完整恢复；不允许 Agent 自动抢回用户控制；不把 setup/profile 错误当业务失败。 | research `human-handoff-and-recovery.md`；`sources/Tencent/BrowserSkill`；`sources/citrolabs/ego-lite`；`sources/microsoft/playwright-cli`。 | accepted as reference |
+| Hosted browser / vault / persona / external UI shell | 仅作为边界和未来 re-evaluation 输入。 | 不进入 Harbor MVP；不迁入真实账号托管平台、密钥库、人设平台、hosted runtime 平台化或外部 Profile Browser shell。 | issues #11、#22、#23；research `browser-identity-and-runtime.md`。 | rejected for MVP |
+
+| Issue | 本节覆盖 |
+|---|---|
+| #6 | CloakBrowser 作为首个 provider baseline 的采用边界、runtime smoke 前置条件和非承诺边界。 |
+| #7 | Provider facts 与反检测成功率承诺的边界。 |
+| #10 | CloakBrowser-Manager、handoff/control ownership、viewer/CDP 机制的参考吸收边界。 |
+| #11 | hosted browser、vault、persona 平台、外部 UI shell 的 Harbor MVP 非目标。 |
+| #12 | Provider source、license/binary、安装/更新和依赖风险作为 baseline input；正式 enablement 仍由 PD-0007 阻塞。 |
+| #13 | 最小 runtime smoke 检查项、通过条件、失败分类、环境和证据 locator。 |
+| #14 | Provider facts 最小暴露字段和 Core/App 消费边界；版本化字段集仍由 PD-0003 阻塞。 |
+| #15 | Anti-detect claim 只能作为 claim / experiment input；产品成功率承诺被拒绝。 |
+| #20 | CloakBrowser-Manager Profile Runtime、Viewer/VNC、CDP proxy、provider args adapter 只作参考或改造后吸收。 |
+| #21 | BrowserSkill、ego-lite、Playwright dashboard 的 handoff/control ownership 只作状态事实参考。 |
+| #22 | hosted browser、vault、persona 平台不进入 MVP。 |
+| #23 | 外部 Profile Browser / hosted console UI shell 不整体迁入 Harbor。 |
+
 ## PD-0001
 
 - 问题：ADR 被接受后，版本化 Runtime API schema 应放在哪里？
