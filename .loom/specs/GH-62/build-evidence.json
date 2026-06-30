@@ -1,0 +1,31 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "item": "GH-62",
+  "repository": "WebEnvoy/Harbor",
+  "branch": "work/docs-draft-closeout-harbor",
+  "suite_path": "minimal",
+  "scope": "docs-only",
+  "full_suite_not_applicable": {
+    "rationale": "This change updates documentation and item-specific Loom carrier files only. It does not change code, schema, API, runtime behavior, generated facts, fixtures, provider behavior, storage behavior, browser behavior, or live evidence capture.",
+    "consumer_boundary": "Consumers use Stage 2 accepted ADRs, docs/contracts/README.md, docs/draft/README.md, PR metadata, and GH-62 Loom fact-chain.",
+    "recheck_condition": "Run stronger validation if this PR or a later PR introduces code, schema, API, runtime behavior, generated facts, fixtures, provider behavior, storage behavior, browser evidence, or product behavior changes."
+  },
+  "validation": {
+    "git_diff_check": "pass",
+    "json_carrier_validation": "pass",
+    "loom_fact_chain": "pass",
+    "loom_suite_validate": "pass",
+    "loom_suite_carrier_validate": "pass"
+  },
+  "validation_evidence": {
+    "generated_at": "2026-06-30T15:28:47Z",
+    "commands": [
+      "git diff --check",
+      "find .loom -name '*.json' -type f -print0 | xargs -0 -n1 jq empty",
+      "loom fact-chain --target /Volumes/2T/.codex/worktrees/docs-draft-closeout/Harbor --json",
+      "loom suite validate --target /Volumes/2T/.codex/worktrees/docs-draft-closeout/Harbor --item GH-62 --json",
+      "loom suite carrier validate --target /Volumes/2T/.codex/worktrees/docs-draft-closeout/Harbor --item GH-62 --json"
+    ],
+    "fact_chain_artifact": ".loom/tmp/output-artifacts/2026-06-30T152841Z-fact-chain-dc66aece7942.json"
+  }
+}

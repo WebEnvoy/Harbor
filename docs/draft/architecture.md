@@ -1,5 +1,12 @@
 # Harbor 架构
 
+- Status: pending
+- Owner: GH-62
+- Linked issue: #61, #64
+- Exit condition: promote to an accepted layout ADR or implementation docs when Harbor creates its first code/package layout; remove if that implementation chooses a different structure.
+
+Reading judgment: this still has independent value as a compact reminder of the intended module boundaries, but Stage 2 accepted no package layout and this repository currently has no code tree. Do not use it as implementation basis.
+
 Harbor 的架构目标是同时支持 WebEnvoy App 中的浏览器身份区域、未来独立 Desktop / Local Console、Server / Docker Runtime 形态，以及面向 Core / Agent 的自动化 API。
 
 ## 建议目录结构

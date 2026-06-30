@@ -1,56 +1,29 @@
-# Profile 与 Execution Identity 模型
+# Profile and Execution Identity draft
 
-Harbor 的核心不是单纯的 Profile，而是 Execution Identity。
+- Status: pointer
+- Owner: GH-62
+- Linked issue: #63, #64
+- Exit condition: delete this pointer after consumers use `docs/contracts/README.md` directly.
 
-## 三层关系
+## Reading judgment
 
-```text
-Fingerprint < Profile < Execution Identity
-```
+This draft contains valid product/architecture analysis: Harbor separates browser environment/Profile from site/account Execution Identity. Login state, risk events, allowed execution channels, evidence policy, resource requirements, linked capabilities/tasks, and usage history belong to identity facts rather than one-off errors.
 
-## Fingerprint
+The old `Fingerprint < Profile < Execution Identity` framing remains useful background, but it is not a standalone contract.
 
-Fingerprint 是设备和浏览器环境表达，包括：
+## Absorbed
 
-- User-Agent；
-- Canvas / WebGL / Audio / Font；
-- 语言、时区、地理位置；
-- 屏幕尺寸、窗口尺寸、设备参数；
-- WebRTC、DNS、代理和网络特征。
+- `profile_ref`, `execution_identity_ref`, profile facts, identity facts, login-state provenance, sensitive profile/account data exclusions, and relation to `runtime_session_ref` are absorbed by [ADR 0006](../adr/0006-provider-profile-identity-facts-v0.md).
+- Runtime binding and continuity with `profile_ref` / `execution_identity_ref` are absorbed by [ADR 0005](../adr/0005-runtime-session-lifecycle-v0.md).
+- The compact implementation-facing summary is indexed in [contracts/README.md](../contracts/README.md#absorbed-draft-analysis).
 
-## Profile
+## Background
 
-Profile 是浏览器身份容器，包括：
+- [ADR 0002](../adr/0002-profile-session-and-provider-facts.md) remains background for the earlier Profile/Session/Provider boundary.
 
-- user_data_dir；
-- Cookie、localStorage、sessionStorage；
-- 扩展；
-- 代理；
-- 指纹配置；
-- 浏览器版本和 driver；
-- 启动参数；
-- 登录态持久化数据。
+## Rejected or deferred
 
-## Execution Identity
+- Rejected: credential payloads, account safety scores, task success judgments, business results, and treating login/provider claims as observed identity facts.
+- Deferred: concrete fingerprint field schema, exact Profile-to-Identity cardinality rules, account policy details, and versioned API fields.
 
-Execution Identity 是 Harbor 相比普通指纹浏览器增加的高层语义，包括：
-
-- site_id；
-- account_ref；
-- profile_id；
-- login_state；
-- last_known_normal_state；
-- risk_events；
-- resource_requirement；
-- allowed_execution_channels；
-- evidence_policy；
-- linked_capabilities；
-- linked_tasks；
-- usage_history。
-
-## 设计要求
-
-- 一个 Profile 可以服务一个或多个 Execution Identity，但高风险账号应尽量长期绑定稳定环境；
-- 账号态写入任务应使用更严格的身份和环境约束；
-- 公开读取任务可以使用更低成本资源；
-- 风控、验证码、登录失效等状态应进入执行身份历史，而不是只作为一次性错误。
+This draft is not an implementation basis.
