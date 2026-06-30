@@ -15,7 +15,7 @@
 - Current Stop: PR #65 is open; draft absorption review has been revised and local validation passed.
 - Next Step: Commit, push, and update PR #65 metadata to the new head.
 - Blockers: None recorded.
-- Latest Validation Summary: 2026-06-30T15:28:47Z `loom fact-chain` pass; `loom suite validate` pass; `loom suite carrier validate` pass; `git diff --check` pass; `.loom/**/*.json` jq validation pass.
+- Latest Validation Summary: 2026-06-30T15:31:57Z `loom fact-chain` pass; `loom suite validate` pass; `loom suite carrier validate` pass; `git diff --check` pass; `.loom/**/*.json` jq validation pass.
 - Recovery Boundary: Docs-only draft closeout. Do not merge, close issues, alter runtime/provider code, or create `docs/guides/`.
 - Current Lane: docs-draft-closeout
 

@@ -18,7 +18,7 @@
     "loom_suite_carrier_validate": "pass"
   },
   "validation_evidence": {
-    "generated_at": "2026-06-30T15:28:47Z",
+    "generated_at": "2026-06-30T15:31:57Z",
     "commands": [
       "git diff --check",
       "find .loom -name '*.json' -type f -print0 | xargs -0 -n1 jq empty",
@@ -26,6 +26,6 @@
       "loom suite validate --target /Volumes/2T/.codex/worktrees/docs-draft-closeout/Harbor --item GH-62 --json",
       "loom suite carrier validate --target /Volumes/2T/.codex/worktrees/docs-draft-closeout/Harbor --item GH-62 --json"
     ],
-    "fact_chain_artifact": ".loom/tmp/output-artifacts/2026-06-30T152841Z-fact-chain-dc66aece7942.json"
+    "fact_chain_artifact": ".loom/tmp/output-artifacts/2026-06-30T153157Z-fact-chain-768ca256b48e.json"
   }
 }

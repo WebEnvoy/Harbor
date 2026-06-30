@@ -11,7 +11,7 @@
 
 ## Ownership
 
-- Allowed writes: `docs/draft/**`, `docs/contracts/README.md`, `.loom/work-items/GH-62.md`, `.loom/progress/GH-62.md`, `.loom/status/current.md`, minimal `.loom/bootstrap/init-result.json` fact-chain locator update, `.loom/specs/GH-62/*`, and PR metadata.
+- Allowed writes: `docs/draft/**`, `docs/contracts/README.md`, `.loom/work-items/GH-62.md`, `.loom/progress/GH-62.md`, `.loom/status/current.md`, minimal `.loom/bootstrap/init-result.json` fact-chain locator update, `.loom/specs/GH-62/*`, `.loom/reviews/GH-62*.json`, and PR metadata.
 - Forbidden writes: runtime/provider/browser/viewer code, API schema, storage schema, generated facts, fixtures, real browser smoke, live runtime evidence, other repositories, `INIT-0001`, `docs/guides/`, issue closeout, and merge action.
 
 ## Evidence
