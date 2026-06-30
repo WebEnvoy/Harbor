@@ -47,3 +47,22 @@ Harbor 不理解具体站点业务，也不执行 Lode 任务封装。它只向 
 ## 许可证边界说明
 
 本仓库属于 AGPL 核心仓库，承载 Runtime Server、Profile、Execution Identity、Browser Drivers、Evidence 和正式运行时能力。面向外部集成的 Runtime API schema、client types、client SDK、OpenAPI 或生成模型，应优先评估是否放入未来的 `contracts` 或 SDK 类 MIT / Apache-2.0 仓库，不应默认进入 Harbor 的 AGPL 核心代码路径。
+
+<!-- LOOM_BOOTSTRAP_START -->
+## Loom Bootstrap
+
+本仓库采用 Loom 来管理 agent 执行流程、工作事实载体、review、merge-ready 和 closeout；开始实现、review、merge-ready 或 closeout 前，先完成以下 bootstrap 检查。
+
+1. 检查 `.loom/installed-state.json`。
+2. 若本机没有 `loom`，执行：
+   `npm install -g @mc-and-his-agents/loom`
+3. 运行：
+   `loom doctor --target . --json`
+4. 若 Codex Loom plugin 缺失，执行：
+   `loom host install --host codex --scope user --apply --json`
+   `loom host register --host codex --scope user --apply --json`
+5. 重新运行：
+   `loom doctor --target . --json`
+
+不要把 Loom runtime、plugin 或 skills payload 写入仓库；它们属于用户级全局安装。
+<!-- LOOM_BOOTSTRAP_END -->
