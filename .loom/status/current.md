@@ -11,11 +11,11 @@
 - Review Entry: .loom/reviews/GH-41.json
 - Validation Entry: `git diff --check`; JSON validation; low-cost repo/Loom checks available in this worktree; hosted checks after PR creation
 - Closing Condition: PR ready for review with hosted basic checks classified; no merge and no issue closeout in this thread.
-- Current Checkpoint: pr_ready
-- Current Stop: Docs-only contract and GH-41 Loom carrier prepared locally; local low-cost validation passed except environment-level Loom doctor/verify install-surface blockers.
-- Next Step: Push branch, create/update PR with required naked metadata lines, run hosted basic checks, and classify loom-pr-merge-gate if it is not merge-ready.
+- Current Checkpoint: merge
+- Current Stop: Coordinator semantic review approved the docs-only Provider/Profile/Identity facts contract at product head 27fd2998c68b0c29d213d4bd12317c4575ab703e; next PR head should contain only Loom review/status carrier drift.
+- Next Step: Push carrier refresh, update PR #56 head metadata, run hosted merge gate, then merge and perform post-merge closeout.
 - Blockers: None.
-- Latest Validation Summary: `git diff --check` passed; `.loom/**/*.json` passed `jq empty`; `loom fact-chain --target /Volumes/2T/.codex/worktrees/stage2/harbor-provider-identity --json` passed at 2026-06-30T10:53:19Z; `loom suite validate --target /Volumes/2T/.codex/worktrees/stage2/harbor-provider-identity --item GH-41 --json` passed at 2026-06-30T10:53:08Z; `loom suite carrier validate --target /Volumes/2T/.codex/worktrees/stage2/harbor-provider-identity --item GH-41 --json` passed at 2026-06-30T10:53:08Z; `loom doctor --target . --json` and `loom verify --target . --json` blocked on local installed-state v2 / legacy Loom surface, classified as environment/tooling blocker rather than docs contract failure.
+- Latest Validation Summary: 2026-06-30 coordinator review approved PR #56 docs-only contract at product head 27fd2998c68b0c29d213d4bd12317c4575ab703e; prior branch validation covered `git diff --check`, JSON syntax, Loom fact-chain, suite validate, and carrier validate; no runtime/provider code, schema, browser skeleton, generated artifact, fixture, workflow logic, provider evaluation, browser smoke, or user-facing behavior changed.
 - Recovery Boundary: Do not add runtime/provider code, browser smoke, API schema, issue closeout, merge, or scope for GH-44/GH-48/GH-53.
 - Current Lane: docs-only contract
 

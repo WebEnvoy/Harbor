@@ -3,10 +3,10 @@
   "item_id": "GH-41",
   "decision": "allow",
   "kind": "general_review",
-  "summary": "The docs-only contract and GH-41 Loom carrier stay within the allowed Harbor lane scope and do not touch runtime/provider code.",
-  "reviewer": "codex",
-  "reviewed_head": "a22316cdad6e2e43b3e3b7b531ef4185c5a71ec6",
-  "reviewed_validation_summary": "Local validation passed for git diff --check, JSON syntax, Loom fact-chain with absolute target, Loom suite validate, and Loom suite carrier validate. Loom doctor/verify blocked on workstation installed-state v2 / legacy surface, classified as environment/tooling blocker.",
+  "summary": "PR #56 is approved for the docs-only Provider/Profile/Identity facts contract and remains within Harbor #40/#41/#42/#43 scope.",
+  "reviewer": "codex-coordinator",
+  "reviewed_head": "27fd2998c68b0c29d213d4bd12317c4575ab703e",
+  "reviewed_validation_summary": "2026-06-30 coordinator review approved PR #56 docs-only contract at product head 27fd2998c68b0c29d213d4bd12317c4575ab703e; prior branch validation covered `git diff --check`, JSON syntax, Loom fact-chain, suite validate, and carrier validate; no runtime/provider code, schema, browser skeleton, generated artifact, fixture, workflow logic, provider evaluation, browser smoke, or user-facing behavior changed.",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
@@ -21,6 +21,7 @@
     "spec": ".loom/specs/GH-41/spec.md",
     "plan": ".loom/specs/GH-41/plan.md",
     "suite_path": "minimal",
-    "validation": "git diff --check; JSON syntax via jq empty; loom fact-chain with absolute target; loom suite validate --item GH-41; loom suite carrier validate --item GH-41; loom doctor/verify blocked by local install-surface state"
+    "validation": "coordinator semantic review plus prior git diff --check, JSON syntax, Loom fact-chain, suite validate, and carrier validate",
+    "pull_request": "https://github.com/WebEnvoy/Harbor/pull/56"
   }
 }
