@@ -1,55 +1,27 @@
-# Browser Drivers
+# Browser Drivers draft
 
-Browser Driver 是 Harbor 连接不同浏览器或远程运行时的抽象层。
+- Status: pointer
+- Owner: GH-62
+- Linked issue: #63, #64
+- Exit condition: delete this pointer after consumers use `docs/contracts/README.md` directly.
 
-## 目标
+## Reading judgment
 
-Harbor 不应绑定单一浏览器供应商。不同浏览器、反指纹内核或远程 CDP 服务都应通过 driver 接入。
+This draft contains valid architecture analysis: Browser Driver is an adapter boundary, not a task runner. It launches or connects a browser/runtime, prepares environment/profile/proxy inputs, reaches CDP readiness, reports health/errors, and returns provider capability facts. It must not understand site business, choose whether a task should run, store user business parameters, replace Evidence Store, leak provider-specific flags as Harbor public model, or decide provider suitability for a website task.
 
-Driver 不只负责启动或连接浏览器，也应向 Harbor 返回结构化能力事实。正式能力事实模型见 [Runtime Capability Facts](runtime-capability-facts.md)。
+## Absorbed
 
-## 初期 driver 方向
+- Provider capability facts, observed/configured/provider-claim separation, provider source/license/binary boundary, known limitations, and sensitive data exclusions are absorbed by [ADR 0006](../adr/0006-provider-profile-identity-facts-v0.md).
+- Runtime session availability, lifecycle errors, and driver-output consumption by sessions are absorbed by [ADR 0005](../adr/0005-runtime-session-lifecycle-v0.md).
+- The compact implementation-facing summary is indexed in [contracts/README.md](../contracts/README.md#absorbed-draft-analysis).
 
-```text
-browser-drivers/
-  chrome-official/
-  cloakbrowser/
-  camoufox/
-  remote-cdp/
-```
+## Background
 
-## Driver 职责
+- [ADR 0003](../adr/0003-local-chrome-vs-remote-browser-boundary.md) remains useful provider-mode background for local and remote browser boundaries, but it is not the Stage 2 accepted facts contract.
 
-一个 driver 至少应负责：
+## Rejected or deferred
 
-- 校验浏览器 binary 或远程 endpoint 是否可用；
-- 准备启动参数；
-- 绑定 user_data_dir；
-- 注入代理和基础环境配置；
-- 分配或连接 remote debugging port；
-- 等待 CDP ready；
-- 返回 Runtime Session 所需信息；
-- 支持停止、健康检查和错误归因；
-- 返回 provider capability facts，例如是否支持长期 Profile、代理、语言、时区、viewport、扩展、CDP、Viewer、provider-native 指纹控制或反检测能力。
+- Rejected as contract truth: provider-native public flags, target-site success claims, anti-detection guarantees, provider ranking, and task suitability decisions.
+- Deferred: concrete provider directory layout, first provider order, provider evaluation packet, and browser driver implementation.
 
-## 不属于 driver 的职责
-
-Driver 不应：
-
-- 理解站点业务；
-- 决定任务是否应该执行；
-- 直接保存用户私有业务参数；
-- 直接替代 Evidence Store；
-- 将特定供应商参数泄漏为 Harbor 公共模型；
-- 判断当前 provider 是否适合某个具体网站任务。
-
-## 供应商绑定策略
-
-特定浏览器能力可以存在于具体 driver 中，但 Harbor 的公共对象和能力事实应保持稳定：
-
-- Profile；
-- Execution Identity；
-- Runtime Session；
-- Evidence；
-- Resource Requirement；
-- Capability Execution Context。
+This draft is not an implementation basis.
