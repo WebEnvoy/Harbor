@@ -1,0 +1,27 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-41",
+  "decision": "allow",
+  "kind": "general_review",
+  "summary": "PR #56 is approved for the docs-only Provider/Profile/Identity facts contract and remains within Harbor #40/#41/#42/#43 scope.",
+  "reviewer": "codex-coordinator",
+  "reviewed_head": "27fd2998c68b0c29d213d4bd12317c4575ab703e",
+  "reviewed_validation_summary": "2026-06-30 coordinator review approved PR #56 docs-only contract at product head 27fd2998c68b0c29d213d4bd12317c4575ab703e; prior branch validation covered `git diff --check`, JSON syntax, Loom fact-chain, suite validate, and carrier validate; no runtime/provider code, schema, browser skeleton, generated artifact, fixture, workflow logic, provider evaluation, browser smoke, or user-facing behavior changed.",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "Do not treat this approval as runtime/provider implementation, API schema, browser skeleton, hosted runtime, provider evaluation, browser smoke, evidence store, or issue closeout completion."
+  ],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "ADR 0006 covers provider_ref, profile_ref, execution_identity_ref, fact source categories, observed fact vs provider claim, license/binary/secret/profile data boundaries, Runtime Session lifecycle relationship, research absorption decisions, and non-goals for GH-40/GH-41/GH-42/GH-43."
+  },
+  "consumed_inputs": {
+    "spec": ".loom/specs/GH-41/spec.md",
+    "plan": ".loom/specs/GH-41/plan.md",
+    "suite_path": "minimal",
+    "validation": "coordinator semantic review plus prior git diff --check, JSON syntax, Loom fact-chain, suite validate, and carrier validate",
+    "pull_request": "https://github.com/WebEnvoy/Harbor/pull/56"
+  }
+}
