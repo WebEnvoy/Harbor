@@ -5,8 +5,8 @@
   "kind": "general_review",
   "summary": "Docs-only AGENTS.md constraint update is approved for this PR scope.",
   "reviewer": "codex",
-  "reviewed_head": "d6d74d0d7fe1947f469581bfd87aabafca07ab37",
-  "reviewed_validation_summary": "Scope is limited to reusable execution constraints and GH-31 Loom carrier files.",
+  "reviewed_head": "f7fa3da1322abb9d628799bb98ea82eb714d768b",
+  "reviewed_validation_summary": "Local preflight passed with `git diff --check`, `loom doctor`, `loom verify`, and `loom fact-chain`; hosted checks pending PR creation.",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
@@ -20,7 +20,7 @@
   "consumed_inputs": {
     "spec": ".loom/specs/GH-31/spec.md",
     "plan": ".loom/specs/GH-31/plan.md",
-    "suite_path": "not_applicable",
-    "validation": "git diff --check; loom doctor/verify/fact-chain; hosted required checks"
+    "suite_path": "minimal",
+    "validation": "git diff --check; loom doctor/verify/fact-chain; loom suite validate; hosted required checks"
   }
 }

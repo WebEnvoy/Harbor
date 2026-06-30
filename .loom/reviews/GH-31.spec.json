@@ -5,8 +5,8 @@
   "kind": "spec_review",
   "summary": "Minimal docs-only governance spec is sufficient for recording Loom PR and closeout constraints.",
   "reviewer": "codex",
-  "reviewed_head": "d6d74d0d7fe1947f469581bfd87aabafca07ab37",
-  "reviewed_validation_summary": "Spec limits the PR to AGENTS.md guidance and item-specific carrier files.",
+  "reviewed_head": "f7fa3da1322abb9d628799bb98ea82eb714d768b",
+  "reviewed_validation_summary": "Local preflight passed with `git diff --check`, `loom doctor`, `loom verify`, and `loom fact-chain`; hosted checks pending PR creation.",
   "fallback_to": null,
   "blocking_issues": [],
   "follow_ups": [
