@@ -3,27 +3,25 @@
   "item_id": "GH-62",
   "decision": "allow",
   "kind": "general_review",
-  "summary": "GH-62 docs-only draft closeout is approved for PR #65 at the current content head. The PR records per-draft reading judgment, absorbs still-valid analysis into docs/contracts/README.md and accepted ADR references, adds formal docs directory semantics, and marks rejected/deferred boundaries without preserving duplicate draft truth.",
+  "summary": "Post-merge closeout for PR #65 is approved; the docs-only Harbor docs draft closeout and GH-62 carrier are merged to main and ready for issue closeout.",
   "reviewer": "codex-coordinator",
-  "reviewed_head": "a94d586e937cc72ee5e75382a1a3da34809ca4bd",
-  "reviewed_validation_summary": "At head a94d586e937cc72ee5e75382a1a3da34809ca4bd, git diff --check passed; .loom/**/*.json passed jq validation; loom fact-chain --target /Volumes/2T/.codex/worktrees/docs-draft-closeout/Harbor --item GH-62 --json passed; loom suite validate --target /Volumes/2T/.codex/worktrees/docs-draft-closeout/Harbor --item GH-62 --json passed; loom suite carrier validate --target /Volumes/2T/.codex/worktrees/docs-draft-closeout/Harbor --item GH-62 --json passed after adding the formal docs/README.md directory semantics entry.",
+  "reviewed_head": "ee8e38603ad3024951d1ca1e3928a675949f522b",
+  "reviewed_validation_summary": "Post-merge closeout consumed PR #65, head a33a9e66cba3fc201b9d540567803b90bfe6e14b, merge commit ee8e38603ad3024951d1ca1e3928a675949f522b, target branch main, and hosted run 28457058916 with all required checks passing.",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
   "follow_ups": [
-    "Do not merge or close issues in this PR-ready step.",
-    "Do not use docs/draft pointer files as implementation basis; consumers should use accepted ADRs and docs/contracts/README.md."
+    "Do not treat this approval as code, schema, API, runtime, storage, UI, fixture, generated fact, or product behavior implementation completion."
   ],
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "The docs-only change preserves Stage 2 accepted contract truth in ADR 0005, ADR 0006, ADR 0007, and the contract index; docs/README.md now provides the formal directory semantics entry; pending architecture material remains explicitly non-contract with owner, linked issue, and exit condition."
+    "reason": "Post-merge closeout consumes the merged docs-only Harbor docs draft closeout and records terminal evidence without claiming implementation completion."
   },
   "consumed_inputs": {
-    "spec": ".loom/specs/GH-62/spec.md",
-    "plan": ".loom/specs/GH-62/plan.md",
-    "suite_path": "minimal",
-    "validation": ".loom/specs/GH-62/build-evidence.json",
     "pull_request": "https://github.com/WebEnvoy/Harbor/pull/65",
-    "docs_directory_semantics": "docs/README.md"
+    "pr_head": "a33a9e66cba3fc201b9d540567803b90bfe6e14b",
+    "merge_commit": "ee8e38603ad3024951d1ca1e3928a675949f522b",
+    "target_branch": "main",
+    "evidence": "https://github.com/WebEnvoy/Harbor/actions/runs/28457058916"
   }
 }
