@@ -1,0 +1,28 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-62",
+  "decision": "allow",
+  "kind": "general_review",
+  "summary": "GH-62 docs-only draft closeout is approved for PR #65. The revised PR now records per-draft reading judgment, absorbs still-valid analysis into docs/contracts/README.md and accepted ADR references, and marks rejected/deferred boundaries without preserving duplicate draft truth.",
+  "reviewer": "codex-coordinator",
+  "reviewed_head": "a678feb97eefb43b54657164c3a2aaafcf62771d",
+  "reviewed_validation_summary": "2026-06-30T15:31:57Z `loom fact-chain` pass; `loom suite validate` pass; `loom suite carrier validate` pass; `git diff --check` pass; `.loom/**/*.json` jq validation pass.",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "Do not merge or close issues in this PR-ready step.",
+    "Do not use docs/draft pointer files as implementation basis; consumers should use accepted ADRs and docs/contracts/README.md."
+  ],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "The docs-only change preserves Stage 2 accepted contract truth in ADR 0005, ADR 0006, ADR 0007, and the contract index; pending architecture material remains explicitly non-contract with owner, linked issue, and exit condition."
+  },
+  "consumed_inputs": {
+    "spec": ".loom/specs/GH-62/spec.md",
+    "plan": ".loom/specs/GH-62/plan.md",
+    "suite_path": "minimal",
+    "validation": ".loom/specs/GH-62/build-evidence.json",
+    "pull_request": "https://github.com/WebEnvoy/Harbor/pull/65"
+  }
+}

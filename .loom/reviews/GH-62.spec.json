@@ -1,0 +1,15 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-62",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "GH-62 docs-only draft closeout spec is approved for PR #65. The change defines draft lifecycle semantics, absorbs valid draft analysis into the contract index, and keeps implementation-bearing truth in accepted ADRs without claiming runtime/provider implementation.",
+  "reviewer": "codex-coordinator",
+  "reviewed_head": "a678feb97eefb43b54657164c3a2aaafcf62771d",
+  "reviewed_validation_summary": "2026-06-30T15:31:57Z `loom fact-chain` pass; `loom suite validate` pass; `loom suite carrier validate` pass; `git diff --check` pass; `.loom/**/*.json` jq validation pass.",
+  "fallback_to": null,
+  "blocking_issues": [],
+  "follow_ups": [
+    "Do not treat this approval as runtime/provider code, API schema, storage schema, generated facts, fixtures, real browser smoke, live runtime evidence, or issue closeout."
+  ]
+}
