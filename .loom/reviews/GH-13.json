@@ -3,15 +3,17 @@
   "item_id": "GH-13",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Docs-only provider baseline boundary review: GH-13 merge-ready carrier repair is current-head scoped; product semantics unchanged; no runtime/provider implementation is claimed.",
+  "summary": "Closeout-only carrier sync records merged PR #34 and terminal GH-13 state; product semantics unchanged and no runtime/provider implementation is claimed.",
   "reviewer": "codex-independent-review",
   "authored_at": "2026-06-30T07:20:18Z",
-  "reviewed_head": "23251b2884a11ee45d7d491f1dd93647f43d12af",
-  "reviewed_validation_summary": "`git diff --check` passed locally; packaged `loom_flow.py fact-chain --target .` passed; PR metadata preflight/readback passed for PR #34; direct `pr-gate check` is being repaired for missing current-head authored review. Wrapper `loom verify --target . --json` remains classified as workstation installed-state / legacy-surface diagnostics, not a product docs blocker.",
+  "reviewed_head": "05403da069b678d7c8adf8b3c5277db7a6e39154",
+  "reviewed_validation_summary": "git diff --check passed; closeout-only diff is limited to .loom/work-items/GH-13.md, .loom/status/current.md, .loom/progress/GH-13.md, and .loom/reviews/GH-13.json; post-merge facts consumed PR #34, merge commit 8d979c3dd6a18b6c133246b7f4396ee561c394d4, and hosted run 28427376024.",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
-  "follow_ups": [],
+  "follow_ups": [
+    "Coordinator must post issue closeout comments and close covered issues after this closeout carrier PR is merged."
+  ],
   "consumed_inputs": {
     "work_item": ".loom/work-items/GH-13.md",
     "recovery_entry": ".loom/progress/GH-13.md",
@@ -43,6 +45,6 @@
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Authored implementation review approved the current head for merge checkpoint consumption."
+    "reason": "The closeout-only change records terminal carrier facts after the already-merged docs-only PR; it does not alter Harbor runtime/provider behavior, ADR product semantics, schema, generated artifacts, or user-facing behavior."
   }
 }
