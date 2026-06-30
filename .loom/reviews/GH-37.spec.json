@@ -4,9 +4,9 @@
   "decision": "allow",
   "kind": "spec_review",
   "summary": "GH-37 docs-only Runtime Session lifecycle v0 spec is scoped to the requested contract and covers GH-37/GH-38/GH-39 without runtime/provider implementation.",
-  "reviewer": "codex",
-  "reviewed_head": "b7470c414b15d78c9e589b156dab85af96ac43a0",
-  "reviewed_validation_summary": "On head b7470c414b15d78c9e589b156dab85af96ac43a0, `git diff --check` passed; no Python files are tracked; `loom doctor`, `loom verify`, `loom fact-chain`, and `loom suite validate --item GH-37` passed with absolute target.",
+  "reviewer": "codex-coordinator",
+  "reviewed_head": "afe4afa735138cd7f5268e5556e804c16358b8d4",
+  "reviewed_validation_summary": "On PR #54 head afe4afa735138cd7f5268e5556e804c16358b8d4, git diff --check, loom doctor, loom verify, loom fact-chain, loom suite validate, and hosted py-compile/demo-bootstrap/repo-local-cli/loom-check passed.",
   "fallback_to": null,
   "blocking_issues": [],
   "follow_ups": [

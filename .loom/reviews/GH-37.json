@@ -4,14 +4,14 @@
   "decision": "allow",
   "kind": "general_review",
   "summary": "The docs-only contract and GH-37 Loom carrier stay within the allowed Harbor lane scope and do not touch runtime/provider code.",
-  "reviewer": "codex",
-  "reviewed_head": "b7470c414b15d78c9e589b156dab85af96ac43a0",
-  "reviewed_validation_summary": "On head b7470c414b15d78c9e589b156dab85af96ac43a0, `git diff --check` passed; no Python files are tracked; `loom doctor`, `loom verify`, `loom fact-chain`, and `loom suite validate --item GH-37` passed with absolute target.",
+  "reviewer": "codex-coordinator",
+  "reviewed_head": "afe4afa735138cd7f5268e5556e804c16358b8d4",
+  "reviewed_validation_summary": "On PR #54 head afe4afa735138cd7f5268e5556e804c16358b8d4, git diff --check, loom doctor, loom verify, loom fact-chain, loom suite validate, and hosted py-compile/demo-bootstrap/repo-local-cli/loom-check passed.",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
   "follow_ups": [
-    "Hosted PR gate may still require a current-head review after carrier-only review files are committed; treat that as expected merge-gate work, not product contract drift."
+    "Do not treat this approval as runtime/provider implementation, API schema, browser skeleton, hosted runtime, evidence store, or issue closeout completion."
   ],
   "semantic_review_disposition": {
     "status": "passed",
