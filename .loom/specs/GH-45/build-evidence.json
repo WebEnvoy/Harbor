@@ -1,0 +1,19 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "delegations": [],
+  "integration_evidence": [
+    {
+      "id": "main-thread-docs-contract",
+      "status": "integrated",
+      "summary": "GH-45 docs-only Page scene reference facts v0 contract is integrated locally; GH-44/GH-46/GH-47/GH-48/GH-49/GH-50/GH-51/GH-52/GH-53 requirements are covered by the same ADR and no runtime/provider/browser/viewer code was added.",
+      "locators": [
+        "docs/adr/0007-page-scene-reference-facts-v0.md",
+        "docs/adr/pending-decisions.md",
+        ".loom/work-items/GH-45.md",
+        ".loom/progress/GH-45.md",
+        ".loom/status/current.md",
+        ".loom/specs/GH-45/task-carrier.md"
+      ]
+    }
+  ]
+}
