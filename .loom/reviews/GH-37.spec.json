@@ -1,0 +1,15 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-37",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "GH-37 docs-only Runtime Session lifecycle v0 spec is scoped to the requested contract and covers GH-37/GH-38/GH-39 without runtime/provider implementation.",
+  "reviewer": "codex",
+  "reviewed_head": "b7470c414b15d78c9e589b156dab85af96ac43a0",
+  "reviewed_validation_summary": "On head b7470c414b15d78c9e589b156dab85af96ac43a0, `git diff --check` passed; no Python files are tracked; `loom doctor`, `loom verify`, `loom fact-chain`, and `loom suite validate --item GH-37` passed with absolute target.",
+  "fallback_to": null,
+  "blocking_issues": [],
+  "follow_ups": [
+    "Keep implementation code, API schema, runtime smoke, and issue closeout in later Work Items."
+  ]
+}

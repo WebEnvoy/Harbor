@@ -11,11 +11,11 @@
 - Review Entry: .loom/reviews/GH-37.json
 - Validation Entry: `git diff --check`; low-cost repo/Loom checks available in this worktree; hosted checks after PR creation
 - Closing Condition: Ready PR to `main` exists for GH-37 docs-only contract; do not merge PR or close GH-36/GH-37/GH-38/GH-39 in this lane.
-- Current Checkpoint: docs_contract_written
-- Current Stop: Runtime Session lifecycle v0 contract and GH-37 Loom carrier prepared; validation and PR creation pending.
-- Next Step: Run low-cost checks, commit, push, and open a Ready PR to `main`.
+- Current Checkpoint: review_recorded
+- Current Stop: Runtime Session lifecycle v0 contract, GH-37 carrier, validation, and review artifacts recorded; PR creation pending.
+- Next Step: Push branch and open a Ready PR to `main`.
 - Blockers: None recorded.
-- Latest Validation Summary: Pending.
+- Latest Validation Summary: On head b7470c414b15d78c9e589b156dab85af96ac43a0, `git diff --check` passed; no Python files are tracked; `loom doctor`, `loom verify`, `loom fact-chain`, and `loom suite validate --item GH-37` passed with absolute target.
 - Recovery Boundary: Continue from this worktree and branch; do not use `INIT-0001`; do not merge or close issues.
 - Current Lane: Harbor Stage 2 Runtime Session docs-only contract
 

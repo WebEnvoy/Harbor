@@ -1,0 +1,26 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-37",
+  "decision": "allow",
+  "kind": "general_review",
+  "summary": "The docs-only contract and GH-37 Loom carrier stay within the allowed Harbor lane scope and do not touch runtime/provider code.",
+  "reviewer": "codex",
+  "reviewed_head": "b7470c414b15d78c9e589b156dab85af96ac43a0",
+  "reviewed_validation_summary": "On head b7470c414b15d78c9e589b156dab85af96ac43a0, `git diff --check` passed; no Python files are tracked; `loom doctor`, `loom verify`, `loom fact-chain`, and `loom suite validate --item GH-37` passed with absolute target.",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "Hosted PR gate may still require a current-head review after carrier-only review files are committed; treat that as expected merge-gate work, not product contract drift."
+  ],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "ADR 0005 covers runtime_session_ref, owner, lifecycle status, lease, error/unavailable classification, continuity, retry, takeover, recovery, research absorption decisions, and non-goals for GH-36/GH-37/GH-38/GH-39."
+  },
+  "consumed_inputs": {
+    "spec": ".loom/specs/GH-37/spec.md",
+    "plan": ".loom/specs/GH-37/plan.md",
+    "suite_path": "minimal",
+    "validation": "git diff --check; no Python files tracked; loom doctor/verify/fact-chain with absolute target; loom suite validate --item GH-37"
+  }
+}
