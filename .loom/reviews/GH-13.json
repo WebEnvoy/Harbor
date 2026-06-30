@@ -1,0 +1,48 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-13",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Docs-only provider baseline boundary review: GH-13 merge-ready carrier repair is current-head scoped; product semantics unchanged; no runtime/provider implementation is claimed.",
+  "reviewer": "codex-independent-review",
+  "authored_at": "2026-06-30T07:18:32Z",
+  "reviewed_head": "88aaec0aa88cfac4f3980a12e52bfe76b82fbebe",
+  "reviewed_validation_summary": "`git diff --check` passed locally; packaged `loom_flow.py fact-chain --target .` passed; PR metadata preflight/readback passed for PR #34; direct `pr-gate check` is being repaired for missing current-head authored review. Wrapper `loom verify --target . --json` remains classified as workstation installed-state / legacy-surface diagnostics, not a product docs blocker.",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/GH-13.md",
+    "recovery_entry": ".loom/progress/GH-13.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "budget_risk": {
+      "schema_version": "loom-execution-budget-risk/v1",
+      "status": "not_applicable",
+      "enforcement": "advisory",
+      "highest_risk": "none",
+      "risk_dimensions": [],
+      "summary": "execution budget is not_applicable; budget risk remains advisory and non-blocking",
+      "budget_summary": "execution budget is not collected for this invocation.",
+      "adapter_evidence_locator": "",
+      "provenance": {
+        "source": "github_host"
+      }
+    },
+    "engine_adapter": null,
+    "engine_evidence": null,
+    "normalized_findings": null,
+    "suite_evidence_validation": "not_applicable",
+    "suite_carrier_validation": "not_applicable",
+    "suite_evidence_map": null,
+    "suite_consistency_analysis": null,
+    "suite_task_carriers": [],
+    "suite_evidence_consumed_contracts": [],
+    "suite_carrier_consumed_contracts": []
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Authored implementation review approved the current head for merge checkpoint consumption."
+  }
+}
