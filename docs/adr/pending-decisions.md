@@ -171,37 +171,37 @@ CloakBrowser 可以作为第一条受控浏览器 provider baseline 的候选边
 - 问题：第一版 Snapshot/RefMap contract 应是 AX-first、DOM-first、semantic text，还是 provider-native？
 - 来源 ADR：[0004. Snapshot、RefMap 与证据捕获](0004-snapshot-refmap-and-evidence-capture.md)
 - 阻塞什么：Snapshot/RefMap 首版 contract。
-- 当前状态：草案待决策。
-- 后续归属/下一步：Snapshot/RefMap contract ADR 或 schema 草案中定义。
+- 当前状态：Stage 2 docs v0 已由 [ADR 0007](0007-page-scene-reference-facts-v0.md) 固定为 AX-first，DOM / simplified HTML 作为 locator fallback，semantic text 为派生事实，provider-native metadata 仅作 adapter-local/ref source；API/schema 和 runtime 实现仍后续决策。
+- 后续归属/下一步：Runtime API/schema 或 Snapshot/RefMap implementation Work Item 中定义字段细节与验证。
 
 ## PD-0014
 
 - 问题：第一版 Harbor API 必须包含哪些 evidence refs？
 - 来源 ADR：[0004. Snapshot、RefMap 与证据捕获](0004-snapshot-refmap-and-evidence-capture.md)
 - 阻塞什么：Evidence Store 与 Runtime API 首版字段。
-- 当前状态：草案待决策。
-- 后续归属/下一步：Evidence Store schema 草案中定义。
+- 当前状态：Stage 2 docs v0 已由 [ADR 0007](0007-page-scene-reference-facts-v0.md) 固定最小 refs：`snapshot`、`refmap`、`source_trace` 默认允许，`screenshot`、`console_summary`、`network_summary`、`diagnostic` 由 policy 开启，`trace` / `HAR` / `video` / `raw_payload` 默认不进入 MVP。
+- 后续归属/下一步：Evidence Store schema 草案中定义具体 API 字段、storage 和 access policy。
 
 ## PD-0015
 
 - 问题：本地 evidence 的默认 retention 和 encryption 规则是什么？
 - 来源 ADR：[0004. Snapshot、RefMap 与证据捕获](0004-snapshot-refmap-and-evidence-capture.md)
 - 阻塞什么：本地 evidence 存储安全默认值。
-- 当前状态：草案待决策。
-- 后续归属/下一步：Evidence Store policy 决策中定义。
+- 当前状态：Stage 2 docs v0 已由 [ADR 0007](0007-page-scene-reference-facts-v0.md) 固定隐私默认：只公开 ref/metadata/redaction/retention policy，raw sensitive evidence 默认本地-only 或拒绝 export；具体 TTL、encryption-at-rest 和 deletion implementation 仍待 Evidence Store policy。
+- 后续归属/下一步：Evidence Store policy 决策中定义具体期限、密钥/加密和清理实现。
 
 ## PD-0016
 
 - 问题：Playwright trace/HAR/video 应在什么情况下开启，由谁请求？
 - 来源 ADR：[0004. Snapshot、RefMap 与证据捕获](0004-snapshot-refmap-and-evidence-capture.md)
 - 阻塞什么：高敏 evidence capture policy。
-- 当前状态：草案待决策。
-- 后续归属/下一步：Evidence policy 或 Core request policy 中定义。
+- 当前状态：Stage 2 docs v0 已由 [ADR 0007](0007-page-scene-reference-facts-v0.md) 固定为默认关闭；只有显式 high-sensitivity evidence policy、source binding、redaction、retention 和 export 边界都存在时才能生成 ref。
+- 后续归属/下一步：Evidence policy 或 Core request policy 中定义谁可请求、审批、TTL 和审计字段。
 
 ## PD-0017
 
 - 问题：stale RefMap failures 应如何表达，才能让 Core 安全 retry 或 resnapshot？
 - 来源 ADR：[0004. Snapshot、RefMap 与证据捕获](0004-snapshot-refmap-and-evidence-capture.md)
 - 阻塞什么：Core 使用 RefMap 的错误处理 contract。
-- 当前状态：草案待决策。
-- 后续归属/下一步：Snapshot/RefMap error contract 中定义。
+- 当前状态：Stage 2 docs v0 已由 [ADR 0007](0007-page-scene-reference-facts-v0.md) 固定分类：`refmap_stale`、`snapshot_stale`、`selector_unstable`、`source_unavailable`、`capture_denied`、`missing`；Core 必须重新 snapshot/refmap 或进入人工/authoring path，不得静默复用旧 ref。
+- 后续归属/下一步：Snapshot/RefMap implementation Work Item 中定义机器字段、retry hints 和测试 fixtures。

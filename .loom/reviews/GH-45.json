@@ -1,0 +1,28 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-45",
+  "decision": "allow",
+  "kind": "general_review",
+  "summary": "Semantic review approved for the docs-only Harbor page scene reference facts contract in PR #58.",
+  "reviewer": "codex-coordinator",
+  "reviewed_head": "41d0c426f9778b640a819d14ec211e2835e9198a",
+  "reviewed_validation_summary": "2026-06-30 merge-ready carrier refreshed for PR #58; content and portable GH-45 carrier head 41d0c426f9778b640a819d14ec211e2835e9198a passed local fact-chain and pr-gate checks, with current-head hosted checks pending after review refresh commit.",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "Do not treat this approval as implementation of runtime/provider/browser/viewer/API/storage/evidence behavior.",
+    "Close Harbor #44/#45/#46/#47/#48/#49/#50/#51/#52/#53 only after merge and post-merge closeout evidence consume the PR, merge commit, target branch, and hosted run."
+  ],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "ADR 0007 defines Harbor Snapshot, RefMap, Source Trace, Evidence refs, Viewer, and Handoff facts with owner boundaries and failure semantics without claiming implementation or live runtime evidence."
+  },
+  "consumed_inputs": {
+    "spec": ".loom/specs/GH-45/spec.md",
+    "plan": ".loom/specs/GH-45/plan.md",
+    "task_carrier": ".loom/specs/GH-45/task-carrier.md",
+    "suite_path": "minimal",
+    "pull_request": "https://github.com/WebEnvoy/Harbor/pull/58"
+  }
+}

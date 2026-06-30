@@ -1,0 +1,16 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-45",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "Spec review approved for the docs-only Harbor page scene reference facts contract in PR #58.",
+  "reviewer": "codex-coordinator",
+  "reviewed_head": "41d0c426f9778b640a819d14ec211e2835e9198a",
+  "reviewed_validation_summary": "2026-06-30 merge-ready carrier refreshed for PR #58; content and portable GH-45 carrier head 41d0c426f9778b640a819d14ec211e2835e9198a passed local fact-chain and pr-gate checks, with current-head hosted checks pending after review refresh commit.",
+  "fallback_to": null,
+  "blocking_issues": [],
+  "follow_ups": [
+    "Do not treat this approval as runtime/provider/browser/viewer implementation, API schema, storage schema, browser smoke, real evidence capture, or App UI completion.",
+    "Downstream Core/App contracts may consume ADR 0007 facts after this PR is merged."
+  ]
+}
