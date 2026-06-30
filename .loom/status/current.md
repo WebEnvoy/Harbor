@@ -11,11 +11,11 @@
 - Review Entry: .loom/reviews/GH-45.json
 - Validation Entry: `git diff --check`; JSON validation; `loom fact-chain`; `loom suite validate`; `loom suite carrier validate`; hosted basic checks after PR creation.
 - Closing Condition: PR ready with hosted basic checks classified; no merge and no issue closeout in this thread.
-- Current Checkpoint: build
-- Current Stop: Docs-only contract and GH-45 carrier are ready for PR creation and hosted basic checks.
-- Next Step: Create PR, read back PR body machine fields, then classify hosted basic checks. Do not merge or close issues in this thread.
+- Current Checkpoint: merge
+- Current Stop: PR #58 has docs-only content, GH-45 carrier, and authored review artifacts ready for merge-gate consumption.
+- Next Step: Run PR merge gate, wait for hosted checks on the current head, then merge and perform post-merge closeout.
 - Blockers: None recorded.
-- Latest Validation Summary: Local validation passed on 2026-06-30T11:47Z: `git diff --check`; JSON validation for `.loom/**/*.json`; `loom fact-chain --target /Volumes/2T/.codex/worktrees/stage2/harbor-page-scene-facts --json`; `loom suite validate --target /Volumes/2T/.codex/worktrees/stage2/harbor-page-scene-facts --item GH-45 --json`; `loom suite carrier validate --target /Volumes/2T/.codex/worktrees/stage2/harbor-page-scene-facts --item GH-45 --json`. Hosted checks pending PR creation.
+- Latest Validation Summary: 2026-06-30 merge-ready carrier prepared for PR #58; content head c9117cb929a7f72230ac37e35fb8feb6899727b1 passed local validation and hosted basic checks, with current-head hosted checks pending after carrier commit.
 - Recovery Boundary: This carrier only covers docs-only Page scene reference facts v0. Open later Work Items for runtime/provider/browser/viewer implementation, API schema, storage schema, browser smoke, real evidence capture, App UI, merge-ready, merge, or issue closeout.
 - Current Lane: docs-only/governance
 
