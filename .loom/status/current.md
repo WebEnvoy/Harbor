@@ -2,35 +2,35 @@
 
 ## Derived Fact Chain View
 
-- Item ID: GH-88
-- Goal: Establish the first minimal Harbor Runtime API skeleton and deterministic Runtime Session smoke for milestone #8.
-- Scope: Runtime API create/get/close entry, local dedicated profile provider baseline facts, profile/session lifecycle facts, provider/runtime error facts, and ownership constraints covering #85 and Work Items #88-#91.
-- Execution Path: runtime-session-smoke/local-dedicated-profile
+- Item ID: GH-92
+- Goal: Provide the first Harbor Snapshot, RefMap, and Evidence refs slice for FR #86.
+- Scope: Low-noise snapshot capture, indexed RefMap element refs, local Evidence ref records with provenance/redaction/retention facts, structured unavailable classifications, Core-facing scene ref readback, and ownership constraints covering #86 and Work Items #92-#96.
+- Execution Path: page-scene-refs/local-runtime-api
 - Workspace Entry: .
-- Recovery Entry: .loom/progress/GH-88.md
-- Review Entry: .loom/reviews/GH-88.json
-- Validation Entry: `pnpm test`; `pnpm smoke:runtime`; `pnpm smoke:runtime:local`; `loom suite validate --target . --item GH-88 --json`; `loom suite carrier validate --target . --item GH-88 --json`; `loom suite evidence validate --target . --item GH-88 --json`; `loom build --target . --item GH-88 --build-evidence .loom/specs/GH-88/build-evidence.json --json`.
-- Closing Condition: Completed. PR #101 is merged, hosted checks passed, ownership constraints are unchanged, closeout evidence records PR/head/merge commit/hosted run, and issues #85/#88-#91 are closed.
-- Current Checkpoint: closed
-- Current Stop: PR #101 was merged into `main`, hosted gate run 28533694122 passed, and GitHub issues #85 and #88-#91 were closed with post-merge evidence.
-- Next Step: Continue milestone #8 with FR #86 / issues #92-#96 in a separate branch and item-specific carrier.
+- Recovery Entry: .loom/progress/GH-92.md
+- Review Entry: .loom/reviews/GH-92.json
+- Validation Entry: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `pnpm smoke:runtime:local`; `git diff --check`; `loom suite validate --target . --item GH-92 --json`; `loom suite carrier validate --target . --item GH-92 --json`; `loom suite evidence validate --target . --item GH-92 --json`; `loom build --target . --item GH-92 --build-evidence .loom/specs/GH-92/build-evidence.json --json`.
+- Closing Condition: PR is merged into `main`, hosted checks and Loom gate pass for the PR head, closeout evidence records PR/head/merge commit/hosted run, and issues #86/#92-#96 are closed.
+- Current Checkpoint: merge
+- Current Stop: PR #103 is open for GH-92; code, carriers, metadata preflight, review readback, fact-chain, and local validation have passed, and hosted checks are being consumed before controlled merge.
+- Next Step: Consume hosted merge gate for PR #103, merge after required checks pass, then record post-merge closeout evidence and close #86/#92-#96.
 - Blockers: None recorded.
-- Latest Validation Summary: Closeout consumed PR #101, PR head `991dfc625893dca3b7225582ffc0337dd582cfba`, merge commit `688c89ec9f9f2944b95d2b755665bfd82d3762ab`, target branch `main`, hosted run 28533694122, and closed issues #85/#88/#89/#90/#91. Pre-merge validation passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, JSON readability, `git diff --check`, `loom suite validate --item GH-88`, `loom suite carrier validate --item GH-88`, `loom suite evidence validate --item GH-88`, `loom verify`, `loom fact-chain`, and Loom review readback.
-- Recovery Boundary: Revert this branch if the runtime skeleton leaks raw CDP endpoints, stores credentials/profile data, expands into Snapshot/Evidence/Viewer scope, or requires real browser/account state for default tests.
-- Current Lane: terminal closeout
+- Latest Validation Summary: GH-92 working tree passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, JSON readability, `loom doctor`, `loom verify`, `loom suite validate --item GH-92`, `loom suite carrier validate --item GH-92`, `loom suite evidence validate --item GH-92`, and `loom fact-chain`; `loom build` is blocked by installed CLI path consumption for repo-local `tools/loom.py`, while the required global suite/carrier/evidence surfaces passed separately.
+- Recovery Boundary: Revert this branch if Snapshot/RefMap/Evidence refs expose raw DOM, raw HAR, screenshots, video, cookies, tokens, profile paths, raw CDP endpoints, provider secrets, production payloads, or viewer/handoff scope.
+- Current Lane: merge-ready
 
 ## Runtime Evidence
 
 - Run Entry: not_applicable
 - Logs Entry: not_applicable
 - Diagnostics Entry: not_applicable
-- Verification Entry: .loom/specs/GH-88/closeout-evidence.json
-- Lane Entry: terminal closeout
+- Verification Entry: .loom/specs/GH-92/build-evidence.json
+- Lane Entry: merge-ready
 
 ## Sources
 
-- Static Truth: .loom/work-items/GH-88.md
-- Dynamic Truth: .loom/progress/GH-88.md
+- Static Truth: .loom/work-items/GH-92.md
+- Dynamic Truth: .loom/progress/GH-92.md
 - Locator Truth: .loom/bootstrap/init-result.json
 - Fact Chain CLI: loom fact-chain --target . --json
 
@@ -38,3 +38,4 @@
 
 - 2026-07-01: Runtime-upgrade carrier refreshed for Loom 0.25.0 maintenance PR #83; this does not claim product or runtime implementation.
 - 2026-07-01: GH-88 terminal closeout recorded after PR #101 merge, hosted run 28533694122 success, and GitHub issue closure for #85/#88-#91.
+- 2026-07-01: GH-92 carrier opened for FR #86 and issues #92-#96 on branch `work/GH-92-evidence-refs`.

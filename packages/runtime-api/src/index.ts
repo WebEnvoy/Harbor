@@ -1,9 +1,42 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  HARBOR_PAGE_SCENE_REFS_SCHEMA,
+  PageSceneStore,
+  type CaptureSnapshotInput,
+  type CoreSceneReference,
+  type EvidenceRecord,
+  type PageSceneUnavailable,
+  type RefMapRecord,
+  type SnapshotCaptureResult,
+  type SnapshotRecord
+} from "./page-scene.js";
+import { opaqueRef } from "./refs.js";
+
+export { HARBOR_PAGE_SCENE_REFS_SCHEMA } from "./page-scene.js";
+export type {
+  CaptureFailureClass,
+  CaptureMethod,
+  CaptureSnapshotInput,
+  CoreSceneReference,
+  EvidenceAccessState,
+  EvidenceCapturePolicy,
+  EvidenceRecord,
+  EvidenceType,
+  PageSceneUnavailable,
+  RedactionState,
+  RefMapElementInput,
+  RefMapElementRef,
+  RefMapRecord,
+  RetentionState,
+  SnapshotCaptureResult,
+  SnapshotRecord,
+  SourceTrace,
+  StorageScope
+} from "./page-scene.js";
 
 export const HARBOR_RUNTIME_FACTS_SCHEMA = "harbor-runtime-facts/v0";
 
@@ -78,13 +111,14 @@ const baselineFacts: RuntimeFact[] = [
 
 export class HarborRuntime {
   private readonly sessions = new Map<string, SessionRecord>();
+  private readonly pageScenes = new PageSceneStore();
 
   constructor(private readonly launcher: LocalProviderLauncher = launchLocalDedicatedProvider) {}
 
   async createSession(input: CreateRuntimeSessionInput = {}): Promise<RuntimeSessionFacts> {
     const now = new Date().toISOString();
-    const provider_ref = ref("provider");
-    const profile_ref = ref("profile");
+    const provider_ref = opaqueRef("provider");
+    const profile_ref = opaqueRef("profile");
     const launch = await this.launcher({
       browser_path: input.browser_path ?? "",
       headless: input.headless ?? true,
@@ -92,7 +126,7 @@ export class HarborRuntime {
       profile_ref,
       provider_ref
     });
-    const runtime_session_ref = ref("session");
+    const runtime_session_ref = opaqueRef("session");
     const ready = launch.status === "ready";
     const facts: RuntimeSessionFacts = {
       schema_version: HARBOR_RUNTIME_FACTS_SCHEMA,
@@ -122,6 +156,38 @@ export class HarborRuntime {
     return facts ? snapshot(facts) : null;
   }
 
+  captureSnapshot(runtime_session_ref: string, input: CaptureSnapshotInput = {}): SnapshotCaptureResult {
+    const record = this.sessions.get(runtime_session_ref);
+    const result = this.pageScenes.capture(record?.facts ?? null, input);
+    if (record && result.status === "captured") {
+      const captured_at = result.core_scene_ref.captured_at;
+      record.facts.last_seen_at = captured_at;
+      record.facts.availability.snapshot = "available";
+      record.facts.availability.evidence = "available";
+      record.facts.facts.push(
+        { key: "snapshot.capture", source: "observed", value: "available", evidence_ref: result.evidence_refs[0] },
+        { key: "evidence.capture", source: "validation_evidence", value: "refs_available", evidence_ref: result.evidence_refs[1] }
+      );
+    }
+    return result;
+  }
+
+  getSnapshot(snapshot_ref: string): SnapshotRecord | PageSceneUnavailable {
+    return this.pageScenes.getSnapshot(snapshot_ref, (runtime_session_ref) => this.isSessionReadable(runtime_session_ref));
+  }
+
+  getRefMap(refmap_ref: string): RefMapRecord | PageSceneUnavailable {
+    return this.pageScenes.getRefMap(refmap_ref, (runtime_session_ref) => this.isSessionReadable(runtime_session_ref));
+  }
+
+  getEvidence(evidence_ref: string): EvidenceRecord | PageSceneUnavailable {
+    return this.pageScenes.getEvidence(evidence_ref);
+  }
+
+  getCoreSceneReference(snapshot_ref: string): CoreSceneReference | PageSceneUnavailable {
+    return this.pageScenes.getCoreSceneReference(snapshot_ref, (runtime_session_ref) => this.isSessionReadable(runtime_session_ref));
+  }
+
   async closeSession(runtime_session_ref: string): Promise<RuntimeSessionFacts | null> {
     const record = this.sessions.get(runtime_session_ref);
     if (!record) return null;
@@ -131,7 +197,13 @@ export class HarborRuntime {
     record.facts.closed_at = now;
     record.facts.last_seen_at = now;
     record.facts.availability.cdp = "unavailable";
+    record.facts.availability.snapshot = "unavailable";
     return snapshot(record.facts);
+  }
+
+  private isSessionReadable(runtime_session_ref: string): boolean {
+    const lifecycle = this.sessions.get(runtime_session_ref)?.facts.lifecycle_state;
+    return lifecycle === "active" || lifecycle === "idle";
   }
 }
 
@@ -153,10 +225,10 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
   try {
     const port = await waitForDevtoolsPort(profileDir, input.timeout_ms);
     const version = await fetchVersion(port);
-    const evidence_ref = ref("validation");
+    const evidence_ref = opaqueRef("validation");
     return {
       status: "ready",
-      cdp_ref: ref("cdp"),
+      cdp_ref: opaqueRef("cdp"),
       facts: [
         { key: "browser.launch", source: "observed", value: "ready", evidence_ref },
         { key: "cdp.version", source: "validation_evidence", value: `${version.Browser} ${version["Protocol-Version"]}`, evidence_ref }
@@ -172,10 +244,10 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
 export function createFixtureLauncher(status: "ready" | "unavailable" = "ready"): LocalProviderLauncher {
   return async () => {
     if (status === "unavailable") return unavailable("provider_unavailable", "Fixture provider unavailable.");
-    const evidence_ref = ref("validation");
+    const evidence_ref = opaqueRef("validation");
     return {
       status: "ready",
-      cdp_ref: ref("cdp"),
+      cdp_ref: opaqueRef("cdp"),
       facts: [
         { key: "browser.launch", source: "observed", value: "ready", evidence_ref },
         { key: "cdp.version", source: "validation_evidence", value: "FixtureBrowser 1.0", evidence_ref }
@@ -233,12 +305,8 @@ async function closeBrowser(child: ChildProcess, profileDir: string): Promise<vo
   await rm(profileDir, { force: true, maxRetries: 10, recursive: true, retryDelay: 100 });
 }
 
-function ref(kind: string): string {
-  return `${kind}_${randomUUID()}`;
-}
-
-function snapshot(facts: RuntimeSessionFacts): RuntimeSessionFacts {
-  return structuredClone(facts);
+function snapshot<T>(value: T): T {
+  return structuredClone(value);
 }
 
 async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<void> {
