@@ -2,30 +2,41 @@
   "schema_version": "loom-review/v1",
   "item_id": "GH-88",
   "decision": "allow",
-  "kind": "code_review",
-  "summary": "Runtime Session smoke implementation is approved for GH-88 through GH-91 scope.",
+  "kind": "general_review",
+  "summary": "Post-merge closeout-only review for GH-88 is approved. Scope is limited to terminal closeout carrier sync for already merged PR #101 and closed issues #85/#88-#91; no runtime API behavior, provider behavior, snapshot/evidence/viewer scope, dependency, schema, workflow, or release change is approved.",
   "reviewer": "codex",
-  "reviewed_head": "6084b43aecbeb0e0a97e790dd3203434d1b65431",
-  "reviewed_validation_summary": "`pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, JSON readability, `loom suite validate --item GH-88`, `loom suite carrier validate --item GH-88`, `loom suite evidence validate --item GH-88`, `loom verify`, and `loom fact-chain` passed on branch `work/GH-88-runtime-session-smoke`. Local smoke launched Chrome/149.0.7827.201 with a temporary dedicated profile and opaque `cdp_ref`; hosted run 28532906940 passed `py-compile`, `demo-bootstrap`, `repo-local-cli`, and `loom-check`, while `loom-pr-merge-gate` blocked on missing review artifacts.",
+  "authored_at": "2026-07-01T17:01:59Z",
+  "reviewed_head": "0dfe0cf25ab57b167c8b99403fe61700dc8d0999",
+  "reviewed_validation_summary": "`jq empty .loom/specs/GH-88/closeout-evidence.json`, `git diff --check`, `loom fact-chain --target . --json`, `loom suite validate --target . --item GH-88 --json`, `loom suite carrier validate --target . --item GH-88 --json`, `loom suite evidence validate --target . --item GH-88 --json`, and `loom verify --target . --json` passed on closeout branch `work/GH-88-closeout` at reviewed head 0dfe0cf25ab57b167c8b99403fe61700dc8d0999.",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
   "follow_ups": [
-    "Do not treat this review as approval for Snapshot/RefMap/Evidence refs, Viewer/handoff/Core-App facts, hosted browser, real account state, durable profile storage, provider marketplace, task success claims, or public raw CDP/VNC/WebSocket endpoints.",
-    "After every push, refresh PR metadata head, rerun fact-chain and metadata preflight, and keep review head freshness limited to carrier-only review artifact changes."
+    "Re-review if this PR changes anything beyond GH-88 terminal closeout carrier metadata, GH-88 closeout evidence, GH-88 task carrier terminal status, status/progress readback, or this authored closeout review carrier.",
+    "This closeout review does not approve #92-#100, Snapshot/RefMap/Evidence refs, Viewer/handoff/Core-App facts, hosted browser, real account state, durable profile storage, provider marketplace, task success claims, or public raw CDP/VNC/WebSocket endpoints."
   ],
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "The implementation exposes create/get/close Runtime Session facts, local dedicated provider readiness, profile/session refs, lifecycle and error facts, and fact-source separation while keeping raw CDP endpoints and provider-specific secrets out of public facts."
+    "reason": "Closeout evidence consumes PR #101, head 991dfc625893dca3b7225582ffc0337dd582cfba, merge commit 688c89ec9f9f2944b95d2b755665bfd82d3762ab, target branch main, hosted run 28533694122, and closed issues #85/#88/#89/#90/#91 without changing product/runtime behavior."
   },
   "consumed_inputs": {
-    "implementation": "packages/runtime-api/src/index.ts",
-    "tests": "packages/runtime-api/src/index.test.ts",
-    "smoke": "packages/runtime-api/src/smoke.ts",
-    "spec": ".loom/specs/GH-88/spec.md",
-    "plan": ".loom/specs/GH-88/plan.md",
-    "evidence_map": ".loom/specs/GH-88/evidence-map.md",
-    "validation": "pnpm test; pnpm smoke:runtime; loom suite validate; loom suite carrier validate; loom suite evidence validate; loom fact-chain",
-    "pull_request": "https://github.com/WebEnvoy/Harbor/pull/101"
+    "work_item": ".loom/work-items/GH-88.md",
+    "recovery_entry": ".loom/progress/GH-88.md",
+    "status_surface": ".loom/status/current.md",
+    "task_carrier": ".loom/specs/GH-88/task-carrier.md",
+    "closeout_evidence": ".loom/specs/GH-88/closeout-evidence.json",
+    "implementation_pull_request": "https://github.com/WebEnvoy/Harbor/pull/101",
+    "implementation_pr_head": "991dfc625893dca3b7225582ffc0337dd582cfba",
+    "implementation_merge_commit": "688c89ec9f9f2944b95d2b755665bfd82d3762ab",
+    "hosted_run": "https://github.com/WebEnvoy/Harbor/actions/runs/28533694122",
+    "closed_issues": [
+      "https://github.com/WebEnvoy/Harbor/issues/85",
+      "https://github.com/WebEnvoy/Harbor/issues/88",
+      "https://github.com/WebEnvoy/Harbor/issues/89",
+      "https://github.com/WebEnvoy/Harbor/issues/90",
+      "https://github.com/WebEnvoy/Harbor/issues/91"
+    ],
+    "previous_implementation_review_head": "6084b43aecbeb0e0a97e790dd3203434d1b65431",
+    "previous_spec_review": ".loom/reviews/GH-88.spec.json"
   }
 }
