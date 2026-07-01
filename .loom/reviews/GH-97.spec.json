@@ -5,8 +5,8 @@
   "kind": "spec_review",
   "summary": "GH-97 spec and plan are approved for this minimal Runtime API slice. They cover Viewer refs, control/handoff facts, Core runtime facts readback, and App status fixture while explicitly excluding real viewer transport, full handoff state machine, and cross-repo changes.",
   "reviewer": "codex",
-  "authored_at": "2026-07-01T17:59:08Z",
-  "reviewed_head": "7a551a9148763aaadb2a43f370b62d7048d055e4",
+  "authored_at": "2026-07-01T18:01:29Z",
+  "reviewed_head": "45efccb8336752b5d3a1f6a5528542831baaee62",
   "reviewed_validation_summary": "GH-97 working tree passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, JSON readability, `loom verify`, `loom suite validate --item GH-97`, `loom suite carrier validate --item GH-97`, `loom suite evidence validate --item GH-97`, and `loom fact-chain`; `loom build` is blocked by installed CLI path consumption for repo-local `tools/loom.py`, while the required global suite/carrier/evidence surfaces passed separately.",
   "fallback_to": null,
   "findings": [],
@@ -29,6 +29,6 @@
     "task_carrier": ".loom/specs/GH-97/task-carrier.md",
     "evidence_map": ".loom/specs/GH-97/evidence-map.md",
     "build_evidence": ".loom/specs/GH-97/build-evidence.json",
-    "reviewed_head": "7a551a9148763aaadb2a43f370b62d7048d055e4"
+    "reviewed_head": "45efccb8336752b5d3a1f6a5528542831baaee62"
   }
 }
