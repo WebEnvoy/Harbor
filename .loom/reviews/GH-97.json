@@ -1,0 +1,54 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-97",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "GH-97 implementation is approved for PR review. Scope is limited to the in-process Viewer/control facts slice in `packages/runtime-api`, Core runtime facts readback, App runtime status fixture, GH-97 item-specific carriers, and fact-chain pointer sync for #87/#97-#100.",
+  "reviewer": "codex",
+  "authored_at": "2026-07-01T18:01:29Z",
+  "reviewed_head": "45efccb8336752b5d3a1f6a5528542831baaee62",
+  "reviewed_validation_summary": "GH-97 working tree passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, JSON readability, `loom verify`, `loom suite validate --item GH-97`, `loom suite carrier validate --item GH-97`, `loom suite evidence validate --item GH-97`, and `loom fact-chain`; `loom build` is blocked by installed CLI path consumption for repo-local `tools/loom.py`, while the required global suite/carrier/evidence surfaces passed separately.",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "Re-review if this PR changes public viewer/control fact shapes, handoff reason values, Core runtime facts payload, App fixture payload, Runtime Session lifecycle behavior, or PR head content beyond carrier-only review metadata.",
+    "This approval does not cover real viewer transport, hosted browser, public raw CDP/VNC/WebSocket endpoints, full remote console, account/secret custody, detailed handoff pause/lock state machine, task outcome/reconciliation, provider marketplace, or cross-repo Core/App changes."
+  ],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "The implementation adds opaque viewer refs, unavailable/unsupported viewer state, minimal control owner and handoff facts, Core runtime facts readback, App status fixture, focused tests, and smoke coverage without exposing raw runtime endpoints or implementing out-of-scope viewer/handoff behavior."
+  },
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/GH-97.md",
+    "recovery_entry": ".loom/progress/GH-97.md",
+    "status_surface": ".loom/status/current.md",
+    "spec": ".loom/specs/GH-97/spec.md",
+    "plan": ".loom/specs/GH-97/plan.md",
+    "implementation_contract": ".loom/specs/GH-97/implementation-contract.md",
+    "task_carrier": ".loom/specs/GH-97/task-carrier.md",
+    "evidence_map": ".loom/specs/GH-97/evidence-map.md",
+    "build_evidence": ".loom/specs/GH-97/build-evidence.json",
+    "reviewed_head": "45efccb8336752b5d3a1f6a5528542831baaee62",
+    "covered_issues": [
+      "https://github.com/WebEnvoy/Harbor/issues/87",
+      "https://github.com/WebEnvoy/Harbor/issues/97",
+      "https://github.com/WebEnvoy/Harbor/issues/98",
+      "https://github.com/WebEnvoy/Harbor/issues/99",
+      "https://github.com/WebEnvoy/Harbor/issues/100"
+    ],
+    "validation": [
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm smoke:runtime",
+      "pnpm smoke:runtime:local",
+      "git diff --check",
+      "jq empty .loom/specs/GH-97/build-evidence.json .loom/bootstrap/init-result.json package.json tsconfig.json",
+      "loom verify --target . --json",
+      "loom suite validate --target . --item GH-97 --json",
+      "loom suite carrier validate --target . --item GH-97 --json",
+      "loom suite evidence validate --target . --item GH-97 --json",
+      "loom fact-chain --target . --json"
+    ]
+  }
+}
