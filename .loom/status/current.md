@@ -6,7 +6,7 @@
 - Goal: Freeze Harbor TypeScript, Node.js, Playwright and CDP technical defaults for the Harbor Runtime architecture baseline.
 - Scope: Docs-only architecture baseline and ownership constraints covering milestone #7 issues #70-#79.
 - Execution Path: docs-only/harbor-runtime-architecture-baseline
-- Workspace Entry: /Volumes/2T/dev/WebEnvoy/.worktrees/Harbor-tech-baseline-harbor
+- Workspace Entry: .
 - Recovery Entry: .loom/progress/GH-71.md
 - Review Entry: .loom/reviews/GH-71.json
 - Validation Entry: .loom/specs/GH-71/build-evidence.json
