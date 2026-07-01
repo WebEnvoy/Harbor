@@ -3,16 +3,16 @@
   "item_id": "GH-82",
   "decision": "allow",
   "kind": "general_review",
-  "summary": "Workflow-only Loom 0.25.0 runtime-upgrade maintenance review is approved for PR #83. Scope is limited to the workflow pin, v0.25 repo metadata carrier declaration, and item-specific Loom maintenance carriers; no product, schema, API, runtime, fixture, release, or workstation plugin/cache change is approved.",
+  "summary": "Post-merge closeout-only review for PR #84 is approved. Scope is limited to terminal closeout metadata in .loom/progress/GH-82.md for the already merged Loom 0.25.0 runtime-upgrade maintenance item; no product behavior, workflow runtime behavior, schema/API/runtime implementation, dependency, fixture, or release change is approved.",
   "reviewer": "codex-coordinator",
-  "authored_at": "2026-07-01T11:44:01Z",
-  "reviewed_head": "70a020aa493a95739aaeeec3f69d4a58ff81b15d",
+  "authored_at": "2026-07-01T11:57:34Z",
+  "reviewed_head": "b59b532cec8bdb7df925974b21413db9494606aa",
   "reviewed_validation_summary": "The initial PR updated the workflow pin to 0.25.0 and added the v0.25 repo metadata declaration/spec. Hosted checks consumed v0.25.0 and exposed that fact-chain and semantic review must be item-specific for GH-82; this refresh aligns the current fact-chain and records workflow-only review evidence. Product/runtime tests remain not applicable.",
-  "fallback_to": "merge",
+  "fallback_to": null,
   "findings": [
     {
       "id": "compat-follow-up-1",
-      "summary": "Re-review if this PR changes product behavior, product docs semantics, code, schema/API/runtime behavior, fixtures, releases, workstation plugin/cache state, or dependencies unrelated to Loom.",
+      "summary": "Re-review if this PR changes anything beyond terminal closeout metadata or authored review carrier refresh.",
       "severity": "warn",
       "rebuttal": null,
       "disposition": {
@@ -23,7 +23,7 @@
   ],
   "blocking_issues": [],
   "follow_ups": [
-    "Re-review if this PR changes product behavior, product docs semantics, code, schema/API/runtime behavior, fixtures, releases, workstation plugin/cache state, or dependencies unrelated to Loom."
+    "Re-review if this PR changes anything beyond terminal closeout metadata or authored review carrier refresh."
   ],
   "consumed_inputs": {
     "work_item": ".loom/work-items/GH-82.md",
