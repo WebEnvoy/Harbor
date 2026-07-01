@@ -43,6 +43,11 @@
       "carrier": "task_carrier",
       "locator": ".loom/specs/GH-88/task-carrier.md",
       "summary": "Binds the implementation to GH-88 and records coverage for #85 and #89-#91."
+    },
+    {
+      "carrier": "evidence_map",
+      "locator": ".loom/specs/GH-88/evidence-map.md",
+      "summary": "Maps GH-88 behavior evidence, validation evidence, and fresh verification input to current PR #101 head."
     }
   ],
   "validation": {
@@ -89,6 +94,11 @@
       {
         "command": "loom suite carrier validate --target . --item GH-88 --json",
         "result": "pass"
+      },
+      {
+        "command": "loom suite evidence validate --target . --item GH-88 --json",
+        "result": "pass",
+        "notes": "Evidence map contains present behavior_evidence, test_evidence, and fresh_verification_input rows for PR #101 head b365dfa04f2f6270894ca22da02fa36eb8b6affd."
       },
       {
         "command": "loom verify --target . --json",
