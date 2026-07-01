@@ -12,11 +12,11 @@
 - Validation Entry: .loom/specs/GH-71/build-evidence.json
 - Closing Condition: PR is ready for review with no merge or issue closeout.
 - Current Checkpoint: merge
-- Current Stop: Merge-ready carrier prepared for docs-only technical baseline; hosted PR gate, merge and post-merge closeout are coordinator-owned next steps.
-- Next Step: Create or update PR, read back PR body/head metadata, run hosted gate, merge, then write post-merge closeout evidence.
+- Current Stop: Closeout carrier sync is ready for hosted gate and merge.
+- Next Step: Merge this closeout-only carrier PR; no product work remains in this batch.
 - Blockers: None recorded.
-- Latest Validation Summary: Review artifact approves the docs-only Harbor Runtime 架构基线 at head f413f8f6f81dbbb356d4e9ced92f08199b39dbc3. The final PR head may differ only by Loom review/progress/status carrier refresh and PR metadata updates; no code, dependency, schema, runtime, generated artifact, UI behavior, or product semantics changed after the reviewed head.
-- Recovery Boundary: Docs-only baseline. Re-review if the PR adds runtime/provider/viewer/evidence code, package scaffolding, dependency installation, database schema, browser binary, hosted browser, provider marketplace, credential vault, full desktop console, or `.loom` carriers outside GH-71/current binding.
+- Latest Validation Summary: Post-merge closeout consumed PR https://github.com/WebEnvoy/Harbor/pull/80, PR head cd207f0e53e71ba9af209f6aa5491e6cd305d0f4, merge commit 8170c02b5f72e2c7b520f3e5fa323892122fa3fb, target branch main, hosted run https://github.com/WebEnvoy/Harbor/actions/runs/28493861480, closed issues #70-#79, and closed milestone Harbor Runtime 架构基线 (#7). Scope remains docs-only technical architecture baseline; runtime/provider/viewer/evidence store/API/schema/database/browser implementation were not completed.
+- Recovery Boundary: Closed docs-only planning batch. Reopen or create a new Work Item if future work changes runtime/provider/viewer/evidence store/API/schema/database/browser implementation.
 - Current Lane: merge-ready
 
 ## Runtime Evidence
@@ -33,3 +33,7 @@
 - Dynamic Truth: .loom/progress/GH-71.md
 - Locator Truth: .loom/bootstrap/init-result.json
 - Fact Chain CLI: loom fact-chain --target . --json
+
+## Notes
+
+- 2026-07-01: Post-merge closeout recorded PR https://github.com/WebEnvoy/Harbor/pull/80, merge commit `8170c02b5f72e2c7b520f3e5fa323892122fa3fb`, hosted run https://github.com/WebEnvoy/Harbor/actions/runs/28493861480, closed issues #70-#79, and closed milestone Harbor Runtime 架构基线 (#7).

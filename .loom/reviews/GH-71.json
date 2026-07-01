@@ -3,28 +3,28 @@
   "item_id": "GH-71",
   "decision": "allow",
   "kind": "general_review",
-  "summary": "Harbor Runtime 架构基线 is approved for docs-only technical baseline merge gate; coverage #70-#79 is documented and implementation is explicitly out of scope.",
+  "summary": "Harbor 技术基线 closeout-only carrier is approved for merge as post-merge carrier closeout evidence.",
   "reviewer": "codex-coordinator",
-  "authored_at": "2026-07-01T04:34:08Z",
-  "reviewed_head": "f413f8f6f81dbbb356d4e9ced92f08199b39dbc3",
-  "reviewed_validation_summary": "Review artifact approves the docs-only Harbor Runtime 架构基线 at head f413f8f6f81dbbb356d4e9ced92f08199b39dbc3. The final PR head may differ only by Loom review/progress/status carrier refresh and PR metadata updates; no code, dependency, schema, runtime, generated artifact, UI behavior, or product semantics changed after the reviewed head.",
+  "authored_at": "2026-07-01T04:47:55Z",
+  "reviewed_head": "773a836053755a09967d3a5b9884da15461795cd",
+  "reviewed_validation_summary": "Post-merge closeout consumed PR https://github.com/WebEnvoy/Harbor/pull/80, PR head cd207f0e53e71ba9af209f6aa5491e6cd305d0f4, merge commit 8170c02b5f72e2c7b520f3e5fa323892122fa3fb, target branch main, hosted run https://github.com/WebEnvoy/Harbor/actions/runs/28493861480, closed issues #70-#79, and closed milestone Harbor Runtime 架构基线 (#7). Scope remains docs-only technical architecture baseline; runtime/provider/viewer/evidence store/API/schema/database/browser implementation were not completed.",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
   "follow_ups": [
-    "Do not treat this approval as runtime、provider、viewer、evidence store、API/schema、database、browser binary 实现."
+    "This approval only covers closeout carrier synchronization after the content PR was merged, issues were closed, and the milestone was closed. It does not approve new product semantics or implementation work."
   ],
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "The reviewed head freezes the docs-only Harbor Runtime 架构基线 and AGENTS/contracts constraints without adding code, dependencies, schemas, runtime behavior, generated artifacts, UI behavior, or user-facing implementation."
+    "reason": "PR #81 closeout sync only; no product semantics or implementation changes."
   },
   "consumed_inputs": {
     "repository": "WebEnvoy/Harbor",
     "work_item": "GH-71",
     "branch": "work/tech-baseline-harbor",
-    "reviewed_head": "f413f8f6f81dbbb356d4e9ced92f08199b39dbc3",
+    "reviewed_head": "773a836053755a09967d3a5b9884da15461795cd",
     "coverage": "#70-#79",
     "suite_path": "minimal_docs_only",
-    "validation": "git diff --check; JSON readability; item-specific docs-only suite carrier; hosted gate required before merge"
+    "validation": "git diff --check; loom fact-chain --target . --item <item> --json; closeout-only PR body/head readback; hosted gate required before merge"
   }
 }

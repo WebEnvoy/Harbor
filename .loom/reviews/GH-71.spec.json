@@ -3,14 +3,14 @@
   "item_id": "GH-71",
   "decision": "allow",
   "kind": "spec_review",
-  "summary": "Harbor Runtime 架构基线 docs-only spec is scoped to the current milestone and covers #70-#79 without implementation completion.",
+  "summary": "Harbor 技术基线 closeout-only carrier is approved for merge as post-merge carrier closeout evidence.",
   "reviewer": "codex-coordinator",
-  "authored_at": "2026-07-01T04:34:08Z",
-  "reviewed_head": "f413f8f6f81dbbb356d4e9ced92f08199b39dbc3",
-  "reviewed_validation_summary": "Review artifact approves the docs-only Harbor Runtime 架构基线 at head f413f8f6f81dbbb356d4e9ced92f08199b39dbc3. The final PR head may differ only by Loom review/progress/status carrier refresh and PR metadata updates; no code, dependency, schema, runtime, generated artifact, UI behavior, or product semantics changed after the reviewed head.",
+  "authored_at": "2026-07-01T04:47:55Z",
+  "reviewed_head": "773a836053755a09967d3a5b9884da15461795cd",
+  "reviewed_validation_summary": "Post-merge closeout consumed PR https://github.com/WebEnvoy/Harbor/pull/80, PR head cd207f0e53e71ba9af209f6aa5491e6cd305d0f4, merge commit 8170c02b5f72e2c7b520f3e5fa323892122fa3fb, target branch main, hosted run https://github.com/WebEnvoy/Harbor/actions/runs/28493861480, closed issues #70-#79, and closed milestone Harbor Runtime 架构基线 (#7). Scope remains docs-only technical architecture baseline; runtime/provider/viewer/evidence store/API/schema/database/browser implementation were not completed.",
   "fallback_to": null,
   "blocking_issues": [],
   "follow_ups": [
-    "Do not treat this approval as runtime、provider、viewer、evidence store、API/schema、database、browser binary 实现."
+    "This approval only covers closeout carrier synchronization after the content PR was merged, issues were closed, and the milestone was closed. It does not approve new product semantics or implementation work."
   ]
 }
