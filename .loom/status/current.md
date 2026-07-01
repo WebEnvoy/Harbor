@@ -11,13 +11,13 @@
 - Review Entry: .loom/reviews/GH-71.json
 - Validation Entry: .loom/specs/GH-71/build-evidence.json
 - Closing Condition: PR is ready for review with no merge or issue closeout.
-- Current Checkpoint: build
-- Current Stop: Harbor Runtime architecture baseline docs are being prepared for PR Ready.
-- Next Step: Run local docs-only validation, push `work/tech-baseline-harbor`, create PR, then read back PR body and head SHA.
+- Current Checkpoint: merge
+- Current Stop: Merge-ready carrier prepared for docs-only technical baseline; hosted PR gate, merge and post-merge closeout are coordinator-owned next steps.
+- Next Step: Create or update PR, read back PR body/head metadata, run hosted gate, merge, then write post-merge closeout evidence.
 - Blockers: `loom build` local tool path/CLI consumption blocker for suite validate/carrier JSON; standalone suite commands pass.
-- Latest Validation Summary: 2026-07-01T04:21Z docs-only validation: `git diff --check` pass; JSON readability pass for `.loom/specs/GH-71/build-evidence.json` and `.loom/bootstrap/init-result.json`; Markdown readability pass; `loom suite validate --target . --item GH-71 --json` returned not_applicable with valid rationale; `loom suite carrier validate --target . --item GH-71 --json` pass; `loom fact-chain --target . --json` pass. `loom build --target . --item GH-71 --build-evidence .loom/specs/GH-71/build-evidence.json --json` blocked because the build flow could not consume suite validate/carrier CLI JSON from repo-local `tools/loom.py`; standalone global suite commands passed, so this is classified as a tool path/CLI consumption blocker, not a docs or carrier content blocker.
+- Latest Validation Summary: Static validation passed before review carrier; semantic/spec review artifacts approve docs-only content head `93c8ae5b1c88f4e911dec85fb9550a7839a5e1c2` and final PR head may differ only by carrier/status updates.
 - Recovery Boundary: Docs-only baseline. Re-review if the PR adds runtime/provider/viewer/evidence code, package scaffolding, dependency installation, database schema, browser binary, hosted browser, provider marketplace, credential vault, full desktop console, or `.loom` carriers outside GH-71/current binding.
-- Current Lane: docs-only implementation
+- Current Lane: merge-ready
 
 ## Runtime Evidence
 

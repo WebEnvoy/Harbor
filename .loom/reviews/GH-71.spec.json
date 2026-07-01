@@ -1,0 +1,16 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-71",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "Harbor Runtime 架构基线 docs-only spec is scoped to the current milestone and covers #70-#79 without implementation completion.",
+  "reviewer": "codex-coordinator",
+  "authored_at": "2026-07-01T04:27:09Z",
+  "reviewed_head": "93c8ae5b1c88f4e911dec85fb9550a7839a5e1c2",
+  "reviewed_validation_summary": "Reviewed content head 93c8ae5b1c88f4e911dec85fb9550a7839a5e1c2; docs-only scope, git diff --check and JSON readability pass before review carrier. Final PR head may include carrier-only review/status updates.",
+  "fallback_to": null,
+  "blocking_issues": [],
+  "follow_ups": [
+    "Do not treat this approval as runtime、provider、viewer、evidence store、API/schema、database、browser binary 实现."
+  ]
+}
