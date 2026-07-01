@@ -16,6 +16,29 @@
 
 测试应覆盖 typecheck、lint、unit tests、Runtime API contract tests、storage schema validation 和 browser driver smoke tests。测试文件建议使用 `*.test.ts` 或 `*.spec.ts`。Driver 测试必须明确是否需要本地浏览器、Docker 或远程 CDP，不能假设开发机已有同一环境。
 
+## Harbor Runtime 技术基线
+
+- 默认技术栈是 TypeScript / Node.js；browser automation/provider baseline 是 Playwright primitives 与 CDP；本地事实存储默认 SQLite metadata/refs，filesystem 只保存 policy-allowed artifact locator。
+- 不因 docs-only PR 安装 Playwright、创建 `package.json`、引入 provider adapter、runtime server、viewer、evidence store、database schema 或 browser binary。
+- Rust / Go 只在进程守护、沙箱、本地加密、低层代理等系统边界经 ADR 引入。
+- Browser Driver 只负责 launch/connect/configure/health/facts；不得实现站点任务策略、task runner loop、provider ranking、目标站点成功率或 Lode capability 逻辑。
+- Provider 专有字段、launch flags、anti-detection claims、raw CDP/VNC/ws endpoints 和 provider secrets 不得泄漏为 Harbor 公共模型。
+- Runtime facts 不承诺任务成功；Core 拥有 admission、Run Record、task outcome、unknown outcome 和 reconciliation。
+- Snapshot/RefMap/Evidence 默认只暴露 refs、source_trace、redaction、retention、access state 和 structured unavailable state；不要默认保存 raw DOM、raw HAR、完整 request/response bodies、未脱敏 screenshot/video/trace 或 production payload。
+- Viewer/handoff/control ownership 是 Harbor runtime facts 和 Core/App intent 的组合；App 不拥有 Runtime Session truth，Harbor 不自动抢回用户控制。
+
+## Runtime smoke 最低要求
+
+后续 provider/session/evidence/viewer 代码 PR 至少要留下能证明以下事实的 smoke 入口：
+
+- provider launch 或 connect readiness；
+- Runtime Session facts readback；
+- configured/observed/provider_claim/validation_evidence 分离；
+- Snapshot/RefMap/Evidence refs 产生或结构化 unavailable；
+- viewer/handoff/control owner facts readback（触碰 viewer/handoff 时）。
+
+默认 smoke 不得使用真实账号、credential、生产页面 payload、raw cookies/storage、未脱敏截图、raw HAR、raw DOM 或 video。docs-only PR 可只跑 Markdown/metadata 检查和 `git diff --check`。
+
 ## 提交与 Pull Request 规范
 
 提交信息使用 Conventional Commits，例如 `docs: refine browser driver model`、`feat: add runtime session API`。PR 需要说明影响的核心对象、API 变化、验证命令和是否涉及本地敏感状态。涉及 VNC、CDP、Cookie、Profile 或 Evidence 的改动，必须说明数据边界和默认行为。
