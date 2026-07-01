@@ -5,8 +5,8 @@
   "kind": "spec_review",
   "summary": "Runtime-upgrade-only spec is sufficient for this Loom 0.25.0 workflow maintenance PR. Suite path is not_applicable only because changed paths are limited to workflow/runtime metadata and item-specific carrier evidence.",
   "reviewer": "codex-coordinator",
-  "authored_at": "2026-07-01T11:38:29Z",
-  "reviewed_head": "343334359769a3fac958e35914a7245bbd64b39e",
+  "authored_at": "2026-07-01T11:43:54Z",
+  "reviewed_head": "70a020aa493a95739aaeeec3f69d4a58ff81b15d",
   "reviewed_validation_summary": "The initial PR updated the workflow pin to 0.25.0 and added the v0.25 repo metadata declaration/spec. Hosted checks consumed v0.25.0 and exposed that fact-chain and semantic review must be item-specific for GH-82; this refresh aligns the current fact-chain and records workflow-only review evidence. Product/runtime tests remain not applicable.",
   "fallback_to": "merge",
   "findings": [

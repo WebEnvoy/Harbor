@@ -5,8 +5,8 @@
   "kind": "general_review",
   "summary": "Workflow-only Loom 0.25.0 runtime-upgrade maintenance review is approved for PR #83. Scope is limited to the workflow pin, v0.25 repo metadata carrier declaration, and item-specific Loom maintenance carriers; no product, schema, API, runtime, fixture, release, or workstation plugin/cache change is approved.",
   "reviewer": "codex-coordinator",
-  "authored_at": "2026-07-01T11:38:42Z",
-  "reviewed_head": "343334359769a3fac958e35914a7245bbd64b39e",
+  "authored_at": "2026-07-01T11:44:01Z",
+  "reviewed_head": "70a020aa493a95739aaeeec3f69d4a58ff81b15d",
   "reviewed_validation_summary": "The initial PR updated the workflow pin to 0.25.0 and added the v0.25 repo metadata declaration/spec. Hosted checks consumed v0.25.0 and exposed that fact-chain and semantic review must be item-specific for GH-82; this refresh aligns the current fact-chain and records workflow-only review evidence. Product/runtime tests remain not applicable.",
   "fallback_to": "merge",
   "findings": [
