@@ -15,8 +15,27 @@ import {
   type SnapshotRecord
 } from "./page-scene.js";
 import { opaqueRef } from "./refs.js";
+import {
+  appRuntimeStatusFixture,
+  coreRuntimeFacts,
+  HARBOR_APP_RUNTIME_STATUS_FIXTURE_SCHEMA,
+  HARBOR_CORE_RUNTIME_FACTS_SCHEMA,
+  HARBOR_VIEWER_CONTROL_FACTS_SCHEMA,
+  ViewerControlStore,
+  type AppRuntimeStatusFixture,
+  type CoreRuntimeFacts,
+  type ControlOwner,
+  type RecordHandoffInput,
+  type ViewerControlFacts,
+  type ViewerControlUnavailable
+} from "./viewer-control.js";
 
 export { HARBOR_PAGE_SCENE_REFS_SCHEMA } from "./page-scene.js";
+export {
+  HARBOR_APP_RUNTIME_STATUS_FIXTURE_SCHEMA,
+  HARBOR_CORE_RUNTIME_FACTS_SCHEMA,
+  HARBOR_VIEWER_CONTROL_FACTS_SCHEMA
+} from "./viewer-control.js";
 export type {
   CaptureFailureClass,
   CaptureMethod,
@@ -37,6 +56,24 @@ export type {
   SourceTrace,
   StorageScope
 } from "./page-scene.js";
+export type {
+  AppBrowserStatus,
+  AppRuntimeStatusFixture,
+  ControlOwner,
+  ControlOwnerFacts,
+  CoreRuntimeFacts,
+  HandoffReason,
+  InputCapability,
+  RecordHandoffInput,
+  TakeoverUnavailableReason,
+  ViewerAccessMode,
+  ViewerAvailability,
+  ViewerControlFacts,
+  ViewerControlFailureClass,
+  ViewerControlUnavailable,
+  ViewerRefFacts,
+  ViewerTransport
+} from "./viewer-control.js";
 
 export const HARBOR_RUNTIME_FACTS_SCHEMA = "harbor-runtime-facts/v0";
 
@@ -76,6 +113,8 @@ export interface RuntimeSessionFacts {
     evidence: AvailabilityState;
   };
   cdp_ref?: string;
+  viewer_ref?: string;
+  control_owner: ControlOwner;
   current_error: RuntimeErrorFact | null;
   facts: RuntimeFact[];
 }
@@ -112,6 +151,7 @@ const baselineFacts: RuntimeFact[] = [
 export class HarborRuntime {
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly pageScenes = new PageSceneStore();
+  private readonly viewerControls = new ViewerControlStore();
 
   constructor(private readonly launcher: LocalProviderLauncher = launchLocalDedicatedProvider) {}
 
@@ -144,9 +184,17 @@ export class HarborRuntime {
         evidence: "unavailable"
       },
       cdp_ref: ready ? launch.cdp_ref : undefined,
+      control_owner: ready ? "system" : "none",
       current_error: ready ? null : launch.error,
       facts: [...baselineFacts, ...launch.facts]
     };
+    const viewerControl = this.viewerControls.create(facts, now);
+    facts.viewer_ref = viewerControl.viewer.viewer_ref;
+    facts.facts.push(
+      { key: "viewer.ref", source: "configured", value: viewerControl.viewer.viewer_ref },
+      { key: "viewer.availability", source: "configured", value: viewerControl.viewer.availability },
+      { key: "control.owner", source: "configured", value: viewerControl.control.owner }
+    );
     this.sessions.set(runtime_session_ref, { facts, close: ready ? launch.close : undefined });
     return snapshot(facts);
   }
@@ -188,6 +236,47 @@ export class HarborRuntime {
     return this.pageScenes.getCoreSceneReference(snapshot_ref, (runtime_session_ref) => this.isSessionReadable(runtime_session_ref));
   }
 
+  getViewerControlFacts(runtime_session_ref: string): ViewerControlFacts | ViewerControlUnavailable {
+    return this.viewerControls.get(runtime_session_ref);
+  }
+
+  recordHandoff(runtime_session_ref: string, input: RecordHandoffInput): ViewerControlFacts | ViewerControlUnavailable {
+    const result = this.viewerControls.recordHandoff(runtime_session_ref, input);
+    if (!("status" in result)) {
+      const record = this.sessions.get(runtime_session_ref);
+      if (record) {
+        record.facts.control_owner = result.control.owner;
+        record.facts.last_seen_at = result.control.updated_at;
+        record.facts.facts.push(
+          { key: "control.owner", source: "observed", value: result.control.owner },
+          { key: "handoff.reason", source: "observed", value: result.control.handoff_reason ?? "none" },
+          { key: "takeover.available", source: "observed", value: String(result.control.takeover.available) }
+        );
+      }
+    }
+    return result;
+  }
+
+  getCoreRuntimeFacts(runtime_session_ref: string): CoreRuntimeFacts | ViewerControlUnavailable {
+    const record = this.sessions.get(runtime_session_ref);
+    if (!record) {
+      return { status: "unavailable", failure_class: "session_missing", message: "Runtime Session is missing.", retryable: true };
+    }
+    const viewerControl = this.viewerControls.get(runtime_session_ref);
+    if ("status" in viewerControl) return viewerControl;
+    return coreRuntimeFacts(record.facts, viewerControl);
+  }
+
+  getAppRuntimeStatusFixture(runtime_session_ref: string): AppRuntimeStatusFixture | ViewerControlUnavailable {
+    const record = this.sessions.get(runtime_session_ref);
+    if (!record) {
+      return { status: "unavailable", failure_class: "session_missing", message: "Runtime Session is missing.", retryable: true };
+    }
+    const viewerControl = this.viewerControls.get(runtime_session_ref);
+    if ("status" in viewerControl) return viewerControl;
+    return appRuntimeStatusFixture(record.facts, viewerControl);
+  }
+
   async closeSession(runtime_session_ref: string): Promise<RuntimeSessionFacts | null> {
     const record = this.sessions.get(runtime_session_ref);
     if (!record) return null;
@@ -197,7 +286,10 @@ export class HarborRuntime {
     record.facts.closed_at = now;
     record.facts.last_seen_at = now;
     record.facts.availability.cdp = "unavailable";
+    record.facts.availability.viewer = "unavailable";
     record.facts.availability.snapshot = "unavailable";
+    record.facts.control_owner = "none";
+    this.viewerControls.markClosed(runtime_session_ref, now);
     return snapshot(record.facts);
   }
 
