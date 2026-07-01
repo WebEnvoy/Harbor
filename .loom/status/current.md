@@ -10,22 +10,22 @@
 - Recovery Entry: .loom/progress/GH-97.md
 - Review Entry: .loom/reviews/GH-97.json
 - Validation Entry: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `pnpm smoke:runtime:local`; `git diff --check`; `loom suite validate --target . --item GH-97 --json`; `loom suite carrier validate --target . --item GH-97 --json`; `loom suite evidence validate --target . --item GH-97 --json`; `loom build --target . --item GH-97 --build-evidence .loom/specs/GH-97/build-evidence.json --json`.
-- Closing Condition: PR is merged into `main`, hosted checks and Loom gate pass for the PR head, closeout evidence records PR/head/merge commit/hosted run, and issues #87/#97-#100 are closed.
-- Current Checkpoint: merge
-- Current Stop: GH-97 code, carriers, suite/carrier/evidence validation, fact-chain, review readback, and verify have passed; PR metadata is being prepared before hosted checks.
-- Next Step: Push branch, create PR, read back PR body/head, run metadata preflight, then consume hosted checks before merge.
+- Closing Condition: Completed. PR #105 is merged into `main`, hosted checks and Loom gate passed for the PR head, closeout evidence records PR/head/merge commit/hosted run, and issues #87/#97-#100 are closed.
+- Current Checkpoint: closed
+- Current Stop: PR #105 was squash-merged into `main`, hosted run 28537724504 passed required checks, and GitHub issues #87/#97-#100 were closed with post-merge evidence.
+- Next Step: Merge GH-97 closeout carrier sync, close milestone #8 if all issues remain closed, and report completion to the global controller thread.
 - Blockers: None recorded.
-- Latest Validation Summary: GH-97 working tree passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, JSON readability, `loom verify`, `loom suite validate --item GH-97`, `loom suite carrier validate --item GH-97`, `loom suite evidence validate --item GH-97`, and `loom fact-chain`; `loom build` is blocked by installed CLI path consumption for repo-local `tools/loom.py`, while the required global suite/carrier/evidence surfaces passed separately.
+- Latest Validation Summary: Closeout consumed PR #105, PR head `6f4940ec8964fd95263317938fe8a169873506e1`, merge commit `e2aac7ed264431be8fe09e01a55b69f3073f72f7`, target branch `main`, hosted run 28537724504, and closed issues #87/#97/#98/#99/#100. Pre-merge validation passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, JSON readability, `git diff --check`, `loom verify`, `loom suite validate --item GH-97`, `loom suite carrier validate --item GH-97`, `loom suite evidence validate --item GH-97`, `loom fact-chain`, and Loom review readback; `loom build` remained classified as installed CLI path consumption for repo-local `tools/loom.py`, with required suite/carrier/evidence surfaces validated separately.
 - Recovery Boundary: Revert this branch if Viewer/control facts expose raw VNC/CDP/WebSocket endpoints, implement hosted browser/remote console, store accounts/secrets, change Core/App repositories, or claim task outcome/reconciliation behavior.
-- Current Lane: merge-ready
+- Current Lane: terminal closeout
 
 ## Runtime Evidence
 
 - Run Entry: not_applicable
 - Logs Entry: not_applicable
 - Diagnostics Entry: not_applicable
-- Verification Entry: .loom/specs/GH-97/build-evidence.json
-- Lane Entry: merge-ready
+- Verification Entry: .loom/specs/GH-97/closeout-evidence.json
+- Lane Entry: terminal closeout
 
 ## Sources
 
@@ -41,3 +41,4 @@
 - 2026-07-01: GH-92 carrier opened for FR #86 and issues #92-#96 on branch `work/GH-92-evidence-refs`.
 - 2026-07-01: GH-92 terminal closeout recorded after PR #103 merge, hosted run 28536212257 success, and GitHub issue closure for #86/#92-#96.
 - 2026-07-01: GH-97 carrier opened for FR #87 and issues #97-#100 on branch `work/GH-97-viewer-handoff-facts`.
+- 2026-07-01: GH-97 terminal closeout recorded after PR #105 merge, hosted run 28537724504 success, and GitHub issue closure for #87/#97-#100.

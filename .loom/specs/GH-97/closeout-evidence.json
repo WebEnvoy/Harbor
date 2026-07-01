@@ -1,0 +1,81 @@
+{
+  "schema_version": "loom-closeout-evidence/v1",
+  "item_id": "GH-97",
+  "recorded_at": "2026-07-01T18:06:00Z",
+  "repository": "WebEnvoy/Harbor",
+  "scope": "FR #87 and Work Items #97-#100 Viewer/handoff/Core-App facts",
+  "pull_request": {
+    "url": "https://github.com/WebEnvoy/Harbor/pull/105",
+    "number": 105,
+    "head_sha": "6f4940ec8964fd95263317938fe8a169873506e1",
+    "base": "main",
+    "state": "MERGED",
+    "merged_at": "2026-07-01T18:04:41Z",
+    "merge_commit": "e2aac7ed264431be8fe09e01a55b69f3073f72f7",
+    "merge_method": "squash"
+  },
+  "hosted_run": {
+    "url": "https://github.com/WebEnvoy/Harbor/actions/runs/28537724504",
+    "result": "pass",
+    "checks": [
+      "py-compile",
+      "demo-bootstrap",
+      "repo-local-cli",
+      "loom-check",
+      "loom-pr-merge-gate"
+    ]
+  },
+  "closed_issues": [
+    {
+      "number": 87,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/87",
+      "closed_at": "2026-07-01T18:04:43Z"
+    },
+    {
+      "number": 97,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/97",
+      "closed_at": "2026-07-01T18:05:40Z"
+    },
+    {
+      "number": 98,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/98",
+      "closed_at": "2026-07-01T18:05:46Z"
+    },
+    {
+      "number": 99,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/99",
+      "closed_at": "2026-07-01T18:05:49Z"
+    },
+    {
+      "number": 100,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/100",
+      "closed_at": "2026-07-01T18:05:51Z"
+    }
+  ],
+  "validation": [
+    "pnpm typecheck",
+    "pnpm test",
+    "pnpm smoke:runtime",
+    "pnpm smoke:runtime:local",
+    "git diff --check",
+    "jq empty .loom/specs/GH-97/build-evidence.json .loom/bootstrap/init-result.json package.json tsconfig.json .loom/reviews/GH-97.json .loom/reviews/GH-97.spec.json",
+    "loom verify --target . --json",
+    "loom suite validate --target . --item GH-97 --json",
+    "loom suite carrier validate --target . --item GH-97 --json",
+    "loom suite evidence validate --target . --item GH-97 --json",
+    "loom fact-chain --target . --json",
+    "loom flow review read --target . --item GH-97 --json",
+    "loom flow review read --target . --item GH-97 --review-file .loom/reviews/GH-97.spec.json --json",
+    "loom pr metadata-readback --target . --body-file .loom/tmp/gh97-pr-readback.md --surface merge_ready --json",
+    "loom pr metadata-preflight --surface merge_ready --body-file .loom/tmp/gh97-pr-body.md --compare-body-file .loom/tmp/gh97-pr-readback.md --json"
+  ],
+  "post_merge_note": "Issue closure and this evidence were recorded after PR #105 merged; they are post-merge closeout evidence, not pre-merge validation.",
+  "remaining_scope": [
+    "Milestone #8 implementation scope is complete after #85/#86/#87 and #88-#100 closeout; milestone closure still requires hosted closeout carrier sync and milestone state update."
+  ],
+  "residual_risks": [
+    "Viewer facts are ref-only and currently report unsupported; real viewer transport remains out of scope.",
+    "Handoff records minimal owner/reason/takeover facts only; PD-0010 detailed pause/lock state machine remains deferred.",
+    "Account/secret custody, hosted browser, raw endpoint exposure, full remote console, and cross-repo Core/App changes remain out of scope."
+  ]
+}
