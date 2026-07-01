@@ -11,13 +11,13 @@
 - Review Entry: .loom/reviews/GH-92.json
 - Validation Entry: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `pnpm smoke:runtime:local`; `git diff --check`; `loom suite validate --target . --item GH-92 --json`; `loom suite carrier validate --target . --item GH-92 --json`; `loom suite evidence validate --target . --item GH-92 --json`; `loom build --target . --item GH-92 --build-evidence .loom/specs/GH-92/build-evidence.json --json`.
 - Closing Condition: PR is merged into `main`, hosted checks and Loom gate pass for the PR head, closeout evidence records PR/head/merge commit/hosted run, and issues #86/#92-#96 are closed.
-- Current Checkpoint: build
-- Current Stop: Implementation is present in the working tree and GH-92 item-specific carriers are being bound before PR creation.
-- Next Step: Validate code and Loom carriers, commit, push `work/GH-92-evidence-refs`, and create a PR bound to GH-92.
+- Current Checkpoint: merge
+- Current Stop: PR #103 is open for GH-92; code, carriers, metadata preflight, review readback, fact-chain, and local validation have passed, and hosted checks are being consumed before controlled merge.
+- Next Step: Consume hosted merge gate for PR #103, merge after required checks pass, then record post-merge closeout evidence and close #86/#92-#96.
 - Blockers: None recorded.
 - Latest Validation Summary: GH-92 working tree passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, JSON readability, `loom doctor`, `loom verify`, `loom suite validate --item GH-92`, `loom suite carrier validate --item GH-92`, `loom suite evidence validate --item GH-92`, and `loom fact-chain`; `loom build` is blocked by installed CLI path consumption for repo-local `tools/loom.py`, while the required global suite/carrier/evidence surfaces passed separately.
 - Recovery Boundary: Revert this branch if Snapshot/RefMap/Evidence refs expose raw DOM, raw HAR, screenshots, video, cookies, tokens, profile paths, raw CDP endpoints, provider secrets, production payloads, or viewer/handoff scope.
-- Current Lane: implementation
+- Current Lane: merge-ready
 
 ## Runtime Evidence
 
@@ -25,7 +25,7 @@
 - Logs Entry: not_applicable
 - Diagnostics Entry: not_applicable
 - Verification Entry: .loom/specs/GH-92/build-evidence.json
-- Lane Entry: implementation
+- Lane Entry: merge-ready
 
 ## Sources
 
