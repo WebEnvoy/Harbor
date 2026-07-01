@@ -1,0 +1,86 @@
+{
+  "schema_version": "loom-closeout-evidence/v1",
+  "item_id": "GH-92",
+  "recorded_at": "2026-07-01T17:39:00Z",
+  "repository": "WebEnvoy/Harbor",
+  "scope": "FR #86 and Work Items #92-#96 Snapshot/RefMap/Evidence refs",
+  "pull_request": {
+    "url": "https://github.com/WebEnvoy/Harbor/pull/103",
+    "number": 103,
+    "head_sha": "4d144da8b5f17c2b9f07f14983942bf4361c2cbc",
+    "base": "main",
+    "state": "MERGED",
+    "merged_at": "2026-07-01T17:37:25Z",
+    "merge_commit": "8b229ea44b6239937baf3cf14b7aca8e3a049855",
+    "merge_method": "squash"
+  },
+  "hosted_run": {
+    "url": "https://github.com/WebEnvoy/Harbor/actions/runs/28536212257",
+    "result": "pass",
+    "checks": [
+      "py-compile",
+      "demo-bootstrap",
+      "repo-local-cli",
+      "loom-check",
+      "loom-pr-merge-gate"
+    ]
+  },
+  "closed_issues": [
+    {
+      "number": 86,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/86",
+      "closed_at": "2026-07-01T17:38:47Z"
+    },
+    {
+      "number": 92,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/92",
+      "closed_at": "2026-07-01T17:38:18Z"
+    },
+    {
+      "number": 93,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/93",
+      "closed_at": "2026-07-01T17:38:21Z"
+    },
+    {
+      "number": 94,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/94",
+      "closed_at": "2026-07-01T17:38:24Z"
+    },
+    {
+      "number": 95,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/95",
+      "closed_at": "2026-07-01T17:38:27Z"
+    },
+    {
+      "number": 96,
+      "url": "https://github.com/WebEnvoy/Harbor/issues/96",
+      "closed_at": "2026-07-01T17:38:30Z"
+    }
+  ],
+  "validation": [
+    "pnpm typecheck",
+    "pnpm test",
+    "pnpm smoke:runtime",
+    "pnpm smoke:runtime:local",
+    "git diff --check",
+    "jq empty .loom/specs/GH-92/build-evidence.json .loom/bootstrap/init-result.json package.json tsconfig.json .loom/reviews/GH-92.json .loom/reviews/GH-92.spec.json",
+    "loom doctor --target . --json",
+    "loom verify --target . --json",
+    "loom suite validate --target . --item GH-92 --json",
+    "loom suite carrier validate --target . --item GH-92 --json",
+    "loom suite evidence validate --target . --item GH-92 --json",
+    "loom fact-chain --target . --json",
+    "loom flow review read --target . --item GH-92 --json",
+    "loom flow review read --target . --item GH-92 --review-file .loom/reviews/GH-92.spec.json --json",
+    "loom pr metadata-readback --target . --body-file .loom/tmp/gh92-pr-readback-v3.md --surface merge_ready --json",
+    "loom pr metadata-preflight --body-file .loom/tmp/gh92-pr-readback-v3.md --compare-body-file .loom/tmp/gh92-pr-readback-v3.md --json"
+  ],
+  "post_merge_note": "Issue closure and this evidence were recorded after PR #103 merged; they are post-merge closeout evidence, not pre-merge validation.",
+  "remaining_scope": [
+    "#87/#97-#100 Viewer, handoff, Core/App facts remain for the next batch."
+  ],
+  "residual_risks": [
+    "Evidence refs are process-memory records in this first slice; restart-durable SQLite metadata remains out of scope.",
+    "Raw DOM/HAR/request/response bodies, screenshots/video, production payloads, real account state, Viewer/handoff facts, hosted browser, provider marketplace, anti-detection success claims, and cross-repo Core/App changes remain out of scope."
+  ]
+}
