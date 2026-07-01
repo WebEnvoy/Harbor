@@ -11,13 +11,13 @@
 - Review Entry: .loom/reviews/GH-97.json
 - Validation Entry: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `pnpm smoke:runtime:local`; `git diff --check`; `loom suite validate --target . --item GH-97 --json`; `loom suite carrier validate --target . --item GH-97 --json`; `loom suite evidence validate --target . --item GH-97 --json`; `loom build --target . --item GH-97 --build-evidence .loom/specs/GH-97/build-evidence.json --json`.
 - Closing Condition: PR is merged into `main`, hosted checks and Loom gate pass for the PR head, closeout evidence records PR/head/merge commit/hosted run, and issues #87/#97-#100 are closed.
-- Current Checkpoint: build
-- Current Stop: GH-97 code, carriers, suite/carrier/evidence validation, fact-chain, and verify have passed; `loom build` is classified as installed CLI path consumption for repo-local `tools/loom.py`.
-- Next Step: Author review records, commit the implementation/carriers, push, and prepare PR metadata for hosted checks.
+- Current Checkpoint: merge
+- Current Stop: GH-97 code, carriers, suite/carrier/evidence validation, fact-chain, review readback, and verify have passed; PR metadata is being prepared before hosted checks.
+- Next Step: Push branch, create PR, read back PR body/head, run metadata preflight, then consume hosted checks before merge.
 - Blockers: None recorded.
 - Latest Validation Summary: GH-97 working tree passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, JSON readability, `loom verify`, `loom suite validate --item GH-97`, `loom suite carrier validate --item GH-97`, `loom suite evidence validate --item GH-97`, and `loom fact-chain`; `loom build` is blocked by installed CLI path consumption for repo-local `tools/loom.py`, while the required global suite/carrier/evidence surfaces passed separately.
 - Recovery Boundary: Revert this branch if Viewer/control facts expose raw VNC/CDP/WebSocket endpoints, implement hosted browser/remote console, store accounts/secrets, change Core/App repositories, or claim task outcome/reconciliation behavior.
-- Current Lane: implementation
+- Current Lane: merge-ready
 
 ## Runtime Evidence
 
@@ -25,7 +25,7 @@
 - Logs Entry: not_applicable
 - Diagnostics Entry: not_applicable
 - Verification Entry: .loom/specs/GH-97/build-evidence.json
-- Lane Entry: implementation
+- Lane Entry: merge-ready
 
 ## Sources
 
