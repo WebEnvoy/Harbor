@@ -1,0 +1,28 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-88",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "GH-88 formal spec path is approved for the minimal Runtime Session smoke scope.",
+  "reviewer": "codex",
+  "reviewed_head": "6084b43aecbeb0e0a97e790dd3203434d1b65431",
+  "reviewed_validation_summary": "`pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, JSON readability, `loom suite validate --item GH-88`, `loom suite carrier validate --item GH-88`, `loom suite evidence validate --item GH-88`, `loom verify`, and `loom fact-chain` passed on branch `work/GH-88-runtime-session-smoke`. Local smoke launched Chrome/149.0.7827.201 with a temporary dedicated profile and opaque `cdp_ref`; hosted run 28532906940 passed `py-compile`, `demo-bootstrap`, `repo-local-cli`, and `loom-check`, while `loom-pr-merge-gate` blocked on missing review artifacts.",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "Do not expand this approval into Snapshot/RefMap/Evidence refs, Viewer/handoff facts, hosted browser, real account state, provider marketplace, or raw endpoint exposure."
+  ],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "The spec/plan/evidence-map define a narrow minimal suite with valid not_applicable rationale for full-suite artifacts and present behavior, test, and fresh verification evidence for GH-88."
+  },
+  "consumed_inputs": {
+    "spec": ".loom/specs/GH-88/spec.md",
+    "plan": ".loom/specs/GH-88/plan.md",
+    "evidence_map": ".loom/specs/GH-88/evidence-map.md",
+    "task_carrier": ".loom/specs/GH-88/task-carrier.md",
+    "suite_path": "minimal",
+    "validation": "loom suite validate; loom suite carrier validate; loom suite evidence validate; loom fact-chain"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-88",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Runtime Session smoke implementation is approved for GH-88 through GH-91 scope.",
+  "reviewer": "codex",
+  "reviewed_head": "6084b43aecbeb0e0a97e790dd3203434d1b65431",
+  "reviewed_validation_summary": "`pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, JSON readability, `loom suite validate --item GH-88`, `loom suite carrier validate --item GH-88`, `loom suite evidence validate --item GH-88`, `loom verify`, and `loom fact-chain` passed on branch `work/GH-88-runtime-session-smoke`. Local smoke launched Chrome/149.0.7827.201 with a temporary dedicated profile and opaque `cdp_ref`; hosted run 28532906940 passed `py-compile`, `demo-bootstrap`, `repo-local-cli`, and `loom-check`, while `loom-pr-merge-gate` blocked on missing review artifacts.",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "Do not treat this review as approval for Snapshot/RefMap/Evidence refs, Viewer/handoff/Core-App facts, hosted browser, real account state, durable profile storage, provider marketplace, task success claims, or public raw CDP/VNC/WebSocket endpoints.",
+    "After every push, refresh PR metadata head, rerun fact-chain and metadata preflight, and keep review head freshness limited to carrier-only review artifact changes."
+  ],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "The implementation exposes create/get/close Runtime Session facts, local dedicated provider readiness, profile/session refs, lifecycle and error facts, and fact-source separation while keeping raw CDP endpoints and provider-specific secrets out of public facts."
+  },
+  "consumed_inputs": {
+    "implementation": "packages/runtime-api/src/index.ts",
+    "tests": "packages/runtime-api/src/index.test.ts",
+    "smoke": "packages/runtime-api/src/smoke.ts",
+    "spec": ".loom/specs/GH-88/spec.md",
+    "plan": ".loom/specs/GH-88/plan.md",
+    "evidence_map": ".loom/specs/GH-88/evidence-map.md",
+    "validation": "pnpm test; pnpm smoke:runtime; loom suite validate; loom suite carrier validate; loom suite evidence validate; loom fact-chain",
+    "pull_request": "https://github.com/WebEnvoy/Harbor/pull/101"
+  }
+}
