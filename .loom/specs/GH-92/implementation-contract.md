@@ -8,7 +8,7 @@
 ## Approved Spec
 
 - Spec Path: .loom/specs/GH-92/spec.md
-- Spec Review Entry: pending
+- Spec Review Entry: .loom/reviews/GH-92.spec.json
 
 ## Implementation Scope
 
@@ -28,4 +28,4 @@
 ## Host Binding
 
 - Pull Request: pending
-- Reviewed Head: pending
+- Reviewed Head: a14522272d3e6a9fb2eb186f9372deb4c2369c26
