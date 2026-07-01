@@ -1,0 +1,16 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "GH-71",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "Harbor Runtime 架构基线 docs-only spec is scoped to the current milestone and covers #70-#79 without implementation completion.",
+  "reviewer": "codex-coordinator",
+  "authored_at": "2026-07-01T04:34:08Z",
+  "reviewed_head": "f413f8f6f81dbbb356d4e9ced92f08199b39dbc3",
+  "reviewed_validation_summary": "Review artifact approves the docs-only Harbor Runtime 架构基线 at head f413f8f6f81dbbb356d4e9ced92f08199b39dbc3. The final PR head may differ only by Loom review/progress/status carrier refresh and PR metadata updates; no code, dependency, schema, runtime, generated artifact, UI behavior, or product semantics changed after the reviewed head.",
+  "fallback_to": null,
+  "blocking_issues": [],
+  "follow_ups": [
+    "Do not treat this approval as runtime、provider、viewer、evidence store、API/schema、database、browser binary 实现."
+  ]
+}

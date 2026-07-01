@@ -1,0 +1,68 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "delegations": [],
+  "ownership_constraints": {
+    "write_scope": [
+      "docs/adr/0008-harbor-runtime-architecture-baseline.md",
+      "docs/contracts/README.md",
+      "AGENTS.md",
+      ".loom/work-items/GH-71.md",
+      ".loom/progress/GH-71.md",
+      ".loom/specs/GH-71/*",
+      ".loom/status/current.md",
+      ".loom/bootstrap/init-result.json"
+    ],
+    "forbidden_scope": [
+      "runtime/provider/viewer/evidence code",
+      "package.json or dependency installation",
+      "API/OpenAPI/schema or database schema",
+      "browser binary or generated facts",
+      "hosted browser, provider marketplace, credential vault, full desktop console",
+      "merge or issue closeout"
+    ],
+    "owner": "Harbor execution thread 019f1391-37cd-7ce2-a7ca-3e39881b2457"
+  },
+  "integration_evidence": [
+    {
+      "carrier": "adr",
+      "locator": "docs/adr/0008-harbor-runtime-architecture-baseline.md",
+      "summary": "Documents Harbor Runtime technical defaults, module/storage/ref/viewer boundaries, smoke minimums, research absorption and deferred scope for #70-#79."
+    },
+    {
+      "carrier": "contracts_index",
+      "locator": "docs/contracts/README.md",
+      "summary": "Links ADR 0008 and defines the required read order for later provider/session/evidence/viewer skeletons."
+    },
+    {
+      "carrier": "agents",
+      "locator": "AGENTS.md",
+      "summary": "Records stack, dependency, smoke-test, change-scope and safety constraints for future Harbor runtime work."
+    },
+    {
+      "carrier": "task_carrier",
+      "locator": ".loom/specs/GH-71/task-carrier.md",
+      "summary": "Binds the docs-only implementation to GH-71 and states coverage of #70 and #75 without closing issues."
+    }
+  ],
+  "validation": {
+    "status": "passed_before_review_carrier",
+    "content_head": "93c8ae5b1c88f4e911dec85fb9550a7839a5e1c2",
+    "commands": [
+      {
+        "command": "git diff --check",
+        "result": "pass"
+      },
+      {
+        "command": "jq empty on changed GH carrier JSON and bootstrap JSON",
+        "result": "pass"
+      },
+      {
+        "command": "semantic/spec review artifact creation",
+        "result": "pass",
+        "reviewed_head": "93c8ae5b1c88f4e911dec85fb9550a7839a5e1c2"
+      }
+    ],
+    "hosted_gate": "pending_pr_creation_or_update",
+    "recheck_condition": "Run hosted gate again after PR creation or every push; require real suite if code, schema, fixture, generated type, runtime, storage, dependency, or behavior changes are added."
+  }
+}

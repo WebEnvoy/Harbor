@@ -9,6 +9,20 @@ This directory indexes Stage 2 accepted Harbor contract truth. It does not dupli
 | Runtime Session lifecycle v0 | [ADR 0005](../adr/0005-runtime-session-lifecycle-v0.md) | `runtime_session_ref`, lifecycle states, lease, continuity, unavailable/error classifications, and viewer/CDP/evidence availability. |
 | Provider, Profile, and Identity facts v0 | [ADR 0006](../adr/0006-provider-profile-identity-facts-v0.md) | `provider_ref`, `profile_ref`, `execution_identity_ref`, fact source classes, claim/evidence separation, and sensitive data boundaries. |
 | Page scene reference facts v0 | [ADR 0007](../adr/0007-page-scene-reference-facts-v0.md) | `snapshot_ref`, `refmap_ref`, `source_trace`, `evidence_ref`, capture-source choices, failure classes, viewer access, and handoff facts. |
+| Runtime architecture baseline | [ADR 0008](../adr/0008-harbor-runtime-architecture-baseline.md) | TypeScript/Node/Playwright/CDP/SQLite defaults, module/storage boundaries, page-scene refs, viewer/control ownership, smoke-test minimums, and rejected/deferred runtime scope. |
+
+## Required read order for later skeletons
+
+Provider, session, evidence, or viewer implementation PRs must read ADR 0008 first, then the narrower accepted contract:
+
+| Future skeleton | Required contracts |
+|---|---|
+| Provider or Profile facts | ADR 0008, then ADR 0006 and ADR 0005. |
+| Runtime Session API | ADR 0008, then ADR 0005 and ADR 0006. |
+| Snapshot / RefMap / Evidence refs | ADR 0008, then ADR 0007 and ADR 0004. |
+| Viewer / handoff / control ownership | ADR 0008, then ADR 0007, ADR 0003, and App ADR `App/docs/adr/0002-run-viewer-and-handoff-surface.md`. |
+
+Deferred by ADR 0008: hosted browser, provider marketplace, credential vault, full desktop console, runtime package scaffold, database schema, browser binary installation, and implementation tutorials.
 
 ## Absorbed draft analysis
 
