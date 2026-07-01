@@ -2,21 +2,21 @@
 
 ## Derived Fact Chain View
 
-- Item ID: GH-82
-- Goal: Upgrade the repository Loom runtime workflow pin to 0.25.0.
-- Scope: Runtime-upgrade-only maintenance PR that updates `.github/workflows/loom-check.yml`, declares the v0.25 PR metadata carrier in `.loom/companion/repo-interface.json`, and records item-specific Loom carrier evidence.
-- Execution Path: ci-maintenance/loom-runtime-upgrade
+- Item ID: GH-88
+- Goal: Establish the first minimal Harbor Runtime API skeleton and deterministic Runtime Session smoke for milestone #8.
+- Scope: Runtime API create/get/close entry, local dedicated profile provider baseline facts, profile/session lifecycle facts, provider/runtime error facts, and ownership constraints covering #85 and Work Items #88-#91.
+- Execution Path: runtime-session-smoke/local-dedicated-profile
 - Workspace Entry: .
-- Recovery Entry: .loom/progress/GH-82.md
-- Review Entry: .loom/reviews/GH-82.json
-- Validation Entry: `git diff --check`; `jq empty .loom/companion/repo-interface.json`; `loom suite validate --item GH-82`; `loom runtime-upgrade check --item GH-82`; hosted GitHub checks for PR #83.
-- Closing Condition: PR #83 is merged, runtime-upgrade closeout evidence is recorded, issue #82 is closed, and main reads back Loom workflow pin 0.25.0.
+- Recovery Entry: .loom/progress/GH-88.md
+- Review Entry: .loom/reviews/GH-88.json
+- Validation Entry: `pnpm test`; `pnpm smoke:runtime`; `pnpm smoke:runtime:local`; `loom suite validate --target . --item GH-88 --json`; `loom suite carrier validate --target . --item GH-88 --json`; `loom suite evidence validate --target . --item GH-88 --json`; `loom build --target . --item GH-88 --build-evidence .loom/specs/GH-88/build-evidence.json --json`.
+- Closing Condition: PR is merged, hosted checks pass, ownership constraints are unchanged, closeout evidence records PR/head/merge commit/hosted run, and issues #88-#91 are closed or explicitly reconciled.
 - Current Checkpoint: merge
-- Current Stop: Merge-ready carrier refresh for the Loom 0.25.0 runtime-upgrade maintenance PR.
-- Next Step: Run PR gate and hosted checks for PR #83 at the current head, then merge only if they pass.
+- Current Stop: PR #101 has current-head Loom spec and implementation review records and is ready for hosted merge gate at head 5df38c05a84bbb2fa4dadd57e3a57de2c315974a.
+- Next Step: Rerun hosted gate and merge only if required checks pass; do not close issues before post-merge closeout evidence.
 - Blockers: None recorded.
-- Latest Validation Summary: The initial PR updated the workflow pin to 0.25.0 and added the v0.25 repo metadata declaration/spec. Hosted checks consumed v0.25.0 and exposed that fact-chain and semantic review must be item-specific for GH-82; this refresh aligns the current fact-chain and records workflow-only review evidence. Product/runtime tests remain not applicable.
-- Recovery Boundary: Runtime-upgrade-only maintenance. Re-review if the diff touches product code, product docs semantics, schema/API/runtime behavior, fixtures, releases, workstation plugin/cache state, or dependencies unrelated to Loom.
+- Latest Validation Summary: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, JSON readability, `loom suite validate --item GH-88`, `loom suite carrier validate --item GH-88`, `loom suite evidence validate --item GH-88`, `loom verify`, and `loom fact-chain` passed on branch `work/GH-88-runtime-session-smoke`. Local smoke launched Chrome/149.0.7827.201 with a temporary dedicated profile and opaque `cdp_ref`; hosted run 28532906940 passed `py-compile`, `demo-bootstrap`, `repo-local-cli`, and `loom-check`, while `loom-pr-merge-gate` blocked on missing review artifacts.
+- Recovery Boundary: Revert this branch if the runtime skeleton leaks raw CDP endpoints, stores credentials/profile data, expands into Snapshot/Evidence/Viewer scope, or requires real browser/account state for default tests.
 - Current Lane: merge-ready
 
 ## Runtime Evidence
@@ -24,13 +24,13 @@
 - Run Entry: not_applicable
 - Logs Entry: not_applicable
 - Diagnostics Entry: not_applicable
-- Verification Entry: .loom/progress/GH-82.md
-- Lane Entry: ci-maintenance
+- Verification Entry: .loom/specs/GH-88/build-evidence.json
+- Lane Entry: merge-ready
 
 ## Sources
 
-- Static Truth: .loom/work-items/GH-82.md
-- Dynamic Truth: .loom/progress/GH-82.md
+- Static Truth: .loom/work-items/GH-88.md
+- Dynamic Truth: .loom/progress/GH-88.md
 - Locator Truth: .loom/bootstrap/init-result.json
 - Fact Chain CLI: loom fact-chain --target . --json
 
