@@ -3,10 +3,10 @@
   "item_id": "GH-107",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Code review approved GH-107 Loom v0.26.3 maintenance adoption on head cee6ffc10663a3ce809bbbacc7a16aefe89ad56c. The diff is limited to installed-state metadata, workflow pin, and item-specific Loom carriers; no product code or business behavior changes are included.",
+  "summary": "Code review approved GH-107 Loom v0.26.3 maintenance adoption on head f116fac0965dee3c753816bc3dbedcd743af03ad. The post-review delta from cee6ffc10663a3ce809bbbacc7a16aefe89ad56c only synchronized the GH-107 work item validation entry carrier; no product code or business behavior changes are included.",
   "reviewer": "codex-main",
-  "authored_at": "2026-07-02T16:47:16Z",
-  "reviewed_head": "cee6ffc10663a3ce809bbbacc7a16aefe89ad56c",
+  "authored_at": "2026-07-02T17:02:43Z",
+  "reviewed_head": "f116fac0965dee3c753816bc3dbedcd743af03ad",
   "reviewed_validation_summary": "`loom installed-state validate --target . --json` passed after the v0.26.3 upgrade; `loom doctor --target . --json` passed; `loom runtime-upgrade check --target . --item GH-107 --issue 107 --pr 109 --branch work/GH-107-loom-v0.26.3-installed-state --head-sha cee6ffc10663a3ce809bbbacc7a16aefe89ad56c --to 0.26.3 --json` passed with workflow version `0.26.3`; `loom suite validate --target . --item GH-107 --json` returned not_applicable with no missing inputs; `loom pre-review --target . --item GH-107 --json` passed; `git diff --check` passed. Review-readiness source-distribution tools are not applicable to this consumer repo because `tools/skills_surface.py check` and `tools/loom_check.py --profile source --source-surface contract-only` are absent.",
   "fallback_to": null,
   "findings": [],
@@ -24,6 +24,6 @@
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Authored review approved the current maintenance-only head; subsequent drift must remain limited to GH-107 Loom maintenance carriers."
+    "reason": "Authored review approved the current maintenance-only head; subsequent drift must remain limited to GH-107 Loom review/progress/status closeout carriers."
   }
 }
