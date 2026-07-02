@@ -2,43 +2,34 @@
 
 ## Derived Fact Chain View
 
-- Item ID: GH-97
-- Goal: Expose the first Harbor Viewer, handoff, Core runtime facts, and App status fixture slice for FR #87.
-- Scope: Viewer ref/readback, viewer availability/access mode/expiry, control owner and handoff reason facts, takeover availability facts, Core runtime facts query, App runtime status fixture, and ownership constraints covering #87 and Work Items #97-#100.
-- Execution Path: viewer-handoff-facts/local-runtime-api
+- Item ID: GH-107
+- Goal: Refresh Harbor repo-level Loom adoption metadata and workflow pin to v0.26.3.
+- Scope: GH-107 is limited to `.loom/installed-state.json`, `.github/workflows/loom-check.yml`, GH-107 item-specific Loom carriers, and PR metadata required for Loom admission, review, merge-ready, and closeout.
+- Execution Path: maintenance/loom-v0.26.3-adoption
 - Workspace Entry: .
-- Recovery Entry: .loom/progress/GH-97.md
-- Review Entry: .loom/reviews/GH-97.json
-- Validation Entry: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `pnpm smoke:runtime:local`; `git diff --check`; `loom suite validate --target . --item GH-97 --json`; `loom suite carrier validate --target . --item GH-97 --json`; `loom suite evidence validate --target . --item GH-97 --json`; `loom build --target . --item GH-97 --build-evidence .loom/specs/GH-97/build-evidence.json --json`.
-- Closing Condition: Completed. PR #105 is merged into `main`, hosted checks and Loom gate passed for the PR head, closeout evidence records PR/head/merge commit/hosted run, and issues #87/#97-#100 are closed.
-- Current Checkpoint: closed
-- Current Stop: PR #105 was squash-merged into `main`, hosted run 28537724504 passed required checks, and GitHub issues #87/#97-#100 were closed with post-merge evidence.
-- Next Step: Merge GH-97 closeout carrier sync, close milestone #8 if all issues remain closed, and report completion to the global controller thread.
-- Blockers: None recorded.
-- Latest Validation Summary: Closeout consumed PR #105, PR head `6f4940ec8964fd95263317938fe8a169873506e1`, merge commit `e2aac7ed264431be8fe09e01a55b69f3073f72f7`, target branch `main`, hosted run 28537724504, and closed issues #87/#97/#98/#99/#100. Pre-merge validation passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, JSON readability, `git diff --check`, `loom verify`, `loom suite validate --item GH-97`, `loom suite carrier validate --item GH-97`, `loom suite evidence validate --item GH-97`, `loom fact-chain`, and Loom review readback; `loom build` remained classified as installed CLI path consumption for repo-local `tools/loom.py`, with required suite/carrier/evidence surfaces validated separately.
-- Recovery Boundary: Revert this branch if Viewer/control facts expose raw VNC/CDP/WebSocket endpoints, implement hosted browser/remote console, store accounts/secrets, change Core/App repositories, or claim task outcome/reconciliation behavior.
-- Current Lane: terminal closeout
+- Recovery Entry: .loom/progress/GH-107.md
+- Review Entry: .loom/reviews/GH-107.json
+- Validation Entry: `loom installed-state validate --target . --json`; `loom upgrade-plan --target . --host codex --json`; `loom upgrade --target . --host codex --apply --json`; `loom host verify --host codex --target . --json`; `loom skills check --target . --json`; `loom doctor --target . --json`; `loom runtime-upgrade check --target . --item GH-107 --issue 107 --pr 109 --branch work/GH-107-loom-v0.26.3-installed-state --head-sha 705d2c2ba25d5ce8e95dfb5ec9579ab59d9f2083 --to 0.26.3 --json`; PR body/head readback.
+- Closing Condition: PR #109 is merged into `main`, closeout evidence records PR/head/merge commit/hosted run, and issue #107 is closed.
+- Current Checkpoint: build
+- Current Stop: PR #109 is open for Loom v0.26.3 maintenance adoption. Repo changes are limited to installed-state metadata, workflow pin, and GH-107 Loom carriers.
+- Next Step: Run current-head review, merge-ready, hosted gate, merge, and closeout for PR #109.
+- Blockers: Hosted `loom-pr-merge-gate` previously blocked because the fact chain still pointed at GH-97; this carrier switches the fact chain to GH-107.
+- Latest Validation Summary: `loom installed-state validate --target . --json` passed after the v0.26.3 upgrade; `loom doctor --target . --json` passed; `loom runtime-upgrade check --target . --item GH-107 --issue 107 --pr 109 --branch work/GH-107-loom-v0.26.3-installed-state --head-sha 705d2c2ba25d5ce8e95dfb5ec9579ab59d9f2083 --to 0.26.3 --json` passed with workflow version `0.26.3`; PR metadata preflight/readback passed for head `705d2c2ba25d5ce8e95dfb5ec9579ab59d9f2083`; `git diff --check` passed. Review-readiness source-distribution tools are not applicable to this consumer repo because `tools/skills_surface.py` and `tools/loom_check.py` are absent.
+- Recovery Boundary: Keep GH-107 limited to Loom maintenance adoption metadata and workflow pin refresh. Do not add product code, business behavior, unrelated specs, repo-local runtime/plugin payloads, or bootstrap residue repair.
+- Current Lane: merge-ready
 
 ## Runtime Evidence
 
 - Run Entry: not_applicable
 - Logs Entry: not_applicable
 - Diagnostics Entry: not_applicable
-- Verification Entry: .loom/specs/GH-97/closeout-evidence.json
-- Lane Entry: terminal closeout
+- Verification Entry: .loom/progress/GH-107.md
+- Lane Entry: merge-ready
 
 ## Sources
 
-- Static Truth: .loom/work-items/GH-97.md
-- Dynamic Truth: .loom/progress/GH-97.md
+- Static Truth: .loom/work-items/GH-107.md
+- Dynamic Truth: .loom/progress/GH-107.md
 - Locator Truth: .loom/bootstrap/init-result.json
 - Fact Chain CLI: loom fact-chain --target . --json
-
-## Notes
-
-- 2026-07-01: Runtime-upgrade carrier refreshed for Loom 0.25.0 maintenance PR #83; this does not claim product or runtime implementation.
-- 2026-07-01: GH-88 terminal closeout recorded after PR #101 merge, hosted run 28533694122 success, and GitHub issue closure for #85/#88-#91.
-- 2026-07-01: GH-92 carrier opened for FR #86 and issues #92-#96 on branch `work/GH-92-evidence-refs`.
-- 2026-07-01: GH-92 terminal closeout recorded after PR #103 merge, hosted run 28536212257 success, and GitHub issue closure for #86/#92-#96.
-- 2026-07-01: GH-97 carrier opened for FR #87 and issues #97-#100 on branch `work/GH-97-viewer-handoff-facts`.
-- 2026-07-01: GH-97 terminal closeout recorded after PR #105 merge, hosted run 28537724504 success, and GitHub issue closure for #87/#97-#100.
