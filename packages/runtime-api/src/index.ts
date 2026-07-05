@@ -86,6 +86,7 @@ export type {
 
 export const HARBOR_RUNTIME_FACTS_SCHEMA = "harbor-runtime-facts/v0";
 export const HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA = "harbor-validation-runtime-facts/v0";
+export const HARBOR_WRITE_PRECHECK_FACTS_SCHEMA = "harbor-write-precheck-facts/v0";
 
 export type AvailabilityState = "available" | "unavailable" | "policy_denied" | "unsupported";
 export type FactSource = "configured" | "observed" | "provider_claim" | "validation_evidence";
@@ -146,6 +147,82 @@ export interface ValidationRuntimeFacts {
   blocking_reasons: RuntimeErrorFact[];
   availability: RuntimeSessionFacts["availability"];
   unavailable: null;
+}
+
+export type WritableTargetRole = "form" | "button" | "input" | "contenteditable" | "navigation";
+export type InputSensitivity = "public" | "sensitive" | "secret";
+export type InputExportPolicy = "safe_summary" | "redacted" | "never_export";
+export type InputValueState = "empty" | "present" | "redacted" | "unavailable";
+export type PreWriteGuardStatus = "active" | "blocked";
+
+export interface WritableTargetRef {
+  target_ref: string;
+  runtime_session_ref: string;
+  snapshot_ref: string;
+  refmap_ref: string;
+  evidence_refs: string[];
+  role: WritableTargetRole;
+  label: string;
+  locator_hint: string;
+  provenance: {
+    source: "fixture" | "provided_context";
+    captured_at: string;
+  };
+}
+
+export interface FormInputStateField {
+  field_ref: string;
+  target_ref: string;
+  label: string;
+  input_kind: string;
+  required: boolean;
+  sensitivity: InputSensitivity;
+  export_policy: InputExportPolicy;
+  value_state: InputValueState;
+}
+
+export interface WritePrecheckFacts {
+  schema_version: typeof HARBOR_WRITE_PRECHECK_FACTS_SCHEMA;
+  runtime_session_ref: string;
+  provider_ref: string;
+  profile_ref: string;
+  writable_target: WritableTargetRef;
+  form_state: {
+    snapshot_ref: string;
+    fields: FormInputStateField[];
+    state_summary: string;
+  };
+  pre_write_guard: {
+    status: PreWriteGuardStatus;
+    no_submit_guard: "active";
+    blocked_events: string[];
+    enforcement: "facts_only_no_real_submit";
+    runtime_ready: boolean;
+    blocking_reasons: RuntimeErrorFact[];
+  };
+  privacy_boundary: {
+    raw_values: "not_exposed";
+    credential_profile_storage: "not_exposed";
+    page_network_capture: "not_exposed";
+    export_boundary: "refs_and_redacted_field_state_only";
+  };
+  unavailable: null;
+}
+
+export interface WritePrecheckInput {
+  title?: string;
+  url?: string;
+  summary?: string;
+  target_label?: string;
+  locator_hint?: string;
+  fields?: readonly {
+    label: string;
+    input_kind?: string;
+    required?: boolean;
+    sensitivity?: InputSensitivity;
+    export_policy?: InputExportPolicy;
+    value_state?: InputValueState;
+  }[];
 }
 
 export interface CreateRuntimeSessionInput {
@@ -318,6 +395,82 @@ export class HarborRuntime {
       runtime_ready: record.facts.lifecycle_state === "active" || record.facts.lifecycle_state === "idle",
       blocking_reasons: record.facts.current_error ? [record.facts.current_error] : [],
       availability: snapshot(record.facts.availability),
+      unavailable: null
+    };
+  }
+
+  getWritePrecheckFacts(runtime_session_ref: string, input: WritePrecheckInput = {}): WritePrecheckFacts | ViewerControlUnavailable {
+    const record = this.sessions.get(runtime_session_ref);
+    if (!record) {
+      return { status: "unavailable", failure_class: "session_missing", message: "Runtime Session is missing.", retryable: true };
+    }
+    const capture = this.captureSnapshot(runtime_session_ref, {
+      title: input.title ?? "Write precheck fixture",
+      url: input.url ?? "https://example.test/write-precheck",
+      summary: input.summary ?? "Refs-only form state for validate-only preview.",
+      capture_method: "fixture",
+      source_locator: "fixture://write-precheck",
+      elements: [
+        { label: input.target_label ?? "Contact form", role: "form", locator_hint: input.locator_hint ?? "form[data-webenvoy-fixture='contact']" }
+      ]
+    });
+    if (capture.status !== "captured") {
+      return { status: "unavailable", failure_class: "viewer_unavailable", message: capture.message, retryable: capture.retryable };
+    }
+    const now = capture.core_scene_ref.captured_at;
+    const target_ref = opaqueRef("writable-target");
+    const fields = (input.fields ?? [
+      { label: "Email", input_kind: "email", required: true, sensitivity: "sensitive", export_policy: "redacted", value_state: "redacted" },
+      { label: "Message", input_kind: "textarea", required: true, sensitivity: "public", export_policy: "safe_summary", value_state: "present" },
+      { label: "Password", input_kind: "password", required: false, sensitivity: "secret", export_policy: "never_export", value_state: "unavailable" }
+    ]).map((field) => ({
+      field_ref: opaqueRef("field"),
+      target_ref,
+      label: field.label,
+      input_kind: field.input_kind ?? "text",
+      required: field.required ?? false,
+      sensitivity: field.sensitivity ?? "public",
+      export_policy: field.export_policy ?? (field.sensitivity === "secret" ? "never_export" : "safe_summary"),
+      value_state: field.value_state ?? (field.sensitivity === "secret" ? "unavailable" : "present")
+    }));
+    return {
+      schema_version: HARBOR_WRITE_PRECHECK_FACTS_SCHEMA,
+      runtime_session_ref,
+      provider_ref: record.facts.provider_ref,
+      profile_ref: record.facts.profile_ref,
+      writable_target: {
+        target_ref,
+        runtime_session_ref,
+        snapshot_ref: capture.snapshot_ref,
+        refmap_ref: capture.refmap_ref ?? "",
+        evidence_refs: capture.evidence_refs,
+        role: "form",
+        label: input.target_label ?? "Contact form",
+        locator_hint: input.locator_hint ?? "form[data-webenvoy-fixture='contact']",
+        provenance: {
+          source: "fixture",
+          captured_at: now
+        }
+      },
+      form_state: {
+        snapshot_ref: capture.snapshot_ref,
+        fields,
+        state_summary: "Field values are summarized as state only; raw values stay private."
+      },
+      pre_write_guard: {
+        status: record.facts.lifecycle_state === "active" || record.facts.lifecycle_state === "idle" ? "active" : "blocked",
+        no_submit_guard: "active",
+        blocked_events: ["submit", "publish", "send", "delete", "pay"],
+        enforcement: "facts_only_no_real_submit",
+        runtime_ready: record.facts.lifecycle_state === "active" || record.facts.lifecycle_state === "idle",
+        blocking_reasons: record.facts.current_error ? [record.facts.current_error] : []
+      },
+      privacy_boundary: {
+        raw_values: "not_exposed",
+        credential_profile_storage: "not_exposed",
+        page_network_capture: "not_exposed",
+        export_boundary: "refs_and_redacted_field_state_only"
+      },
       unavailable: null
     };
   }

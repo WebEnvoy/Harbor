@@ -21,6 +21,7 @@ const handoff = runtime.recordHandoff(session.runtime_session_ref, {
 });
 const coreRuntime = runtime.getCoreRuntimeFacts(session.runtime_session_ref);
 const validationRuntime = runtime.getValidationRuntimeFacts(session.runtime_session_ref);
+const writePrecheck = runtime.getWritePrecheckFacts(session.runtime_session_ref);
 const appStatus = runtime.getAppRuntimeStatusFixture(session.runtime_session_ref);
 const scene = capture?.status === "captured" ? runtime.getCoreSceneReference(capture.snapshot_ref) : capture;
 const evidenceStatus = capture?.status === "captured" ? runtime.getEvidenceStatusFixture(capture.snapshot_ref) : capture;
@@ -37,6 +38,7 @@ console.log(JSON.stringify({
   handoff,
   coreRuntime,
   validationRuntime,
+  writePrecheck,
   appStatus,
   evidenceStatus,
   staleEvidenceStatus,
@@ -52,6 +54,7 @@ if (
   "status" in handoff ||
   "status" in coreRuntime ||
   "status" in validationRuntime ||
+  "status" in writePrecheck ||
   "status" in appStatus ||
   !evidenceStatus ||
   "status" in evidenceStatus ||
