@@ -292,3 +292,40 @@ test("returns App-safe evidence status fixture without private raw material", as
   assert.equal(publicJson.includes("profile_path"), false);
   assert.equal(publicJson.includes("storage_state"), false);
 });
+
+test("returns write-precheck target and form facts without raw private material", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const session = await runtime.createSession();
+  const facts = runtime.getWritePrecheckFacts(session.runtime_session_ref, {
+    target_label: "Fixture contact form",
+    fields: [
+      { label: "Email", input_kind: "email", required: true, sensitivity: "sensitive", export_policy: "redacted", value_state: "redacted" },
+      { label: "Message", input_kind: "textarea", required: true, sensitivity: "public", export_policy: "safe_summary", value_state: "present" },
+      { label: "Password", input_kind: "password", required: false, sensitivity: "secret", export_policy: "never_export", value_state: "unavailable" }
+    ]
+  });
+
+  assert.equal("status" in facts, false);
+  if ("status" in facts) throw new Error("write-precheck facts should be readable");
+  assert.equal(facts.schema_version, "harbor-write-precheck-facts/v0");
+  assert.match(facts.writable_target.target_ref, /^writable-target_/);
+  assert.match(facts.writable_target.snapshot_ref, /^snapshot_/);
+  assert.equal(facts.writable_target.role, "form");
+  assert.equal(facts.form_state.fields.length, 3);
+  assert.equal(facts.form_state.fields[0]?.sensitivity, "sensitive");
+  assert.equal(facts.form_state.fields[0]?.export_policy, "redacted");
+  assert.equal(facts.form_state.fields[2]?.export_policy, "never_export");
+  assert.equal(facts.pre_write_guard.no_submit_guard, "active");
+  assert.deepEqual(facts.pre_write_guard.blocked_events, ["submit", "publish", "send", "delete", "pay"]);
+  assert.equal(facts.pre_write_guard.enforcement, "facts_only_no_real_submit");
+  assert.equal(facts.privacy_boundary.raw_values, "not_exposed");
+
+  const publicJson = JSON.stringify(facts);
+  assert.equal(publicJson.includes("raw_dom"), false);
+  assert.equal(publicJson.includes("raw_har"), false);
+  assert.equal(publicJson.includes("cookie"), false);
+  assert.equal(publicJson.includes("token"), false);
+  assert.equal(publicJson.includes("profile_path"), false);
+  assert.equal(publicJson.includes("storage_state"), false);
+  assert.equal(publicJson.includes("secret-value"), false);
+});
