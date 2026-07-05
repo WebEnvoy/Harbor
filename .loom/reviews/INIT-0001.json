@@ -2,11 +2,11 @@
   "schema_version": "loom-review/v1",
   "item_id": "INIT-0001",
   "decision": "allow",
-  "kind": "general_review",
-  "summary": "Implementation review accepts the carrier-only bootstrap repair and finds no product-behavior change in INIT-0001.",
+  "kind": "code_review",
+  "summary": "Carrier-only closeout review accepts INIT-0001 terminal metadata and idle pointer sync after bootstrap PR #130 merged.",
   "reviewer": "Codex thread 019f31a5-212e-7952-a56a-bba7ffe9b1b9",
-  "authored_at": "2026-07-05T10:46:45Z",
-  "reviewed_head": "475e6d474ba2889542446ef5a91b402384d74ade",
+  "authored_at": "2026-07-05T11:35:00Z",
+  "reviewed_head": "cf4558e412a58bb7b1e4172e2c62a2c388ac1c6b",
   "reviewed_validation_summary": "Bootstrap manifest exists; init-result JSON can be read mechanically; the first work item, status surface, and spec/plan artifacts exist.",
   "reviewed_validation_summary_hash": "dc624b94f286c7da372a81838efd71b6699c06bba6b373523093aca1b1318ac7",
   "validation_summary_source": "recovery.latest_validation_summary",
@@ -55,6 +55,14 @@
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Authored implementation review approved the current head for merge checkpoint consumption."
+    "reason": "Authored closeout review approved only INIT-0001 terminal carrier metadata and idle pointer restoration; bootstrap behavior was already reviewed and merged in PR #130."
+  },
+  "implementation_review_disposition": {
+    "status": "passed",
+    "reason": "Bootstrap behavior was reviewed and merged in PR #130; this carrier-only review covers only post-merge closeout metadata."
+  },
+  "carrier_only_closeout_review": {
+    "status": "passed",
+    "reason": "Closeout changes are limited to INIT-0001 terminal metadata, PR/merge evidence, and no_active_item pointer restoration."
   }
 }
