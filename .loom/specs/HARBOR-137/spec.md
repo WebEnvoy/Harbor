@@ -13,3 +13,8 @@
 - Runtime API returns writable target refs and form/input state for a fixture session.
 - Sensitive fields are marked redacted or never-export and raw values are absent.
 - No-submit guard facts identify blocked submit-like events for Core.
+
+## Suite Path
+
+- Suite path: minimal
+- full-path-artifacts not_applicable rationale: bounded Stage 6 Runtime API fixture and smoke slice; consumer boundary: Core consumes refs/status facts only; recheck condition: switch to full suite when adding persistent capture storage, hosted browser, preview evidence lifecycle, export/delete consent, or real profile/account capture.

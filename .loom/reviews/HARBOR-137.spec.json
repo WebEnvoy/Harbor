@@ -1,0 +1,26 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-137",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "Spec review accepts the Stage 6 Harbor write-precheck runtime facts batch as bounded refs-only target/form/guard truth for issues #137, #138, #139, and #140.",
+  "reviewer": "Codex thread 019f32e9-bd47-70a1-8b7c-f6bcbe16a4c5",
+  "authored_at": "2026-07-05T18:58:00Z",
+  "reviewed_head": "d8e0f90a51f3835a27f1e61bc216a3be6ae6b651",
+  "reviewed_validation_summary": "pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check; loom suite validate/evidence/carrier; loom fact-chain; loom verify passed locally before review artifact commit.",
+  "reviewed_validation_summary_hash": "b119839060614e2049f9fe6b5e62856e4fc8b8f25fe717e716eabacba7409ee4",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-137.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "The spec keeps Harbor as runtime/session/evidence refs owner, limits the batch to refs-only writable target, form state, sensitivity/export policy, and no-submit guard facts, and excludes true submit, hosted browser, production pages, persistent capture expansion, Core run truth, Lode package truth, and App UI."
+  },
+  "implementation_review_disposition": {
+    "status": "passed",
+    "reason": "The planned implementation is limited to Runtime API fixture facts, tests, smoke output, and item-specific Loom carrier for HARBOR-137."
+  }
+}
