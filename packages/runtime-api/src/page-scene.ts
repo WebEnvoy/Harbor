@@ -1,6 +1,7 @@
 import { opaqueRef } from "./refs.js";
 
 export const HARBOR_PAGE_SCENE_REFS_SCHEMA = "harbor-page-scene-refs/v0";
+export const HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA = "harbor-evidence-status-fixture/v0";
 
 export type CaptureFailureClass =
   | "snapshot_missing"
@@ -15,6 +16,8 @@ export type CaptureFailureClass =
 export type CaptureMethod = "provided_context" | "fixture";
 export type EvidenceAccessState = "available" | "missing" | "stale" | "expired" | "redacted" | "access_denied";
 export type EvidenceType = "snapshot" | "refmap" | "source_trace";
+export type EvidenceFreshnessState = "fresh" | "stale" | "expired" | "missing";
+export type EvidenceStatusDisplayState = "available" | "redacted" | "private" | "stale" | "expired" | "missing" | "unavailable";
 export type RedactionState = "not_required" | "redacted" | "capture_denied";
 export type RetentionState = "ephemeral" | "retained" | "expired";
 export type StorageScope = "process_memory";
@@ -132,6 +135,41 @@ export interface EvidenceRecord {
     capture_method: CaptureMethod;
     source_locator?: string;
   };
+}
+
+export interface EvidenceStatusEntry {
+  evidence_ref: string;
+  evidence_type: EvidenceType;
+  display_state: EvidenceStatusDisplayState;
+  freshness_state: EvidenceFreshnessState;
+  redaction_state: RedactionState;
+  retention_state: RetentionState;
+  storage_scope: StorageScope;
+  access_state: EvidenceAccessState;
+  captured_at: string;
+  provenance: EvidenceRecord["provenance"];
+  unavailable_reason: CaptureFailureClass | null;
+}
+
+export interface EvidenceStatusFixture {
+  schema_version: typeof HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA;
+  runtime_session_ref: string;
+  snapshot_ref: string;
+  refmap_ref?: string;
+  source_trace_ref: string;
+  scene_status: {
+    display_state: "available" | "stale" | "missing" | "unavailable";
+    freshness_state: EvidenceFreshnessState;
+    blocking_reason: CaptureFailureClass | null;
+    retryable: boolean;
+  };
+  evidence_status: EvidenceStatusEntry[];
+  privacy_boundary: {
+    access_boundary: "harbor_refs_only";
+    raw_material: "not_exposed";
+    private_capture: "local_only";
+  };
+  unavailable: null;
 }
 
 export interface CoreSceneReference {
@@ -277,6 +315,14 @@ export class PageSceneStore {
     return clone(record);
   }
 
+  expireEvidence(evidence_ref: string): EvidenceRecord | PageSceneUnavailable {
+    const record = this.evidence.get(evidence_ref);
+    if (!record) return unavailableScene("evidence_missing", "Evidence ref is missing.", true);
+    record.retention_state = "expired";
+    record.access_state = "expired";
+    return clone(record);
+  }
+
   getCoreSceneReference(snapshot_ref: string, isSessionReadable: (runtime_session_ref: string) => boolean): CoreSceneReference | PageSceneUnavailable {
     const record = this.snapshots.get(snapshot_ref);
     if (!record) return unavailableScene("snapshot_missing", "Snapshot ref is missing.", true);
@@ -288,6 +334,35 @@ export class PageSceneStore {
       .sort(compareEvidenceRecords)
       .map((entry) => entry.evidence_ref);
     return coreSceneReference(record, evidence_refs);
+  }
+
+  getEvidenceStatusFixture(snapshot_ref: string, isSessionReadable: (runtime_session_ref: string) => boolean): EvidenceStatusFixture | PageSceneUnavailable {
+    const record = this.snapshots.get(snapshot_ref);
+    if (!record) return unavailableScene("snapshot_missing", "Snapshot ref is missing.", true);
+    const sessionReadable = isSessionReadable(record.runtime_session_ref);
+    const evidence = [...this.evidence.values()]
+      .filter((entry) => entry.source_binding.snapshot_ref === snapshot_ref)
+      .sort(compareEvidenceRecords);
+    return {
+      schema_version: HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA,
+      runtime_session_ref: record.runtime_session_ref,
+      snapshot_ref: record.snapshot_ref,
+      refmap_ref: record.refmap_ref,
+      source_trace_ref: record.source_trace.source_trace_ref,
+      scene_status: {
+        display_state: sessionReadable ? "available" : "stale",
+        freshness_state: sessionReadable ? "fresh" : "stale",
+        blocking_reason: sessionReadable ? null : "snapshot_stale",
+        retryable: !sessionReadable
+      },
+      evidence_status: evidence.map((entry) => evidenceStatusEntry(entry, sessionReadable)),
+      privacy_boundary: {
+        access_boundary: "harbor_refs_only",
+        raw_material: "not_exposed",
+        private_capture: "local_only"
+      },
+      unavailable: null
+    };
   }
 
   private createEvidence(
@@ -319,6 +394,32 @@ export class PageSceneStore {
     this.evidence.set(evidence_ref, record);
     return record;
   }
+}
+
+function evidenceStatusEntry(record: EvidenceRecord, sessionReadable: boolean): EvidenceStatusEntry {
+  const expired = record.access_state === "expired" || record.retention_state === "expired";
+  const stale = !sessionReadable;
+  return {
+    evidence_ref: record.evidence_ref,
+    evidence_type: record.evidence_type,
+    display_state: evidenceDisplayState(record, stale, expired),
+    freshness_state: expired ? "expired" : stale ? "stale" : "fresh",
+    redaction_state: record.redaction_state,
+    retention_state: record.retention_state,
+    storage_scope: record.storage_scope,
+    access_state: expired ? "expired" : stale ? "stale" : record.access_state,
+    captured_at: record.captured_at,
+    provenance: clone(record.provenance),
+    unavailable_reason: expired ? "evidence_expired" : stale ? "snapshot_stale" : null
+  };
+}
+
+function evidenceDisplayState(record: EvidenceRecord, stale: boolean, expired: boolean): EvidenceStatusDisplayState {
+  if (expired) return "expired";
+  if (stale) return "stale";
+  if (record.access_state === "access_denied") return "private";
+  if (record.redaction_state === "redacted") return "redacted";
+  return "available";
 }
 
 function createSourceTrace(session: PageSceneSessionFacts, input: CaptureSnapshotInput, captured_at: string): SourceTrace {

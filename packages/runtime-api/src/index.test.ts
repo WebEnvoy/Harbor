@@ -36,6 +36,18 @@ test("reports provider unavailability as structured runtime facts", async () => 
   assert.equal(session.availability.cdp, "unavailable");
 });
 
+test("reports profile and session blockers as structured validation runtime facts", async () => {
+  const locked = await new HarborRuntime(createFixtureLauncher("profile_locked")).createSession();
+  assert.equal(locked.lifecycle_state, "failed");
+  assert.equal(locked.current_error?.code, "profile_locked");
+  assert.equal(locked.current_error?.retryable, true);
+
+  const lost = await new HarborRuntime(createFixtureLauncher("session_lost")).createSession();
+  assert.equal(lost.lifecycle_state, "failed");
+  assert.equal(lost.current_error?.code, "session_lost");
+  assert.equal(lost.availability.snapshot, "unavailable");
+});
+
 test("separates configured, observed, provider claim, and validation evidence facts", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const session = await runtime.createSession();
@@ -207,4 +219,58 @@ test("returns structured unavailable states for denied, missing, and stale refs"
   const closedCapture = runtime.captureSnapshot(session.runtime_session_ref);
   assert.equal(closedCapture.status, "unavailable");
   assert.equal(closedCapture.failure_class, "source_unavailable");
+});
+
+test("returns App-safe evidence status fixture without private raw material", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const session = await runtime.createSession();
+  const capture = runtime.captureSnapshot(session.runtime_session_ref, {
+    title: "Fixture inbox",
+    url: "https://example.test/inbox",
+    summary: "Redacted fixture summary for status display.",
+    capture_method: "fixture",
+    source_locator: "fixture://status/inbox",
+    elements: [{ label: "Message row", role: "row" }],
+    evidence_policy: {
+      redaction_state: "redacted",
+      retention_state: "retained"
+    }
+  });
+
+  assert.equal(capture.status, "captured");
+  if (capture.status !== "captured") throw new Error("capture should be available");
+
+  const status = runtime.getEvidenceStatusFixture(capture.snapshot_ref);
+  assert.equal("status" in status, false);
+  if ("status" in status) throw new Error("evidence status should be readable");
+  assert.equal(status.scene_status.display_state, "available");
+  assert.equal(status.scene_status.freshness_state, "fresh");
+  assert.equal(status.privacy_boundary.access_boundary, "harbor_refs_only");
+  assert.equal(status.privacy_boundary.raw_material, "not_exposed");
+  assert.equal(status.evidence_status.length, 3);
+  assert.equal(status.evidence_status.every((entry) => entry.display_state === "redacted"), true);
+  assert.equal(status.evidence_status.every((entry) => entry.retention_state === "retained"), true);
+
+  const expired = runtime.expireEvidence(capture.evidence_refs[0] ?? "");
+  assert.equal("evidence_ref" in expired, true);
+  const afterExpire = runtime.getEvidenceStatusFixture(capture.snapshot_ref);
+  assert.equal("status" in afterExpire, false);
+  if ("status" in afterExpire) throw new Error("expired status should be readable");
+  assert.equal(afterExpire.evidence_status.some((entry) => entry.display_state === "expired"), true);
+
+  await runtime.closeSession(session.runtime_session_ref);
+  const stale = runtime.getEvidenceStatusFixture(capture.snapshot_ref);
+  assert.equal("status" in stale, false);
+  if ("status" in stale) throw new Error("stale status should be readable");
+  assert.equal(stale.scene_status.display_state, "stale");
+  assert.equal(stale.scene_status.blocking_reason, "snapshot_stale");
+  assert.equal(stale.evidence_status.some((entry) => entry.display_state === "stale"), true);
+
+  const publicJson = JSON.stringify(stale);
+  assert.equal(publicJson.includes("raw_dom"), false);
+  assert.equal(publicJson.includes("raw_har"), false);
+  assert.equal(publicJson.includes("cookie"), false);
+  assert.equal(publicJson.includes("token"), false);
+  assert.equal(publicJson.includes("profile_path"), false);
+  assert.equal(publicJson.includes("storage_state"), false);
 });

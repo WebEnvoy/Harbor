@@ -4,11 +4,16 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA,
   HARBOR_PAGE_SCENE_REFS_SCHEMA,
   PageSceneStore,
   type CaptureSnapshotInput,
   type CoreSceneReference,
   type EvidenceRecord,
+  type EvidenceFreshnessState,
+  type EvidenceStatusDisplayState,
+  type EvidenceStatusEntry,
+  type EvidenceStatusFixture,
   type PageSceneUnavailable,
   type RefMapRecord,
   type SnapshotCaptureResult,
@@ -30,7 +35,7 @@ import {
   type ViewerControlUnavailable
 } from "./viewer-control.js";
 
-export { HARBOR_PAGE_SCENE_REFS_SCHEMA } from "./page-scene.js";
+export { HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_PAGE_SCENE_REFS_SCHEMA } from "./page-scene.js";
 export {
   HARBOR_APP_RUNTIME_STATUS_FIXTURE_SCHEMA,
   HARBOR_CORE_RUNTIME_FACTS_SCHEMA,
@@ -44,6 +49,10 @@ export type {
   EvidenceAccessState,
   EvidenceCapturePolicy,
   EvidenceRecord,
+  EvidenceFreshnessState,
+  EvidenceStatusDisplayState,
+  EvidenceStatusEntry,
+  EvidenceStatusFixture,
   EvidenceType,
   PageSceneUnavailable,
   RedactionState,
@@ -81,7 +90,14 @@ export type AvailabilityState = "available" | "unavailable" | "policy_denied" | 
 export type FactSource = "configured" | "observed" | "provider_claim" | "validation_evidence";
 export type LifecycleState = "starting" | "active" | "idle" | "locked" | "disconnected" | "expired" | "failed" | "closed";
 export type ProviderMode = "local_dedicated_profile";
-export type RuntimeErrorCode = "provider_unavailable" | "launch_failed" | "cdp_unavailable" | "unsupported";
+export type RuntimeErrorCode =
+  | "provider_unavailable"
+  | "launch_failed"
+  | "cdp_unavailable"
+  | "profile_locked"
+  | "session_lost"
+  | "capture_denied"
+  | "unsupported";
 
 export interface RuntimeFact {
   key: string;
@@ -232,8 +248,16 @@ export class HarborRuntime {
     return this.pageScenes.getEvidence(evidence_ref);
   }
 
+  expireEvidence(evidence_ref: string): EvidenceRecord | PageSceneUnavailable {
+    return this.pageScenes.expireEvidence(evidence_ref);
+  }
+
   getCoreSceneReference(snapshot_ref: string): CoreSceneReference | PageSceneUnavailable {
     return this.pageScenes.getCoreSceneReference(snapshot_ref, (runtime_session_ref) => this.isSessionReadable(runtime_session_ref));
+  }
+
+  getEvidenceStatusFixture(snapshot_ref: string): EvidenceStatusFixture | PageSceneUnavailable {
+    return this.pageScenes.getEvidenceStatusFixture(snapshot_ref, (runtime_session_ref) => this.isSessionReadable(runtime_session_ref));
   }
 
   getViewerControlFacts(runtime_session_ref: string): ViewerControlFacts | ViewerControlUnavailable {
@@ -333,9 +357,11 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
   }
 }
 
-export function createFixtureLauncher(status: "ready" | "unavailable" = "ready"): LocalProviderLauncher {
+export function createFixtureLauncher(status: "ready" | "unavailable" | "profile_locked" | "session_lost" = "ready"): LocalProviderLauncher {
   return async () => {
     if (status === "unavailable") return unavailable("provider_unavailable", "Fixture provider unavailable.");
+    if (status === "profile_locked") return unavailable("profile_locked", "Fixture profile is locked by another local browser process.");
+    if (status === "session_lost") return unavailable("session_lost", "Fixture Runtime Session was lost before validation could complete.");
     const evidence_ref = opaqueRef("validation");
     return {
       status: "ready",
