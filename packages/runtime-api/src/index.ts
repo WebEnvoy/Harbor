@@ -88,6 +88,7 @@ export const HARBOR_RUNTIME_FACTS_SCHEMA = "harbor-runtime-facts/v0";
 export const HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA = "harbor-validation-runtime-facts/v0";
 export const HARBOR_WRITE_PRECHECK_FACTS_SCHEMA = "harbor-write-precheck-facts/v0";
 export const HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA = "harbor-preview-evidence-status-fixture/v0";
+export const HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA = "harbor-redacted-preview-export-fixture/v0";
 
 export type AvailabilityState = "available" | "unavailable" | "policy_denied" | "unsupported";
 export type FactSource = "configured" | "observed" | "provider_claim" | "validation_evidence";
@@ -254,6 +255,33 @@ export interface PreviewEvidenceStatusFixture {
     raw_material: "not_exposed";
     export_boundary: "refs_and_redacted_status_only";
     credential_storage: "not_exposed";
+  };
+  unavailable: null;
+}
+
+export interface RedactedPreviewExportFixture {
+  schema_version: typeof HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA;
+  runtime_session_ref: string;
+  before_preview_refs: {
+    snapshot_ref: string;
+    refmap_ref?: string;
+    source_trace_ref: string;
+    evidence_refs: string[];
+  };
+  preview_state: PreviewEvidenceState;
+  no_submit_guard: {
+    status: "active";
+    blocked_events: string[];
+    enforcement: "facts_only_no_real_submit";
+  };
+  private_boundary: {
+    local_capture_store: "process_memory_only";
+    restricted_material: "not_exported";
+    export_boundary: "redacted_preview_refs_only";
+  };
+  redacted_export: {
+    page_summary: CoreSceneReference["page_summary"];
+    evidence_status: readonly EvidenceStatusEntry[];
   };
   unavailable: null;
 }
@@ -438,6 +466,39 @@ export class HarborRuntime {
         raw_material: "not_exposed",
         export_boundary: "refs_and_redacted_status_only",
         credential_storage: "not_exposed"
+      },
+      unavailable: null
+    };
+  }
+
+  getRedactedPreviewExportFixture(snapshot_ref: string, current_url?: string): RedactedPreviewExportFixture | PageSceneUnavailable {
+    const preview = this.getPreviewEvidenceStatusFixture(snapshot_ref, current_url);
+    if ("status" in preview) {
+      return preview;
+    }
+    return {
+      schema_version: HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA,
+      runtime_session_ref: preview.runtime_session_ref,
+      before_preview_refs: {
+        snapshot_ref: preview.before_preview.snapshot_ref,
+        refmap_ref: preview.before_preview.refmap_ref,
+        source_trace_ref: preview.before_preview.source_trace_ref,
+        evidence_refs: preview.before_preview.evidence_refs
+      },
+      preview_state: preview.freshness.state,
+      no_submit_guard: {
+        status: "active",
+        blocked_events: ["submit", "publish", "send", "delete", "pay"],
+        enforcement: "facts_only_no_real_submit"
+      },
+      private_boundary: {
+        local_capture_store: "process_memory_only",
+        restricted_material: "not_exported",
+        export_boundary: "redacted_preview_refs_only"
+      },
+      redacted_export: {
+        page_summary: preview.before_preview.page_summary,
+        evidence_status: preview.viewer_evidence_status.evidence_status
       },
       unavailable: null
     };

@@ -368,3 +368,38 @@ test("returns preview evidence refs, provenance, and freshness states", async ()
   assert.equal(publicJson.includes("profile_path"), false);
   assert.equal(publicJson.includes("storage_state"), false);
 });
+
+test("returns redacted preview export fixture with no-submit and private boundary", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const session = await runtime.createSession();
+  const preview = runtime.capturePreviewEvidence(session.runtime_session_ref, {
+    url: "https://example.test/write-precheck",
+    current_url: "https://example.test/write-precheck"
+  });
+
+  assert.equal("status" in preview, false);
+  if ("status" in preview) throw new Error("preview evidence should be readable");
+  const redacted = runtime.getRedactedPreviewExportFixture(preview.before_preview.snapshot_ref);
+
+  assert.equal("status" in redacted, false);
+  if ("status" in redacted) throw new Error("redacted preview export should be readable");
+  assert.equal(redacted.schema_version, "harbor-redacted-preview-export-fixture/v0");
+  assert.equal(redacted.preview_state, "available");
+  assert.match(redacted.before_preview_refs.snapshot_ref, /^snapshot_/);
+  assert.equal(redacted.no_submit_guard.status, "active");
+  assert.deepEqual(redacted.no_submit_guard.blocked_events, ["submit", "publish", "send", "delete", "pay"]);
+  assert.equal(redacted.private_boundary.local_capture_store, "process_memory_only");
+  assert.equal(redacted.private_boundary.restricted_material, "not_exported");
+  assert.equal(redacted.private_boundary.export_boundary, "redacted_preview_refs_only");
+  assert.equal(redacted.redacted_export.evidence_status.every((entry) => entry.display_state === "redacted"), true);
+
+  const publicJson = JSON.stringify(redacted);
+  assert.equal(publicJson.includes("raw_dom"), false);
+  assert.equal(publicJson.includes("raw_har"), false);
+  assert.equal(publicJson.includes("raw_network"), false);
+  assert.equal(publicJson.includes("cookie"), false);
+  assert.equal(publicJson.includes("token"), false);
+  assert.equal(publicJson.includes("profile_path"), false);
+  assert.equal(publicJson.includes("storage_state"), false);
+  assert.equal(publicJson.includes("secret-value"), false);
+});
