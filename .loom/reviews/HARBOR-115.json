@@ -1,0 +1,20 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-115",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Implementation review accepts Harbor validation runtime facts and private/redacted evidence policy fields as bounded Stage 5 refs/status truth.",
+  "reviewer": "Codex thread 019f31a5-212e-7952-a56a-bba7ffe9b1b9",
+  "authored_at": "2026-07-05T18:00:00Z",
+  "reviewed_head": "a473a764aeb16def1797a27183be14be188d6fb9",
+  "reviewed_validation_summary": "pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check passed locally on HARBOR-115.",
+  "reviewed_validation_summary_hash": "8333ef4c1a90a1fe99160fddbf75ba2f6fc6e294b68642a5955443c92dbb0dc3",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-115.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "semantic_review_disposition": {"status": "passed", "reason": "The change exposes refs and status facts only, with process-memory private capture markers and redacted export boundary fields; it does not expose raw DOM, raw network, cookies, tokens, profile storage, real profiles, hosted browser, or Stage 6 behavior."},
+  "implementation_review_disposition": {"status": "passed", "reason": "Typecheck, tests, runtime smoke, diff check, suite, carrier, fact-chain, and verify passed for the bounded Runtime API fixture changes."}
+}

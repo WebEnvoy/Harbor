@@ -41,6 +41,14 @@ test("reports profile and session blockers as structured validation runtime fact
   assert.equal(locked.lifecycle_state, "failed");
   assert.equal(locked.current_error?.code, "profile_locked");
   assert.equal(locked.current_error?.retryable, true);
+  const lockedFacts = new HarborRuntime(createFixtureLauncher("profile_locked"));
+  const lockedSession = await lockedFacts.createSession();
+  const validation = lockedFacts.getValidationRuntimeFacts(lockedSession.runtime_session_ref);
+  assert.equal("status" in validation, false);
+  if ("status" in validation) throw new Error("validation facts should be readable");
+  assert.equal(validation.runtime_ready, false);
+  assert.equal(validation.blocking_reasons[0]?.code, "profile_locked");
+  assert.equal(validation.validation_refs.length, 0);
 
   const lost = await new HarborRuntime(createFixtureLauncher("session_lost")).createSession();
   assert.equal(lost.lifecycle_state, "failed");
@@ -52,11 +60,16 @@ test("separates configured, observed, provider claim, and validation evidence fa
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const session = await runtime.createSession();
   const sources = new Set(session.facts.map((fact) => fact.source));
+  const validation = runtime.getValidationRuntimeFacts(session.runtime_session_ref);
 
   assert.equal(sources.has("configured"), true);
   assert.equal(sources.has("observed"), true);
   assert.equal(sources.has("provider_claim"), true);
   assert.equal(sources.has("validation_evidence"), true);
+  assert.equal("status" in validation, false);
+  if ("status" in validation) throw new Error("validation facts should be readable");
+  assert.equal(validation.runtime_ready, true);
+  assert.equal(validation.validation_refs.length > 0, true);
 });
 
 test("does not expose raw CDP endpoints in public session facts", async () => {
@@ -247,6 +260,11 @@ test("returns App-safe evidence status fixture without private raw material", as
   assert.equal(status.scene_status.freshness_state, "fresh");
   assert.equal(status.privacy_boundary.access_boundary, "harbor_refs_only");
   assert.equal(status.privacy_boundary.raw_material, "not_exposed");
+  assert.equal(status.privacy_boundary.private_capture_store, "process_memory_only");
+  assert.equal(status.privacy_boundary.redacted_export_boundary, "redacted_fixture_refs_only");
+  assert.equal(status.privacy_boundary.export_consent, "granted");
+  assert.equal(status.privacy_boundary.retention_policy, "ephemeral_by_default");
+  assert.equal(status.privacy_boundary.deletion_policy, "expire_or_drop_ref");
   assert.equal(status.evidence_status.length, 3);
   assert.equal(status.evidence_status.every((entry) => entry.display_state === "redacted"), true);
   assert.equal(status.evidence_status.every((entry) => entry.retention_state === "retained"), true);

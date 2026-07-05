@@ -21,6 +21,7 @@ export type EvidenceStatusDisplayState = "available" | "redacted" | "private" | 
 export type RedactionState = "not_required" | "redacted" | "capture_denied";
 export type RetentionState = "ephemeral" | "retained" | "expired";
 export type StorageScope = "process_memory";
+export type ExportConsentState = "not_requested" | "granted" | "denied";
 
 export interface PageSceneSessionFacts {
   runtime_session_ref: string;
@@ -33,6 +34,7 @@ export interface EvidenceCapturePolicy {
   capture?: "allow" | "deny";
   redaction_state?: Exclude<RedactionState, "capture_denied">;
   retention_state?: Exclude<RetentionState, "expired">;
+  export_consent?: ExportConsentState;
 }
 
 export interface RefMapElementInput {
@@ -168,6 +170,11 @@ export interface EvidenceStatusFixture {
     access_boundary: "harbor_refs_only";
     raw_material: "not_exposed";
     private_capture: "local_only";
+    private_capture_store: "process_memory_only";
+    redacted_export_boundary: "redacted_fixture_refs_only";
+    export_consent: ExportConsentState;
+    retention_policy: "ephemeral_by_default";
+    deletion_policy: "expire_or_drop_ref";
   };
   unavailable: null;
 }
@@ -359,7 +366,12 @@ export class PageSceneStore {
       privacy_boundary: {
         access_boundary: "harbor_refs_only",
         raw_material: "not_exposed",
-        private_capture: "local_only"
+        private_capture: "local_only",
+        private_capture_store: "process_memory_only",
+        redacted_export_boundary: "redacted_fixture_refs_only",
+        export_consent: exportConsent(evidence),
+        retention_policy: "ephemeral_by_default",
+        deletion_policy: "expire_or_drop_ref"
       },
       unavailable: null
     };
@@ -420,6 +432,10 @@ function evidenceDisplayState(record: EvidenceRecord, stale: boolean, expired: b
   if (record.access_state === "access_denied") return "private";
   if (record.redaction_state === "redacted") return "redacted";
   return "available";
+}
+
+function exportConsent(evidence: EvidenceRecord[]): ExportConsentState {
+  return evidence.some((entry) => entry.retention_state === "retained") ? "granted" : "not_requested";
 }
 
 function createSourceTrace(session: PageSceneSessionFacts, input: CaptureSnapshotInput, captured_at: string): SourceTrace {

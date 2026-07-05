@@ -85,6 +85,7 @@ export type {
 } from "./viewer-control.js";
 
 export const HARBOR_RUNTIME_FACTS_SCHEMA = "harbor-runtime-facts/v0";
+export const HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA = "harbor-validation-runtime-facts/v0";
 
 export type AvailabilityState = "available" | "unavailable" | "policy_denied" | "unsupported";
 export type FactSource = "configured" | "observed" | "provider_claim" | "validation_evidence";
@@ -133,6 +134,18 @@ export interface RuntimeSessionFacts {
   control_owner: ControlOwner;
   current_error: RuntimeErrorFact | null;
   facts: RuntimeFact[];
+}
+
+export interface ValidationRuntimeFacts {
+  schema_version: typeof HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA;
+  runtime_session_ref: string;
+  provider_ref: string;
+  profile_ref: string;
+  validation_refs: string[];
+  runtime_ready: boolean;
+  blocking_reasons: RuntimeErrorFact[];
+  availability: RuntimeSessionFacts["availability"];
+  unavailable: null;
 }
 
 export interface CreateRuntimeSessionInput {
@@ -289,6 +302,24 @@ export class HarborRuntime {
     const viewerControl = this.viewerControls.get(runtime_session_ref);
     if ("status" in viewerControl) return viewerControl;
     return coreRuntimeFacts(record.facts, viewerControl);
+  }
+
+  getValidationRuntimeFacts(runtime_session_ref: string): ValidationRuntimeFacts | ViewerControlUnavailable {
+    const record = this.sessions.get(runtime_session_ref);
+    if (!record) {
+      return { status: "unavailable", failure_class: "session_missing", message: "Runtime Session is missing.", retryable: true };
+    }
+    return {
+      schema_version: HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA,
+      runtime_session_ref,
+      provider_ref: record.facts.provider_ref,
+      profile_ref: record.facts.profile_ref,
+      validation_refs: record.facts.facts.flatMap((fact) => fact.evidence_ref ? [fact.evidence_ref] : []),
+      runtime_ready: record.facts.lifecycle_state === "active" || record.facts.lifecycle_state === "idle",
+      blocking_reasons: record.facts.current_error ? [record.facts.current_error] : [],
+      availability: snapshot(record.facts.availability),
+      unavailable: null
+    };
   }
 
   getAppRuntimeStatusFixture(runtime_session_ref: string): AppRuntimeStatusFixture | ViewerControlUnavailable {
