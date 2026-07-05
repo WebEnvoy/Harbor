@@ -22,7 +22,9 @@ const handoff = runtime.recordHandoff(session.runtime_session_ref, {
 const coreRuntime = runtime.getCoreRuntimeFacts(session.runtime_session_ref);
 const appStatus = runtime.getAppRuntimeStatusFixture(session.runtime_session_ref);
 const scene = capture?.status === "captured" ? runtime.getCoreSceneReference(capture.snapshot_ref) : capture;
+const evidenceStatus = capture?.status === "captured" ? runtime.getEvidenceStatusFixture(capture.snapshot_ref) : capture;
 const closed = await runtime.closeSession(session.runtime_session_ref);
+const staleEvidenceStatus = capture?.status === "captured" ? runtime.getEvidenceStatusFixture(capture.snapshot_ref) : capture;
 
 console.log(JSON.stringify({
   mode: useLocalProvider ? "local" : "fixture",
@@ -34,6 +36,8 @@ console.log(JSON.stringify({
   handoff,
   coreRuntime,
   appStatus,
+  evidenceStatus,
+  staleEvidenceStatus,
   closed
 }, null, 2));
 
@@ -45,7 +49,12 @@ if (
   "status" in viewerControl ||
   "status" in handoff ||
   "status" in coreRuntime ||
-  "status" in appStatus
+  "status" in appStatus ||
+  !evidenceStatus ||
+  "status" in evidenceStatus ||
+  !staleEvidenceStatus ||
+  "status" in staleEvidenceStatus ||
+  staleEvidenceStatus.scene_status.display_state !== "stale"
 ) {
   process.exitCode = 1;
 }
