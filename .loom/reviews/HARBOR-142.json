@@ -1,0 +1,32 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-142",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Implementation review accepts preview evidence refs, target provenance, freshness states, viewer/evidence status fixture, tests, and smoke coverage for Harbor #142/#143/#144/#145.",
+  "reviewer": "Codex thread 019f31a5-212e-7952-a56a-bba7ffe9b1b9",
+  "authored_at": "2026-07-05T20:10:00Z",
+  "reviewed_head": "pending",
+  "reviewed_validation_summary": "`pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `git diff --check`; `loom verify --target . --json`; `loom fact-chain --target . --json` passed locally.",
+  "reviewed_validation_summary_hash": "pending",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-142.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-142.md",
+    "recovery_entry": ".loom/progress/HARBOR-142.md",
+    "suite_evidence_map": ".loom/specs/HARBOR-142/evidence-map.md",
+    "suite_task_carriers": [".loom/specs/HARBOR-142/task-carrier.md"]
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Preview evidence fixture is refs/status only and does not expose private browser material."
+  },
+  "implementation_review_disposition": {
+    "status": "passed",
+    "reason": "Typecheck, tests, smoke, diff, and Loom local gates pass locally."
+  }
+}
