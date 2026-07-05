@@ -87,6 +87,7 @@ export type {
 export const HARBOR_RUNTIME_FACTS_SCHEMA = "harbor-runtime-facts/v0";
 export const HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA = "harbor-validation-runtime-facts/v0";
 export const HARBOR_WRITE_PRECHECK_FACTS_SCHEMA = "harbor-write-precheck-facts/v0";
+export const HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA = "harbor-preview-evidence-status-fixture/v0";
 
 export type AvailabilityState = "available" | "unavailable" | "policy_denied" | "unsupported";
 export type FactSource = "configured" | "observed" | "provider_claim" | "validation_evidence";
@@ -154,6 +155,7 @@ export type InputSensitivity = "public" | "sensitive" | "secret";
 export type InputExportPolicy = "safe_summary" | "redacted" | "never_export";
 export type InputValueState = "empty" | "present" | "redacted" | "unavailable";
 export type PreWriteGuardStatus = "active" | "blocked";
+export type PreviewEvidenceState = "available" | "stale_refmap" | "page_changed" | "evidence_unavailable";
 
 export interface WritableTargetRef {
   target_ref: string;
@@ -223,6 +225,37 @@ export interface WritePrecheckInput {
     export_policy?: InputExportPolicy;
     value_state?: InputValueState;
   }[];
+}
+
+export interface PreviewEvidenceInput extends CaptureSnapshotInput {
+  current_url?: string;
+}
+
+export interface PreviewEvidenceStatusFixture {
+  schema_version: typeof HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA;
+  runtime_session_ref: string;
+  before_preview: CoreSceneReference;
+  target_state_provenance: {
+    snapshot_ref: string;
+    refmap_ref?: string;
+    source_trace_ref: string;
+    captured_at: string;
+    captured_url: string;
+    current_url: string;
+    producer: "harbor_runtime_api";
+  };
+  freshness: {
+    state: PreviewEvidenceState;
+    blocking_reason: "snapshot_stale" | "refmap_stale" | "page_changed" | "evidence_unavailable" | null;
+    retryable: boolean;
+  };
+  viewer_evidence_status: EvidenceStatusFixture;
+  privacy_boundary: {
+    raw_material: "not_exposed";
+    export_boundary: "refs_and_redacted_status_only";
+    credential_storage: "not_exposed";
+  };
+  unavailable: null;
 }
 
 export interface CreateRuntimeSessionInput {
@@ -348,6 +381,66 @@ export class HarborRuntime {
 
   getEvidenceStatusFixture(snapshot_ref: string): EvidenceStatusFixture | PageSceneUnavailable {
     return this.pageScenes.getEvidenceStatusFixture(snapshot_ref, (runtime_session_ref) => this.isSessionReadable(runtime_session_ref));
+  }
+
+  capturePreviewEvidence(runtime_session_ref: string, input: PreviewEvidenceInput = {}): PreviewEvidenceStatusFixture | PageSceneUnavailable {
+    const capture = this.captureSnapshot(runtime_session_ref, {
+      title: input.title ?? "Before preview fixture",
+      url: input.url ?? "https://example.test/write-precheck",
+      summary: input.summary ?? "Before-preview redacted target state.",
+      capture_method: input.capture_method ?? "fixture",
+      source_locator: input.source_locator ?? "fixture://before-preview",
+      elements: input.elements ?? [{ label: "Contact form", role: "form", locator_hint: "form[data-webenvoy-fixture='contact']" }],
+      evidence_policy: input.evidence_policy
+    });
+    if (capture.status !== "captured") {
+      return capture;
+    }
+    return this.getPreviewEvidenceStatusFixture(capture.snapshot_ref, input.current_url);
+  }
+
+  getPreviewEvidenceStatusFixture(snapshot_ref: string, current_url?: string): PreviewEvidenceStatusFixture | PageSceneUnavailable {
+    const scene = this.getCoreSceneReference(snapshot_ref);
+    if ("status" in scene) {
+      return scene;
+    }
+    const evidenceStatus = this.getEvidenceStatusFixture(snapshot_ref);
+    if ("status" in evidenceStatus) {
+      return evidenceStatus;
+    }
+    const observedUrl = current_url ?? scene.page_summary.url;
+    const evidenceUnavailable = evidenceStatus.evidence_status.some((entry) =>
+      entry.display_state === "expired" || entry.display_state === "missing" || entry.display_state === "unavailable"
+    );
+    const pageChanged = observedUrl !== scene.page_summary.url;
+    const stale = evidenceStatus.scene_status.display_state === "stale";
+    const state: PreviewEvidenceState = evidenceUnavailable ? "evidence_unavailable" : pageChanged ? "page_changed" : stale ? "stale_refmap" : "available";
+    return {
+      schema_version: HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA,
+      runtime_session_ref: scene.runtime_session_ref,
+      before_preview: scene,
+      target_state_provenance: {
+        snapshot_ref: scene.snapshot_ref,
+        refmap_ref: scene.refmap_ref,
+        source_trace_ref: scene.source_trace_ref,
+        captured_at: scene.captured_at,
+        captured_url: scene.page_summary.url,
+        current_url: observedUrl,
+        producer: "harbor_runtime_api"
+      },
+      freshness: {
+        state,
+        blocking_reason: state === "available" ? null : state === "stale_refmap" ? "refmap_stale" : state,
+        retryable: state !== "available"
+      },
+      viewer_evidence_status: evidenceStatus,
+      privacy_boundary: {
+        raw_material: "not_exposed",
+        export_boundary: "refs_and_redacted_status_only",
+        credential_storage: "not_exposed"
+      },
+      unavailable: null
+    };
   }
 
   getViewerControlFacts(runtime_session_ref: string): ViewerControlFacts | ViewerControlUnavailable {

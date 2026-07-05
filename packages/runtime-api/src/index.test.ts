@@ -329,3 +329,42 @@ test("returns write-precheck target and form facts without raw private material"
   assert.equal(publicJson.includes("storage_state"), false);
   assert.equal(publicJson.includes("secret-value"), false);
 });
+
+test("returns preview evidence refs, provenance, and freshness states", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const session = await runtime.createSession();
+  const preview = runtime.capturePreviewEvidence(session.runtime_session_ref, {
+    url: "https://example.test/write-precheck",
+    current_url: "https://example.test/write-precheck"
+  });
+
+  assert.equal("status" in preview, false);
+  if ("status" in preview) throw new Error("preview evidence should be readable");
+  assert.equal(preview.schema_version, "harbor-preview-evidence-status-fixture/v0");
+  assert.match(preview.before_preview.snapshot_ref, /^snapshot_/);
+  assert.match(preview.before_preview.refmap_ref ?? "", /^refmap_/);
+  assert.equal(preview.target_state_provenance.captured_url, "https://example.test/write-precheck");
+  assert.equal(preview.target_state_provenance.current_url, "https://example.test/write-precheck");
+  assert.equal(preview.freshness.state, "available");
+  assert.equal(preview.viewer_evidence_status.evidence_status.length, 3);
+
+  const changed = runtime.getPreviewEvidenceStatusFixture(preview.before_preview.snapshot_ref, "https://example.test/changed");
+  assert.equal("status" in changed, false);
+  if ("status" in changed) throw new Error("changed preview evidence should be readable");
+  assert.equal(changed.freshness.state, "page_changed");
+  assert.equal(changed.freshness.blocking_reason, "page_changed");
+
+  runtime.expireEvidence(preview.before_preview.evidence_refs[0] ?? "");
+  const unavailable = runtime.getPreviewEvidenceStatusFixture(preview.before_preview.snapshot_ref);
+  assert.equal("status" in unavailable, false);
+  if ("status" in unavailable) throw new Error("expired preview evidence should be readable");
+  assert.equal(unavailable.freshness.state, "evidence_unavailable");
+
+  const publicJson = JSON.stringify(unavailable);
+  assert.equal(publicJson.includes("raw_dom"), false);
+  assert.equal(publicJson.includes("raw_har"), false);
+  assert.equal(publicJson.includes("cookie"), false);
+  assert.equal(publicJson.includes("token"), false);
+  assert.equal(publicJson.includes("profile_path"), false);
+  assert.equal(publicJson.includes("storage_state"), false);
+});
