@@ -11,9 +11,9 @@
 - Review Entry: .loom/reviews/HARBOR-173.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; sensitive material check; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate/carrier/evidence validate --target . --item HARBOR-173 --json
 - Closing Condition: Implementation PR for #160/#173/#174/#175/#176 is PR Ready and handed back to the controller; merge, issue closeout, and current pointer retire are out of scope.
-- Current Checkpoint: build
-- Current Stop: Runtime API implementation and item-specific carriers are in progress for PR Ready handoff.
-- Next Step: run final validation, create PR for #160/#173/#174/#175/#176, validate PR metadata, start hosted checks, then hand back to the controller.
+- Current Checkpoint: merge
+- Current Stop: Implementation PR #195 is open for HARBOR-173; scheduler-owned semantic review carrier is recorded and PR metadata/head readback is current.
+- Next Step: Hosted merge gate should consume the current PR metadata and review carrier, then scheduler thread will merge PR #195 and perform issue closeout/current pointer retire.
 - Blockers: None recorded.
 - Latest Validation Summary: Local validation passed on 2026-07-06T09:08Z: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, sensitive material check against smoke output, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, and `loom suite validate/carrier/evidence --target . --item HARBOR-173 --json`.
 - Recovery Boundary: Harbor runtime-api scene/evidence/viewer facts and HARBOR-173 Loom carriers only; no App/Core/Lode changes, no hosted browser, no cloud runtime, no Chromium user provider, no Donut Browser provider registration, no live account/profile/cookie/token material, no raw CDP/VNC/DOM/network output, no issue closeout, no merge, no current pointer retire.
