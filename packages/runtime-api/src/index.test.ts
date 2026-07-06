@@ -131,6 +131,76 @@ test("explains provider install and launch failure diagnostics", () => {
   assert.equal(args.suggested_action.includes("启动参数"), true);
 });
 
+test("returns local identity environment facts without protected material", () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const facts = runtime.getLocalIdentityEnvironmentFacts({
+    ...providerFixture({ [cloakPath]: { executable: true } }),
+    identity_environment_ref: "identity-env_xhs-alice",
+    execution_identity_ref: "execution-identity_xhs-alice",
+    profile_ref: "profile_xhs-alice",
+    profile_storage_ref: "profile-storage_xhs-alice",
+    site: {
+      site_id: "xiaohongshu",
+      origin: "https://www.xiaohongshu.com",
+      display_name: "小红书",
+      account_identifier: "alice@example.test",
+      account_ref: "account_xhs-alice"
+    },
+    login_state: "expired",
+    login_state_reason: "last observed session expired",
+    storage_state: "present",
+    proxy_ref: "proxy_tokyo-home",
+    proxy_label: "Tokyo residential",
+    region: "JP",
+    language: "zh-CN",
+    timezone: "Asia/Tokyo",
+    browser_family: "cloakbrowser",
+    user_agent_summary: "CloakBrowser Chromium 145",
+    viewport: "1280x900",
+    fingerprint_summary: "provider_claim_ref:fingerprint_xhs-alice",
+    credential_ref: "credential_xhs-alice",
+    keychain_ref: "keychain://harbor/xhs-alice",
+    local_secret_ref: "local-secret_xhs-alice",
+    login_method: "qr",
+    human_verification: ["qr_scan", "two_factor", "captcha", "login_expired"]
+  });
+
+  assert.equal(facts.schema_version, "harbor-local-identity-environment/v0");
+  assert.equal(facts.identity_environment_ref, "identity-env_xhs-alice");
+  assert.equal(facts.site_binding.site_id, "xiaohongshu");
+  assert.equal(facts.login_state.state, "expired");
+  assert.equal(facts.login_state.recovery_required, true);
+  assert.equal(facts.login_state.manual_authentication_state, "required");
+  assert.deepEqual(facts.login_state.human_verification, ["qr_scan", "two_factor", "captcha", "login_expired"]);
+  assert.equal(facts.browser_storage.cookies_session_state, "present");
+  assert.equal(facts.browser_storage.cleanup_rule, "delete_profile_storage_and_refs");
+  assert.equal(facts.environment.proxy.state, "configured");
+  assert.equal(facts.environment.region, "JP");
+  assert.equal(facts.environment.language, "zh-CN");
+  assert.equal(facts.environment.timezone, "Asia/Tokyo");
+  assert.equal(facts.provider_binding.selected_provider_id, "cloakbrowser");
+  assert.equal(facts.credential_recovery.login_method, "qr");
+  assert.equal(facts.credential_recovery.keychain_ref, "keychain://harbor/xhs-alice");
+  assert.deepEqual(facts.credential_recovery.forbidden_plaintext, ["password", "verification_code", "cookie", "session_token"]);
+  assert.equal(facts.import_export_delete.default_export, "safe_summary_only");
+  assert.equal(facts.import_export_delete.full_export, "explicit_user_action_required");
+  assert.equal(facts.import_export_delete.local_encryption, "required_for_protected_material");
+  assert.equal(facts.import_export_delete.residual_check, "profile_storage_credentials_and_refs");
+  assert.equal(facts.consumer_boundary.app, "public_summary_refs_and_recovery_state_only");
+  assert.equal(facts.consumer_boundary.core, "admission_facts_refs_and_blocking_reasons_only");
+  assert.equal(facts.consumer_boundary.lode, "site_requirement_matching_refs_only");
+  assert.equal(facts.risk_boundary.target_site_bypass, "not_claimed");
+  assert.equal(facts.sensitive_material_boundary.some((boundary) => boundary.class === "never_export_material"), true);
+
+  const publicJson = JSON.stringify(facts);
+  assert.equal(publicJson.includes("plain-secret-value"), false);
+  assert.equal(publicJson.includes("sms-code-123456"), false);
+  assert.equal(publicJson.includes("session-token-value"), false);
+  assert.equal(publicJson.includes("cookie-value"), false);
+  assert.equal(publicJson.includes("storage-value"), false);
+  assert.equal(publicJson.includes("proxy-password"), false);
+});
+
 test("reports profile and session blockers as structured validation runtime facts", async () => {
   const locked = await new HarborRuntime(createFixtureLauncher("profile_locked")).createSession();
   assert.equal(locked.lifecycle_state, "failed");

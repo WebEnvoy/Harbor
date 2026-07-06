@@ -3,6 +3,12 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createLocalIdentityEnvironmentFacts,
+  HARBOR_LOCAL_IDENTITY_ENVIRONMENT_SCHEMA,
+  type LocalIdentityEnvironmentFacts,
+  type LocalIdentityEnvironmentInput
+} from "./identity-environment.js";
+import {
   HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA,
   HARBOR_PAGE_SCENE_REFS_SCHEMA,
   PageSceneStore,
@@ -49,6 +55,10 @@ import {
 
 export { HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_PAGE_SCENE_REFS_SCHEMA } from "./page-scene.js";
 export {
+  createLocalIdentityEnvironmentFacts,
+  HARBOR_LOCAL_IDENTITY_ENVIRONMENT_SCHEMA
+} from "./identity-environment.js";
+export {
   bindIdentityEnvironmentDefaultProvider,
   detectBrowserProviders,
   diagnoseBrowserProviderFailure,
@@ -85,6 +95,18 @@ export type {
   SourceTrace,
   StorageScope
 } from "./page-scene.js";
+export type {
+  BrowserStorageState,
+  ExportPolicy,
+  HumanVerificationKind,
+  LocalIdentityEnvironmentFacts,
+  LocalIdentityEnvironmentInput,
+  LoginState,
+  ManualAuthenticationState,
+  MaterialBoundary,
+  ProtectedMaterialClass,
+  SiteBindingInput
+} from "./identity-environment.js";
 export type {
   BrowserProviderCapabilityFact,
   BrowserProviderCapabilityKey,
@@ -415,6 +437,10 @@ export class HarborRuntime {
 
   getIdentityEnvironmentProviderBinding(input: IdentityEnvironmentProviderBindingInput = {}): IdentityEnvironmentProviderBinding {
     return bindIdentityEnvironmentDefaultProvider(input);
+  }
+
+  getLocalIdentityEnvironmentFacts(input: LocalIdentityEnvironmentInput): LocalIdentityEnvironmentFacts {
+    return createLocalIdentityEnvironmentFacts(input);
   }
 
   captureSnapshot(runtime_session_ref: string, input: CaptureSnapshotInput = {}): SnapshotCaptureResult {
