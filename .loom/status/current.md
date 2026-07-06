@@ -11,9 +11,9 @@
 - Review Entry: .loom/reviews/HARBOR-161.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check; loom verify --target . --json; loom fact-chain --target . --json; loom suite validate/carrier/evidence validate --target . --item HARBOR-161 --json
 - Closing Condition: Implementation PR for #161/#162/#163/#164/#182 is PR Ready; no merge or issue closeout in this execution thread.
-- Current Checkpoint: build
-- Current Stop: PR #186 opened; local validation and Loom build readiness passed; hosted checks started.
-- Next Step: Hand back PR Ready package to the controlling thread; do not merge or close issues in this execution thread.
+- Current Checkpoint: merge
+- Current Stop: PR #186 has a controller-authored review carrier and refreshed PR metadata for the current branch head.
+- Next Step: Controlled merge by the main controller, then post-merge closeout evidence for #157/#161/#162/#163/#164/#182.
 - Blockers: None recorded.
 - Latest Validation Summary: `pnpm typecheck`; `pnpm test` (17 tests); `pnpm smoke:runtime`; `git diff --check`; `loom verify --target . --json`; `loom fact-chain --target . --json`; `loom suite validate --target . --item HARBOR-161 --json`; `loom suite evidence validate --target . --item HARBOR-161 --json`; `loom suite carrier validate --target . --item HARBOR-161 --json`; and `loom build --target . --item HARBOR-161 --build-evidence .loom/specs/HARBOR-161/build-evidence.json --json` passed locally. Hosted py-compile, demo-bootstrap, repo-local-cli, and loom-check passed on PR #186 run 28771310582.
 - Recovery Boundary: Harbor runtime-api facts/fixtures only; no real account, credential payload, cookie/token material, live website login, automatic CAPTCHA/2FA bypass, persistent identity storage migration, App/Core/Lode changes, or issue closeout.
