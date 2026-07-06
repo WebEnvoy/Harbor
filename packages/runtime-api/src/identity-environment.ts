@@ -133,7 +133,25 @@ export interface LocalIdentityEnvironmentFacts {
   diagnostics: string[];
 }
 
+const allowedSensitiveRefKeys = new Set([
+  "account_ref",
+  "browser_storage_ref",
+  "cookie_jar_ref",
+  "credential_ref",
+  "keychain_ref",
+  "local_secret_ref",
+  "profile_storage_ref",
+  "proxy_ref",
+  "storage_state"
+]);
+const forbiddenSensitiveTerms = ["password", "token", "cookie", "cookies", "secret", "storage", "raw", "websocketdebuggerurl"];
+
+export function assertNoSensitiveMaterialInput(input: unknown): void {
+  visitSensitiveMaterialInput(input, []);
+}
+
 export function createLocalIdentityEnvironmentFacts(input: LocalIdentityEnvironmentInput): LocalIdentityEnvironmentFacts {
+  assertNoSensitiveMaterialInput(input);
   const identity_environment_ref = input.identity_environment_ref ?? "identity-env_fixture";
   const execution_identity_ref = input.execution_identity_ref ?? `${identity_environment_ref}:execution`;
   const profile_ref = input.profile_ref ?? `${identity_environment_ref}:profile`;
@@ -229,6 +247,24 @@ export function createLocalIdentityEnvironmentFacts(input: LocalIdentityEnvironm
     },
     diagnostics
   };
+}
+
+function visitSensitiveMaterialInput(value: unknown, path: string[]): void {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => visitSensitiveMaterialInput(item, [...path, String(index)]));
+    return;
+  }
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (!allowedSensitiveRefKeys.has(key) && forbiddenSensitiveTerms.some((term) => normalizedKey(key).includes(term))) {
+      throw new TypeError(`Sensitive local identity material is not accepted at ${[...path, key].join(".")}. Use a *_ref field or status summary instead.`);
+    }
+    visitSensitiveMaterialInput(child, [...path, key]);
+  }
+}
+
+function normalizedKey(key: string): string {
+  return key.replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
 function missing(name: string, value: unknown): string[] {

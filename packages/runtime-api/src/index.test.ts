@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   bindIdentityEnvironmentDefaultProvider,
@@ -199,6 +202,118 @@ test("returns local identity environment facts without protected material", () =
   assert.equal(publicJson.includes("cookie-value"), false);
   assert.equal(publicJson.includes("storage-value"), false);
   assert.equal(publicJson.includes("proxy-password"), false);
+});
+
+test("manages local xhs and boss identity environments with redacted public output", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "harbor-identity-env-"));
+  const persistence_path = join(dir, "identity-environments.json");
+  try {
+    const runtime = new HarborRuntime(createFixtureLauncher("ready"), { persistence_path });
+    const xhs = runtime.createLocalIdentityEnvironment({
+      ...providerFixture({ [cloakPath]: { executable: true } }),
+      identity_environment_ref: "identity-env_xhs-managed",
+      execution_identity_ref: "execution-identity_xhs-managed",
+      profile_ref: "profile_xhs-managed",
+      profile_storage_ref: "profile-storage_xhs-managed",
+      cookie_jar_ref: "cookie-jar_xhs-managed",
+      browser_storage_ref: "browser-storage_xhs-managed",
+      site: {
+        site_id: "xiaohongshu",
+        origin: "https://www.xiaohongshu.com",
+        display_name: "小红书",
+        account_identifier: "alice@example.test",
+        account_ref: "account_xhs-managed"
+      },
+      login_state: "manual_auth_required",
+      storage_state: "present",
+      proxy_ref: "proxy_tokyo-managed",
+      region: "JP",
+      language: "zh-CN",
+      timezone: "Asia/Tokyo",
+      fingerprint_summary: "provider_claim_ref:fingerprint_xhs-managed",
+      credential_ref: "credential_xhs-managed",
+      keychain_ref: "keychain://harbor/xhs-managed",
+      local_secret_ref: "local-secret_xhs-managed",
+      login_method: "qr",
+      human_verification: ["qr_scan", "captcha"]
+    });
+    const boss = runtime.importLocalIdentityEnvironment({
+      ...providerFixture({ [chromePath]: { executable: true } }),
+      identity_environment_ref: "identity-env_boss-managed",
+      execution_identity_ref: "execution-identity_boss-managed",
+      profile_ref: "profile_boss-managed",
+      profile_storage_ref: "profile-storage_boss-managed",
+      browser_storage_ref: "browser-storage_boss-managed",
+      imported_from: "manual_profile_import",
+      site: {
+        site_id: "boss",
+        origin: "https://www.zhipin.com",
+        display_name: "BOSS 直聘",
+        account_ref: "account_boss-managed"
+      },
+      login_state: "logged_in",
+      storage_state: "present",
+      proxy_ref: "proxy_shanghai-managed",
+      region: "CN",
+      language: "zh-CN",
+      timezone: "Asia/Shanghai",
+      fingerprint_summary: "provider_claim_ref:fingerprint_boss-managed"
+    });
+
+    assert.equal(xhs.site.site_id, "xiaohongshu");
+    assert.equal(xhs.status.readiness, "needs_auth");
+    assert.equal(xhs.refs.profile_storage_ref.startsWith("profile_storage_ref_"), true);
+    assert.notEqual(xhs.refs.profile_storage_ref, "profile-storage_xhs-managed");
+    assert.equal(boss.site.site_id, "boss");
+    assert.equal(runtime.listLocalIdentityEnvironments().length, 2);
+
+    const updated = runtime.updateLocalIdentityEnvironment("identity-env_xhs-managed", {
+      login_state: "logged_in",
+      storage_state: "present",
+      manual_authentication_state: "completed",
+      observed_environment: {
+        proxy_ref: "proxy_tokyo-managed",
+        region: "JP",
+        language: "zh-CN",
+        timezone: "Asia/Tokyo",
+        login_state: "logged_in"
+      }
+    });
+    assert.equal(updated?.status.login_state, "logged_in");
+    assert.equal(updated?.status.manual_authentication_state, "completed");
+
+    const session = await runtime.openManagedIdentityEnvironmentSession({
+      identity_environment_ref: "identity-env_xhs-managed",
+      url: "https://www.xiaohongshu.com/explore",
+      control_owner: "agent"
+    });
+    assert.equal("status" in session, false);
+    if ("status" in session) throw new Error("managed identity environment session should open");
+    assert.equal(session.identity_environment_ref, "identity-env_xhs-managed");
+    assert.equal(session.profile_ref, "profile_xhs-managed");
+
+    assert.throws(() => runtime.createLocalIdentityEnvironment({
+      identity_environment_ref: "identity-env_rejected",
+      site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com" },
+      password: "plain-secret-value",
+      cookie_value: "cookie-value",
+      session_token: "session-token-value",
+      raw_storage: { localStorage: "storage-value" }
+    } as Parameters<HarborRuntime["createLocalIdentityEnvironment"]>[0]), /Sensitive local identity material/);
+
+    const publicJson = JSON.stringify(runtime.listLocalIdentityEnvironments());
+    const persistedJson = readFileSync(persistence_path, "utf8");
+    for (const material of ["plain-secret-value", "cookie-value", "session-token-value", "storage-value", "keychain://harbor/xhs-managed"]) {
+      assert.equal(publicJson.includes(material), false);
+    }
+    for (const material of ["plain-secret-value", "cookie-value", "session-token-value", "storage-value"]) {
+      assert.equal(persistedJson.includes(material), false);
+    }
+    assert.equal(publicJson.includes("cookie_value"), true);
+    assert.equal(publicJson.includes("raw_profile_data"), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("opens an identity environment session with page and controller facts", async () => {

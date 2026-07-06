@@ -75,6 +75,8 @@ Harbor 负责的是浏览器账号和运行环境：这个账号用哪个 Profil
 - Evidence Store：保存运行证据、错误状态、raw_payload_ref、source_trace 和关键运行事实；
 - Runtime API：向 WebEnvoy Core、Agent、CLI、MCP、SDK 和 WebEnvoy App 暴露稳定能力。
 
+当前 Runtime API 已提供本地身份环境管理的最小实现：可创建或导入小红书 / BOSS 等站点身份环境，维护本地 Profile、Cookie / storage 登录态状态、代理、地区、语言、时区和指纹一致性摘要。公共输出只暴露状态和脱敏引用；password、cookie value、token、raw storage 和 raw profile data 不会被接受为输入或输出。
+
 ## 与 WebEnvoy / Lode 的关系
 
 Harbor 管浏览器账号和运行现场，不理解具体网站业务。
