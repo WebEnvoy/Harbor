@@ -3,10 +3,10 @@
   "item_id": "HARBOR-177",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "通过：HARBOR-177 closeout carrier 仅同步 post-merge closeout 与 closed_out 状态，可供 closeout PR 消费。",
+  "summary": "通过：HARBOR-177 current pointer retire 仅把仓库状态退回 no_active_item / idle；review 仍绑定已合并实现事实，不扩大 provider 产品语义。",
   "reviewer": "codex-main-controller",
-  "authored_at": "2026-07-06T05:29:51Z",
-  "reviewed_head": "7d059132adc77f792673b0fd9c8556348e21e8eb",
+  "authored_at": "2026-07-06T05:39:04Z",
+  "reviewed_head": "567d36d228368038c88b54aa99303055fd286173",
   "reviewed_validation_summary": "`git diff --check`; `jq empty .loom/bootstrap/init-result.json`; `loom fact-chain --target . --json`; `loom verify --target . --json`; local `loom pr gate --surface closeout` passed for PR #184. This is a closeout-carrier-only review; it does not change Harbor runtime/provider product semantics or launch a browser.",
   "reviewed_validation_summary_hash": "266554a1ea43290f775dae243515abbbcd3075467004792c3a3cf9371611b14b",
   "validation_summary_source": "recovery.latest_validation_summary",
@@ -16,45 +16,18 @@
   "blocking_issues": [],
   "follow_ups": [],
   "consumed_inputs": {
-    "work_item": ".loom/work-items/HARBOR-177.md",
-    "recovery_entry": ".loom/progress/HARBOR-177.md",
-    "status_surface": ".loom/status/current.md",
-    "build_checkpoint": "pass",
-    "budget_risk": {
-      "schema_version": "loom-execution-budget-risk/v1",
-      "status": "not_applicable",
-      "enforcement": "advisory",
-      "highest_risk": "none",
-      "risk_dimensions": [],
-      "summary": "execution budget is not_applicable; budget risk remains advisory and non-blocking",
-      "budget_summary": "execution budget is not collected for this invocation.",
-      "adapter_evidence_locator": "",
-      "provenance": {
-        "source": "github_host"
-      }
-    },
-    "engine_adapter": null,
-    "engine_evidence": null,
-    "normalized_findings": null,
-    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor --item HARBOR-177 --json",
-    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor --item HARBOR-177 --json",
-    "suite_evidence_map": ".loom/specs/HARBOR-177/evidence-map.md",
-    "suite_consistency_analysis": null,
-    "suite_task_carriers": [
-      ".loom/specs/HARBOR-177/task-carrier.md"
-    ],
-    "suite_evidence_consumed_contracts": [
-      "docs/methodology/harness/full-spec-suite-cli-surface.md",
-      "docs/methodology/templates/evidence-map.md"
-    ],
-    "suite_carrier_consumed_contracts": [
-      "docs/methodology/harness/task-carrier-contract.md",
-      "docs/methodology/templates/execution-breakdown.md",
-      "docs/methodology/harness/full-spec-suite-cli-surface.md"
-    ]
+    "repository": "WebEnvoy/Harbor",
+    "retire_pull_request": "https://github.com/WebEnvoy/Harbor/pull/185",
+    "closeout_pull_request": "https://github.com/WebEnvoy/Harbor/pull/184",
+    "implementation_pull_request": "https://github.com/WebEnvoy/Harbor/pull/183",
+    "work_item": "HARBOR-177",
+    "covered_work_items": "#177 #178 #179 #180 #181",
+    "closeout_scope": "PR #185 only retires the HARBOR-177 current pointer to no_active_item / idle; #157 #158 #159 #160 #182 remain open.",
+    "reviewed_diff": "git diff origin/main...134f4b51ed1cbe4372add70f2434e44f922e0abb",
+    "validation": "`git diff --check`; `jq empty .loom/bootstrap/init-result.json`; `loom fact-chain --target . --json`; `loom verify --target . --json`; PR #185 metadata preflight passed. This retire PR only returns HARBOR-177 current pointer to no_active_item / idle after PR #184 closeout merged; it does not change Harbor runtime/provider product semantics or launch a browser."
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Closeout carrier review approved the current head for terminal closeout consumption."
+    "reason": "Closeout carrier review approved the terminal closeout and current-pointer retire remains carrier-only."
   }
 }
