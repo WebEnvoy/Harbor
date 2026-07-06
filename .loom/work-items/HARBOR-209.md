@@ -6,7 +6,7 @@
 - Goal: Start and stop local real-browser identity sessions, open xiaohongshu and BOSS default pages, report page title/url/status, expose user handoff/release ownership facts, and produce screenshot/page/evidence refs.
 - Scope: Covers Harbor #208/#209/#210/#211/#212 in one PR, including session ownership facts and ownership constraints; anchor Work Item is #209.
 - Execution Path: work/harbor-209-real-identity-session
-- Workspace Entry: /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-209-real-identity-session
+- Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-209.md
 - Review Entry: .loom/reviews/HARBOR-209.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; pnpm smoke:runtime:local; git diff --check; loom fact-chain --target . --json; loom verify --target . --json

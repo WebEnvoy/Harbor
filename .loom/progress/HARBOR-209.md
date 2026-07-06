@@ -3,9 +3,9 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-209
-- Current Checkpoint: build
-- Current Stop: Implementation and local validation are complete for PR-ready coverage of #208/#209/#210/#211/#212; commit/push/PR readback pending.
-- Next Step: Commit, push, create PR, and read back PR/head metadata.
+- Current Checkpoint: merge_ready
+- Current Stop: PR #216 is ready for current-head review and merge gate after controller carrier refresh.
+- Next Step: Run gate, merge PR #216 if checks pass, then create closeout/retire lane and close #209-#212 plus parent #208 with post-merge evidence.
 - Blockers: None recorded.
 - Latest Validation Summary: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `pnpm smoke:runtime:local`, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-209 --json`, `loom suite carrier validate --target . --item HARBOR-209 --json`, and `loom suite evidence validate --target . --item HARBOR-209 --json` passed locally on 2026-07-06 UTC.
 - Recovery Boundary: Harbor Runtime API real local browser session evidence only; no login, no write actions, no CAPTCHA/risk-control bypass, no raw browser material export, no Core/Lode/App changes, no merge, and no issue closeout.
