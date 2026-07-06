@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,10 +15,13 @@ import type {
   LocalProviderLauncher,
   LocalProviderLaunchResult,
   LocalProviderPageFacts,
+  LocalProviderScreenshotFacts,
   RuntimeErrorCode,
   RuntimeErrorFact,
   RuntimeFact
 } from "./runtime-session-types.js";
+
+type CdpPageTarget = { type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
 
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
@@ -41,6 +45,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     const port = await waitForDevtoolsPort(profileDir, input.timeout_ms);
     const version = await fetchVersion(port);
     const page = await readPageFacts(port, input.url);
+    let currentUrl = page.current_url ?? input.url;
     const evidence_ref = opaqueRef("validation");
     return {
       status: "ready",
@@ -53,7 +58,12 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         { key: "cdp.version", source: "validation_evidence", value: `${version.Browser} ${version["Protocol-Version"]}`, evidence_ref },
         ...page.facts
       ],
-      openUrl: (url) => openProviderUrl(port, url),
+      openUrl: async (url) => {
+        const nextPage = await openProviderUrl(port, url);
+        currentUrl = nextPage.current_url ?? url;
+        return nextPage;
+      },
+      captureScreenshot: () => captureProviderScreenshot(port, currentUrl),
       close: () => closeBrowser(child, profileDir)
     };
   } catch (error) {
@@ -86,6 +96,7 @@ export function createFixtureLauncher(status: "ready" | "unavailable" | "profile
         ...page.facts
       ],
       openUrl: async (url) => readyPage(url, `Fixture page for ${url}`),
+      captureScreenshot: async () => fixtureScreenshot(input.url),
       close: async () => {}
     };
   };
@@ -177,7 +188,7 @@ async function openProviderUrl(port: string, url: string): Promise<LocalProvider
   try {
     const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });
     if (!response.ok) throw new Error(`CDP open-url probe failed: ${response.status}`);
-    return readPageFacts(port, url);
+    return readTargetPageFacts(await response.json() as CdpPageTarget, url);
   } catch (cause) {
     return unavailablePageFacts("url_unreachable", url, cause);
   }
@@ -185,16 +196,138 @@ async function openProviderUrl(port: string, url: string): Promise<LocalProvider
 
 async function readPageFacts(port: string, requested_url: string): Promise<LocalProviderPageFacts> {
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/json/list`);
-    if (!response.ok) throw new Error(`CDP page-list probe failed: ${response.status}`);
-    const pages = (await response.json()) as { type?: string; url?: string; title?: string }[];
-    const page = pages.find((candidate) => candidate.type === "page" && candidate.url === requested_url) ??
-      pages.find((candidate) => candidate.type === "page") ??
-      pages[0];
-    return readyPage(page?.url ?? requested_url, page?.title ?? null);
+    const page = selectPage(await pageTargets(port), requested_url);
+    return readTargetPageFacts(page, requested_url);
   } catch (cause) {
     return unavailablePageFacts("cdp_unavailable", requested_url, cause);
   }
+}
+
+async function readTargetPageFacts(page: CdpPageTarget | undefined, requested_url: string): Promise<LocalProviderPageFacts> {
+  const observed = page?.webSocketDebuggerUrl ? await readPageTitle(page.webSocketDebuggerUrl, requested_url) : null;
+  return readyPage(observed?.url ?? page?.url ?? requested_url, observed?.title ?? page?.title ?? null);
+}
+
+async function captureProviderScreenshot(port: string, requested_url: string): Promise<LocalProviderScreenshotFacts | RuntimeErrorFact> {
+  try {
+    const page = await activePage(port, requested_url);
+    if (!page.webSocketDebuggerUrl) return error("cdp_unavailable", "Active page has no CDP websocket.", true);
+    const data = await withCdp(page.webSocketDebuggerUrl, async (client) => {
+      await client.send("Page.bringToFront");
+      await client.send("Page.enable");
+      const result = await client.send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
+      return String(result.data ?? "");
+    });
+    return screenshotFacts(Buffer.from(data, "base64"));
+  } catch (cause) {
+    return error("cdp_unavailable", cause instanceof Error ? cause.message : "Unable to capture screenshot.", true);
+  }
+}
+
+async function activePage(port: string, requested_url: string): Promise<CdpPageTarget> {
+  const page = selectPage(await pageTargets(port), requested_url);
+  if (!page) throw new Error("CDP page target is unavailable.");
+  return page;
+}
+
+async function pageTargets(port: string): Promise<CdpPageTarget[]> {
+  const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+  if (!response.ok) throw new Error(`CDP page-list probe failed: ${response.status}`);
+  return (await response.json()) as CdpPageTarget[];
+}
+
+function selectPage(pages: CdpPageTarget[], requested_url?: string) {
+  return pages.find((candidate) => candidate.type === "page" && candidate.url === requested_url) ??
+    pages.find((candidate) => candidate.type === "page" && candidate.webSocketDebuggerUrl) ??
+    pages.find((candidate) => candidate.type === "page") ??
+    pages[0];
+}
+
+async function readPageTitle(webSocketUrl: string, requested_url: string): Promise<{ title: string; url: string } | null> {
+  return withCdp(webSocketUrl, async (client) => {
+    await client.send("Runtime.enable");
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const result = await client.send("Runtime.evaluate", {
+        expression: "({ title: document.title, url: location.href, readyState: document.readyState })",
+        returnByValue: true
+      });
+      const value = (result.result as { value?: { title?: string; url?: string; readyState?: string } } | undefined)?.value;
+      const url = value?.url ?? "";
+      const navigated = url === requested_url || (url !== "" && url !== "about:blank");
+      if (navigated && (value?.title || value?.readyState === "complete")) return { title: value.title ?? "", url };
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return null;
+  });
+}
+
+async function withCdp<T>(webSocketUrl: string, callback: (client: CdpClient) => Promise<T>): Promise<T> {
+  const ws = new WebSocket(webSocketUrl);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out connecting to CDP websocket.")), 5000);
+    ws.addEventListener("open", () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+    ws.addEventListener("error", () => {
+      clearTimeout(timer);
+      reject(new Error("CDP websocket connection failed."));
+    }, { once: true });
+  });
+  try {
+    return await callback(new CdpClient(ws));
+  } finally {
+    ws.close();
+  }
+}
+
+class CdpClient {
+  private nextId = 1;
+
+  constructor(private readonly ws: WebSocket) {}
+
+  send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.ws.removeEventListener("message", onMessage);
+        reject(new Error(`CDP command timed out: ${method}`));
+      }, 20000);
+      const onMessage = (event: MessageEvent) => {
+        const text = typeof event.data === "string" ? event.data : Buffer.from(event.data as ArrayBuffer).toString("utf8");
+        const payload = JSON.parse(text) as { id?: number; result?: Record<string, unknown>; error?: { message?: string } };
+        if (payload.id !== id) return;
+        clearTimeout(timer);
+        this.ws.removeEventListener("message", onMessage);
+        if (payload.error) reject(new Error(payload.error.message ?? `CDP command failed: ${method}`));
+        else resolve(payload.result ?? {});
+      };
+      this.ws.addEventListener("message", onMessage);
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+}
+
+function fixtureScreenshot(seed: string): LocalProviderScreenshotFacts {
+  return screenshotFacts(Buffer.from(`fixture screenshot for ${seed}`, "utf8"));
+}
+
+function screenshotFacts(bytes: Buffer): LocalProviderScreenshotFacts {
+  const evidence_ref = opaqueRef("validation");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  return {
+    screenshot_ref: opaqueRef("screenshot"),
+    mime_type: "image/png",
+    byte_length: bytes.byteLength,
+    sha256,
+    captured_at: new Date().toISOString(),
+    facts: [
+      { key: "screenshot.capture", source: "validation_evidence", value: "ready", evidence_ref },
+      { key: "screenshot.mime_type", source: "observed", value: "image/png", evidence_ref },
+      { key: "screenshot.byte_length", source: "observed", value: String(bytes.byteLength), evidence_ref },
+      { key: "screenshot.sha256", source: "validation_evidence", value: sha256, evidence_ref }
+    ]
+  };
 }
 
 function unavailablePageFacts(code: RuntimeErrorCode, requested_url: string, cause: unknown): LocalProviderPageFacts {
