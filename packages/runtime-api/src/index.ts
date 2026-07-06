@@ -20,6 +20,7 @@ import {
   type EvidenceStatusFixture,
   type PageSceneUnavailable,
   type RefMapRecord,
+  type ScreenshotArtifactInput,
   type SnapshotCaptureResult,
   type SnapshotRecord
 } from "./page-scene.js";
@@ -69,6 +70,11 @@ import {
   type ViewerControlUnavailable
 } from "./viewer-control.js";
 
+export const DEFAULT_IDENTITY_SITE_URLS = {
+  xiaohongshu: "https://www.xiaohongshu.com/explore",
+  boss: "https://www.zhipin.com/"
+} as const;
+
 export { HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_PAGE_SCENE_REFS_SCHEMA } from "./page-scene.js";
 export { createIdentityConsistencyFacts, HARBOR_IDENTITY_CONSISTENCY_FACTS_SCHEMA } from "./identity-consistency.js";
 export { createLocalIdentityEnvironmentFacts, HARBOR_LOCAL_IDENTITY_ENVIRONMENT_SCHEMA } from "./identity-environment.js";
@@ -104,6 +110,7 @@ export type {
   RefMapElementRef,
   RefMapRecord,
   RetentionState,
+  ScreenshotArtifactInput,
   SnapshotCaptureResult,
   SnapshotRecord,
   SourceTrace,
@@ -183,6 +190,7 @@ export type {
   LocalProviderLaunchInput,
   LocalProviderLaunchResult,
   LocalProviderPageFacts,
+  LocalProviderScreenshotFacts,
   OpenIdentityEnvironmentSessionInput,
   ProviderMode,
   RuntimeControlLockFacts,
@@ -306,6 +314,28 @@ export class HarborRuntime {
     return this.runtimeSessions.openIdentityEnvironmentSession({ ...input, identity_environment });
   }
 
+  async openManagedDefaultSiteSession(input: Omit<OpenIdentityEnvironmentSessionInput, "identity_environment" | "url"> & { identity_environment_ref: string }): Promise<RuntimeSessionFacts | RuntimeSessionUnavailable> {
+    const identity_environment = this.identityEnvironments.getFacts(input.identity_environment_ref);
+    if (!identity_environment) {
+      return {
+        status: "unavailable",
+        failure_class: "identity_environment_unavailable",
+        message: "Local identity environment is not registered.",
+        retryable: true,
+        current_error: {
+          code: "identity_environment_unavailable",
+          message: "Local identity environment is not registered.",
+          retryable: true
+        }
+      };
+    }
+    return this.runtimeSessions.openIdentityEnvironmentSession({
+      ...input,
+      identity_environment,
+      url: defaultIdentitySiteUrl(identity_environment.site_binding.site_id, identity_environment.site_binding.origin)
+    });
+  }
+
   getIdentityConsistencyFacts(input: IdentityConsistencyFactsInput): IdentityConsistencyFacts {
     return createIdentityConsistencyFacts(input);
   }
@@ -315,6 +345,28 @@ export class HarborRuntime {
     const result = this.pageScenes.capture(record?.facts ?? null, input);
     if (record && result.status === "captured") {
       this.runtimeSessions.markSnapshotCaptured(runtime_session_ref, result.core_scene_ref.captured_at, result.evidence_refs);
+    }
+    return result;
+  }
+
+  async captureLiveSnapshot(runtime_session_ref: string, input: CaptureSnapshotInput = {}): Promise<SnapshotCaptureResult> {
+    const record = this.runtimeSessions.getRecord(runtime_session_ref);
+    if (!record) return this.pageScenes.capture(null, input);
+    const screenshot = await record.captureScreenshot?.();
+    const screenshot_artifact = screenshot && !("code" in screenshot) ? screenshotArtifact(screenshot) : undefined;
+    const result = this.pageScenes.capture(record.facts, {
+      title: input.title ?? record.facts.current_page.title ?? "Untitled page",
+      url: input.url ?? record.facts.current_page.current_url ?? record.facts.current_page.requested_url,
+      summary: input.summary ?? "Live browser page captured as Harbor refs with raw screenshot bytes withheld.",
+      capture_method: input.capture_method ?? (screenshot_artifact ? "cdp_screenshot" : "provided_context"),
+      source_locator: input.source_locator ?? `runtime-session://${runtime_session_ref}/current-page`,
+      elements: input.elements,
+      screenshot_artifact,
+      evidence_policy: input.evidence_policy
+    });
+    if (result.status === "captured") {
+      this.runtimeSessions.markSnapshotCaptured(runtime_session_ref, result.core_scene_ref.captured_at, result.evidence_refs);
+      if (screenshot && !("code" in screenshot)) record.facts.facts.push(...screenshot.facts);
     }
     return result;
   }
@@ -555,4 +607,19 @@ export class HarborRuntime {
   async closeSession(runtime_session_ref: string): Promise<RuntimeSessionFacts | null> {
     return this.runtimeSessions.closeSession(runtime_session_ref);
   }
+}
+
+export function defaultIdentitySiteUrl(site_id: string, origin: string): string {
+  if (site_id === "xiaohongshu") return DEFAULT_IDENTITY_SITE_URLS.xiaohongshu;
+  if (site_id === "boss") return DEFAULT_IDENTITY_SITE_URLS.boss;
+  return origin;
+}
+
+function screenshotArtifact(screenshot: { screenshot_ref: string; mime_type: "image/png"; byte_length: number; sha256: string }): ScreenshotArtifactInput {
+  return {
+    artifact_ref: screenshot.screenshot_ref,
+    mime_type: screenshot.mime_type,
+    byte_length: screenshot.byte_length,
+    sha256: screenshot.sha256
+  };
 }

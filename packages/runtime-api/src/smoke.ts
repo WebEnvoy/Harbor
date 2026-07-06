@@ -1,4 +1,4 @@
-import { createFixtureLauncher, HarborRuntime } from "./index.js";
+import { createFixtureLauncher, DEFAULT_IDENTITY_SITE_URLS, HarborRuntime } from "./index.js";
 
 const useLocalProvider = process.argv.includes("--local");
 const runtime = new HarborRuntime(useLocalProvider ? undefined : createFixtureLauncher("ready"));
@@ -57,6 +57,24 @@ const managedIdentityEnvironment = runtime.createLocalIdentityEnvironment({
   timezone: "America/Los_Angeles",
   fingerprint_summary: "fixture-provider-claim"
 });
+const bossIdentityEnvironment = runtime.createLocalIdentityEnvironment({
+  identity_environment_ref: "identity-env_smoke-boss-managed",
+  execution_identity_ref: "execution-identity_smoke-boss-managed",
+  profile_ref: "profile_smoke-boss-managed",
+  profile_storage_ref: "profile-storage_smoke-boss-managed",
+  site: {
+    site_id: "boss",
+    origin: "https://www.zhipin.com",
+    display_name: "BOSS 直聘",
+    account_ref: "account_smoke-boss-managed"
+  },
+  login_state: "manual_auth_required",
+  storage_state: "present",
+  region: "CN",
+  language: "zh-CN",
+  timezone: "Asia/Shanghai",
+  fingerprint_summary: "fixture-provider-claim"
+});
 const session = await runtime.createSession();
 const visibleViewerRuntime = new HarborRuntime(createFixtureLauncher("ready"));
 const visibleViewerSession = await visibleViewerRuntime.createSession({ headless: false, control_owner: "core_task" });
@@ -69,10 +87,39 @@ const browserSession = await runtime.openIdentityEnvironmentSession({
 });
 const managedBrowserSession = await runtime.openManagedIdentityEnvironmentSession({
   identity_environment_ref: "identity-env_smoke-managed",
-  url: useLocalProvider ? "about:blank" : "https://www.xiaohongshu.com/explore",
+  url: DEFAULT_IDENTITY_SITE_URLS.xiaohongshu,
   control_owner: "agent",
   holder_ref: "smoke-managed-agent"
 });
+const bossBrowserSession = await runtime.openManagedDefaultSiteSession({
+  identity_environment_ref: "identity-env_smoke-boss-managed",
+  control_owner: "agent",
+  holder_ref: "smoke-boss-agent"
+});
+const xhsLiveCapture = "status" in managedBrowserSession || managedBrowserSession.lifecycle_state !== "active"
+  ? managedBrowserSession
+  : await runtime.captureLiveSnapshot(managedBrowserSession.runtime_session_ref, {
+      summary: "Live xiaohongshu default page captured as Harbor refs.",
+      elements: [{ label: "xiaohongshu default page", role: "document" }]
+    });
+const bossLiveCapture = "status" in bossBrowserSession || bossBrowserSession.lifecycle_state !== "active"
+  ? bossBrowserSession
+  : await runtime.captureLiveSnapshot(bossBrowserSession.runtime_session_ref, {
+      summary: "Live BOSS default page captured as Harbor refs.",
+      elements: [{ label: "BOSS default page", role: "document" }]
+    });
+const xhsLiveEvidence = "status" in xhsLiveCapture && xhsLiveCapture.status === "captured"
+  ? xhsLiveCapture.evidence_refs.map((ref) => runtime.getEvidence(ref))
+  : xhsLiveCapture;
+const bossLiveEvidence = "status" in bossLiveCapture && bossLiveCapture.status === "captured"
+  ? bossLiveCapture.evidence_refs.map((ref) => runtime.getEvidence(ref))
+  : bossLiveCapture;
+const managedBrowserStopped = "status" in managedBrowserSession || managedBrowserSession.lifecycle_state === "failed"
+  ? managedBrowserSession
+  : await runtime.stopSession(managedBrowserSession.runtime_session_ref, { control_owner: "agent" });
+const bossBrowserStopped = "status" in bossBrowserSession || bossBrowserSession.lifecycle_state === "failed"
+  ? bossBrowserSession
+  : await runtime.stopSession(bossBrowserSession.runtime_session_ref, { control_owner: "agent" });
 const browserSessionReusable = "status" in browserSession || browserSession.lifecycle_state !== "active"
   ? browserSession
   : await runtime.openIdentityEnvironmentSession({
@@ -124,8 +171,16 @@ console.log(JSON.stringify({
   identityEnvironment,
   identityConsistency,
   managedIdentityEnvironment,
+  bossIdentityEnvironment,
   browserSession,
   managedBrowserSession,
+  bossBrowserSession,
+  xhsLiveCapture,
+  bossLiveCapture,
+  xhsLiveEvidence,
+  bossLiveEvidence,
+  managedBrowserStopped,
+  bossBrowserStopped,
   browserSessionReusable,
   browserSessionReleased,
   browserSessionStopped,
@@ -148,6 +203,8 @@ console.log(JSON.stringify({
 const localUnavailableAllowed = useLocalProvider && session.lifecycle_state === "failed" && Boolean(session.current_error);
 const browserSessionReady = !("status" in browserSession) && browserSession.current_page.status === "ready";
 const browserSessionFailedWithFacts = "status" in browserSession || (!("status" in browserSession) && browserSession.current_error !== null);
+const xhsLiveCaptureCaptured = "status" in xhsLiveCapture && xhsLiveCapture.status === "captured";
+const bossLiveCaptureCaptured = "status" in bossLiveCapture && bossLiveCapture.status === "captured";
 const staleEvidenceInvalid = !staleEvidenceStatus ||
   "status" in staleEvidenceStatus ||
   staleEvidenceStatus.scene_status.display_state !== "stale";
@@ -168,10 +225,13 @@ if (
   identityConsistency.public_facts.core !== "admission_resource_facts_and_blocking_reasons" ||
   identityEnvironment.consumer_boundary.not_exposed.includes("cookie_value") !== true ||
   managedIdentityEnvironment.public_boundary.output !== "status_and_redacted_refs_only" ||
-  runtime.listLocalIdentityEnvironments().length !== 1 ||
+  runtime.listLocalIdentityEnvironments().length !== 2 ||
   (!localUnavailableAllowed && (!capture || capture.status !== "captured")) ||
   (!useLocalProvider && !browserSessionReady) ||
   (!useLocalProvider && ("status" in managedBrowserSession || managedBrowserSession.current_page.status !== "ready")) ||
+  (!useLocalProvider && ("status" in bossBrowserSession || bossBrowserSession.current_page.requested_url !== DEFAULT_IDENTITY_SITE_URLS.boss)) ||
+  (!useLocalProvider && !xhsLiveCaptureCaptured) ||
+  (!useLocalProvider && !bossLiveCaptureCaptured) ||
   (useLocalProvider && !browserSessionReady && !browserSessionFailedWithFacts) ||
   "status" in viewerControl ||
   "status" in handoff ||

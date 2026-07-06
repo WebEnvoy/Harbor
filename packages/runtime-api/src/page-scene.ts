@@ -13,7 +13,7 @@ export type CaptureFailureClass =
   | "capture_denied"
   | "source_unavailable"
   | "selector_unstable";
-export type CaptureMethod = "provided_context" | "fixture";
+export type CaptureMethod = "provided_context" | "fixture" | "cdp_screenshot";
 export type EvidenceAccessState = "available" | "missing" | "stale" | "expired" | "redacted" | "access_denied";
 export type EvidenceType = "snapshot" | "refmap" | "source_trace" | "screenshot";
 export type EvidenceFreshnessState = "fresh" | "stale" | "expired" | "missing";
@@ -38,6 +38,13 @@ export interface EvidenceCapturePolicy {
   export_consent?: ExportConsentState;
 }
 
+export interface ScreenshotArtifactInput {
+  artifact_ref: string;
+  mime_type: "image/png";
+  byte_length: number;
+  sha256: string;
+}
+
 export interface RefMapElementInput {
   label: string;
   role?: string;
@@ -52,6 +59,7 @@ export interface CaptureSnapshotInput {
   capture_method?: CaptureMethod;
   source_locator?: string;
   elements?: RefMapElementInput[];
+  screenshot_artifact?: ScreenshotArtifactInput;
   evidence_policy?: EvidenceCapturePolicy;
 }
 
@@ -136,6 +144,13 @@ export interface EvidenceRecord {
     producer: "harbor_runtime_api";
     capture_method: CaptureMethod;
     source_locator?: string;
+  };
+  artifact?: {
+    artifact_ref: string;
+    mime_type: "image/png";
+    byte_length: number;
+    sha256: string;
+    raw_bytes: "not_exposed";
   };
 }
 
@@ -247,12 +262,12 @@ export class PageSceneStore {
       snapshot_ref,
       refmap_ref
     }, redaction_state, retention_state);
-    const screenshot_ref = input.evidence_policy?.screenshot === "deny" ? undefined : opaqueRef("screenshot");
+    const screenshot_ref = input.evidence_policy?.screenshot === "deny" ? undefined : input.screenshot_artifact?.artifact_ref ?? opaqueRef("screenshot");
     const screenshot_evidence = screenshot_ref ? this.createEvidence("screenshot", source_trace, {
       runtime_session_ref: session.runtime_session_ref,
       snapshot_ref,
       screenshot_ref
-    }, redaction_state, retention_state) : undefined;
+    }, redaction_state, retention_state, input.screenshot_artifact) : undefined;
     const snapshot_record: SnapshotRecord = {
       schema_version: HARBOR_PAGE_SCENE_REFS_SCHEMA,
       snapshot_ref,
@@ -370,7 +385,8 @@ export class PageSceneStore {
     source_trace: SourceTrace,
     source_binding: EvidenceRecord["source_binding"],
     redaction_state: RedactionState,
-    retention_state: RetentionState
+    retention_state: RetentionState,
+    screenshot_artifact?: ScreenshotArtifactInput
   ): EvidenceRecord {
     const evidence_ref = opaqueRef("evidence");
     const record: EvidenceRecord = {
@@ -389,7 +405,11 @@ export class PageSceneStore {
         producer: "harbor_runtime_api",
         capture_method: source_trace.capture_method,
         source_locator: source_trace.source_locator
-      }
+      },
+      artifact: screenshot_artifact && evidence_type === "screenshot" ? {
+        ...screenshot_artifact,
+        raw_bytes: "not_exposed"
+      } : undefined
     };
     this.evidence.set(evidence_ref, record);
     return record;

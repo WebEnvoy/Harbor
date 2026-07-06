@@ -11,6 +11,7 @@ import {
   type CreateRuntimeSessionInput,
   type LocalProviderLauncher,
   type LocalProviderPageFacts,
+  type LocalProviderScreenshotFacts,
   type OpenIdentityEnvironmentSessionInput,
   type RuntimeErrorCode,
   type RuntimeErrorFact,
@@ -41,6 +42,7 @@ export type {
   LocalProviderLaunchInput,
   LocalProviderLaunchResult,
   LocalProviderPageFacts,
+  LocalProviderScreenshotFacts,
   OpenIdentityEnvironmentSessionInput,
   ProviderMode,
   RuntimeControlLockFacts,
@@ -60,6 +62,7 @@ export type {
 export interface RuntimeSessionRecord {
   facts: RuntimeSessionFacts;
   openUrl?: (url: string) => Promise<LocalProviderPageFacts>;
+  captureScreenshot?: () => Promise<LocalProviderScreenshotFacts | RuntimeErrorFact>;
   close?: () => Promise<void>;
 }
 
@@ -148,7 +151,12 @@ export class RuntimeSessionStore {
       { key: "control.lock_state", source: "configured", value: facts.control_lock.state },
       { key: "lifecycle.reference.donut_browser", source: "configured", value: "mechanism_reference_only" }
     );
-    this.records.set(runtime_session_ref, { facts, openUrl: ready ? launch.openUrl : undefined, close: ready ? launch.close : undefined });
+    this.records.set(runtime_session_ref, {
+      facts,
+      openUrl: ready ? launch.openUrl : undefined,
+      captureScreenshot: ready ? launch.captureScreenshot : undefined,
+      close: ready ? launch.close : undefined
+    });
     return snapshot(facts);
   }
 

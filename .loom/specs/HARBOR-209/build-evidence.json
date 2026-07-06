@@ -1,0 +1,98 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "item_id": "HARBOR-209",
+  "generated_at": "2026-07-06T16:27:34.153Z",
+  "branch": "feat/harbor-209-real-identity-session",
+  "delegations": [],
+  "ownership_constraints": {
+    "write_ownership": [
+      "packages/runtime-api/src/**",
+      ".loom/work-items/HARBOR-209.md",
+      ".loom/progress/HARBOR-209.md",
+      ".loom/specs/HARBOR-209/**"
+    ],
+    "forbidden_targets": [
+      "user daily browser profile",
+      "raw cookies",
+      "raw tokens",
+      "raw DOM",
+      "raw HAR",
+      "network response bodies",
+      "GitHub issue closeout",
+      "merge"
+    ],
+    "shared_carrier_policy": ".loom/status/current.md remains no_active_item because local fact-chain expects idle derived status; HARBOR-209 truth is item-specific carrier."
+  },
+  "source_command": "pnpm smoke:runtime:local",
+  "runtime_boundary": {
+    "profile": "isolated temporary browser profiles only",
+    "forbidden_actions": [
+      "login",
+      "submit",
+      "publish",
+      "apply",
+      "greet",
+      "send_message",
+      "captcha_or_risk_bypass",
+      "raw_cookie_token_profile_dom_har_or_body_export"
+    ],
+    "raw_debug_endpoint": "not_exposed",
+    "raw_screenshot_bytes": "not_exposed"
+  },
+  "provider": {
+    "selection_reason": "chrome_restricted_fallback",
+    "selected_provider_id": "chrome_official",
+    "chrome_version": "149.0.7827.201",
+    "cloakbrowser_status": "missing_on_this_workstation"
+  },
+  "pages": {
+    "xiaohongshu": {
+      "requested_url": "https://www.xiaohongshu.com/explore",
+      "current_url": "https://www.xiaohongshu.com/explore",
+      "title": "小红书 - 你的生活兴趣社区",
+      "status": "ready",
+      "observed_at": "2026-07-06T16:26:46.028Z",
+      "screenshot_ref": "screenshot_dcfdb449-de21-4d00-a799-1a7ac50cc805",
+      "evidence_refs": [
+        "evidence_90bff542-e512-4467-a90b-977d89f72dbd",
+        "evidence_ca270dbf-0840-44b0-b421-006659d394d3",
+        "evidence_d44877aa-df06-46ca-a81e-78f4868b33a0",
+        "evidence_f65c2378-06a2-4234-8e9f-9f67dc65384d"
+      ],
+      "screenshot_artifact": {
+        "mime_type": "image/png",
+        "byte_length": 17274,
+        "sha256": "3420baa74e96eb3efeef3895b45c7277ce14b1ac83f5da0eff83f8d6a8e51d33",
+        "raw_bytes": "not_exposed"
+      }
+    },
+    "boss": {
+      "requested_url": "https://www.zhipin.com/",
+      "current_url": "https://www.zhipin.com/",
+      "title": "",
+      "title_note": "The page runtime reported an empty document.title in the isolated Chrome fallback session.",
+      "status": "ready",
+      "observed_at": "2026-07-06T16:26:46.754Z",
+      "screenshot_ref": "screenshot_47e1c83c-9634-4571-807e-eeb209a4ab2f",
+      "evidence_refs": [
+        "evidence_68f16e0c-be5b-4c59-b9b1-e7c883f622ec",
+        "evidence_bd577726-20bb-4134-9c33-095a8fffc03a",
+        "evidence_b54ed720-4e99-4fd2-95a9-df0d4a3373ba",
+        "evidence_10eb9164-39d8-4d95-be5c-078f635fa0f6"
+      ]
+    }
+  },
+  "control": {
+    "handoff_owner": "user",
+    "handoff_reason": "viewer_only",
+    "released_state": "idle",
+    "browser_session_stopped": "closed",
+    "xiaohongshu_session_stopped": "closed",
+    "boss_session_stopped": "closed"
+  },
+  "remaining_limitations": [
+    "CloakBrowser was not installed on this workstation, so real runtime evidence used official Chrome restricted fallback.",
+    "BOSS returned an empty document title in the isolated Chrome fallback session.",
+    "BOSS screenshot evidence has a screenshot ref but no PNG hash artifact in this local run; raw bytes remain withheld."
+  ]
+}
