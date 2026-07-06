@@ -10,7 +10,7 @@
 - Recovery Entry: .loom/progress/HARBOR-165.md
 - Review Entry: .loom/reviews/HARBOR-165.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check; loom verify --target . --json; loom fact-chain --target . --json; loom suite validate/carrier/evidence validate --target . --item HARBOR-165 --json
-- Closing Condition: Implementation PR is opened and passes PR metadata readback/hosted checks for PR Ready; do not merge and do not close #158/#165/#166/#167/#168 in this lane.
+- Closing Condition: Implementation PR #189 is merged, closeout evidence is posted for #158/#165/#166/#167/#168, and HARBOR-165 terminal metadata is recorded before current pointer retire.
 
 ## Covered Work Items
 

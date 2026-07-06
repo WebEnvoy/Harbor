@@ -3,12 +3,12 @@
   "item_id": "HARBOR-165",
   "decision": "allow",
   "kind": "spec_review",
-  "summary": "Spec review accepts the bounded Harbor #158 runtime session lifecycle slice.",
+  "summary": "Spec closeout review accepts the bounded Harbor #158 terminal closeout carrier.",
   "reviewer": "codex-main-controller",
-  "authored_at": "2026-07-06T07:39:00Z",
-  "reviewed_head": "46a7c9e0cc21d4db2d9b34b52a7b4834c04a1bd0",
-  "reviewed_validation_summary": "`pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-165 --json`, `loom suite carrier validate --target . --item HARBOR-165 --json`, and `loom suite evidence validate --target . --item HARBOR-165 --json` passed locally on 2026-07-06T07:35Z.",
-  "reviewed_validation_summary_hash": "1d0a4ffe078ae1ffde7d2e3f2ef27c30ac11a72d9d0ff8a24acf778b4fb76705",
+  "authored_at": "2026-07-06T07:48:00Z",
+  "reviewed_head": "0cbd921cc27763c6f24a6a7c3183997d4df40dc1",
+  "reviewed_validation_summary": "`git diff --check`; `jq empty .loom/reviews/HARBOR-165.json .loom/reviews/HARBOR-165.spec.json`; `loom fact-chain --target . --json`; closeout evidence comments posted for #158/#165/#166/#167/#168 after PR #189 merged to main at 0cbd921cc27763c6f24a6a7c3183997d4df40dc1. This is a closeout-carrier review; it does not change Harbor runtime product semantics or touch live account/profile material.",
+  "reviewed_validation_summary_hash": "98bea84a6b5c27c89ba64389463f49a50081911f0c7ea489b0bdb8a4c690e886",
   "validation_summary_source": "recovery.latest_validation_summary",
   "validation_summary_locator": ".loom/progress/HARBOR-165.md",
   "fallback_to": null,
@@ -17,10 +17,10 @@
   "follow_ups": [],
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "The spec covers user value, success and failure states, sensitive data boundary, provider boundary, and non-goals for this runtime session lifecycle batch."
+    "reason": "Closeout stays inside HARBOR-165 carrier and does not expand the original spec."
   },
   "implementation_review_disposition": {
     "status": "passed",
-    "reason": "The implementation remains within the accepted spec and minimal suite path."
+    "reason": "Closeout carrier validation and fact-chain checks pass locally."
   }
 }
