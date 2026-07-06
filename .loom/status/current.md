@@ -10,12 +10,12 @@
 - Recovery Entry: .loom/progress/HARBOR-165.md
 - Review Entry: .loom/reviews/HARBOR-165.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check; loom verify --target . --json; loom fact-chain --target . --json; loom suite validate/carrier/evidence validate --target . --item HARBOR-165 --json
-- Closing Condition: Implementation PR is opened and passes PR metadata readback/hosted checks for PR Ready; do not merge and do not close #158/#165/#166/#167/#168 in this lane.
-- Current Checkpoint: build_ready
-- Current Stop: Runtime API implementation and local validation are ready for implementation PR creation; do not merge and do not close #158/#165/#166/#167/#168.
-- Next Step: commit, push `work/harbor-158-real-runtime-session`, create PR, validate PR metadata readback, then observe hosted checks.
+- Closing Condition: Implementation PR #189 is merged, closeout evidence is posted for #158/#165/#166/#167/#168, and HARBOR-165 terminal metadata is recorded before current pointer retire.
+- Current Checkpoint: closed_out
+- Current Stop: Implementation PR #189 merged, #158/#165/#166/#167/#168 closeout evidence posted, and this closeout carrier records terminal metadata.
+- Next Step: open closeout PR, pass hosted gate, merge closeout carrier, then retire current pointer to no_active_item in the same closeout lane.
 - Blockers: None recorded.
-- Latest Validation Summary: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-165 --json`, `loom suite carrier validate --target . --item HARBOR-165 --json`, and `loom suite evidence validate --target . --item HARBOR-165 --json` passed locally on 2026-07-06T07:35Z.
+- Latest Validation Summary: `git diff --check`; `jq empty .loom/reviews/HARBOR-165.json .loom/reviews/HARBOR-165.spec.json`; `loom fact-chain --target . --json`; closeout evidence comments posted for #158/#165/#166/#167/#168 after PR #189 merged to main at 0cbd921cc27763c6f24a6a7c3183997d4df40dc1. This is a closeout-carrier review; it does not change Harbor runtime product semantics or touch live account/profile material.
 - Recovery Boundary: Harbor runtime-api session lifecycle only; no App/Core/Lode changes, no hosted browser, no real account/login automation, no credential/cookie/token plaintext, no identity environment upload, no CAPTCHA/risk bypass, no issue closeout.
 - Current Lane: FR #158 real runtime session lifecycle batch anchored on HARBOR-165
 
