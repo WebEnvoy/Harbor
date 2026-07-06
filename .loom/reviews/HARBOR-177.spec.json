@@ -3,14 +3,14 @@
   "item_id": "HARBOR-177",
   "decision": "allow",
   "kind": "spec_review",
-  "summary": "通过：HARBOR-177 spec closeout review 仅覆盖 current pointer retire，不扩大 provider 产品语义。reviewed head 134f4b51ed1cbe4372add70f2434e44f922e0abb。",
+  "summary": "通过：HARBOR-177 spec closeout review 仅覆盖 current pointer retire，不扩大 provider 产品语义。",
   "reviewer": "codex-main-controller",
   "authored_at": "2026-07-06T05:39:04Z",
-  "reviewed_head": "134f4b51ed1cbe4372add70f2434e44f922e0abb",
-  "reviewed_validation_summary": "`git diff --check`; `jq empty .loom/bootstrap/init-result.json`; `loom fact-chain --target . --json`; `loom verify --target . --json`; PR #185 metadata preflight passed. This retire PR only returns HARBOR-177 current pointer to no_active_item / idle after PR #184 closeout merged; it does not change Harbor runtime/provider product semantics or launch a browser.",
-  "reviewed_validation_summary_hash": "e4c6b1ec60d63dd5b6be5dc7bbc464637d5fb745bd1d331c69ecdea12b80ebcb",
-  "validation_summary_source": "retire-pr-local-validation",
-  "validation_summary_locator": ".loom/tmp/harbor-177-retire-readback.md",
+  "reviewed_head": "567d36d228368038c88b54aa99303055fd286173",
+  "reviewed_validation_summary": "`git diff --check`; `jq empty .loom/bootstrap/init-result.json`; `loom fact-chain --target . --json`; `loom verify --target . --json`; local `loom pr gate --surface closeout` passed for PR #184. This is a closeout-carrier-only review; it does not change Harbor runtime/provider product semantics or launch a browser.",
+  "reviewed_validation_summary_hash": "266554a1ea43290f775dae243515abbbcd3075467004792c3a3cf9371611b14b",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-177.md",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
@@ -28,6 +28,6 @@
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "The implementation and closeout PRs were already merged. This PR only retires the current pointer and does not add product behavior."
+    "reason": "Closeout carrier review approved the terminal closeout and current-pointer retire remains carrier-only."
   }
 }
