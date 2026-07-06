@@ -5,8 +5,8 @@
   "kind": "spec_review",
   "summary": "通过：HARBOR-169 规格覆盖语义故事 #2、Provider 口径、身份环境一致性事实和敏感材料边界。",
   "reviewer": "codex-main-controller",
-  "authored_at": "2026-07-06T08:42:00Z",
-  "reviewed_head": "29cb582ab6052dec43a4e50e6bca56a5d08ae218",
+  "authored_at": "2026-07-06T08:48:00Z",
+  "reviewed_head": "6ab5c7af897a2daa33a00eebe4fd722d027827e4",
   "reviewed_validation_summary": "Local validation passed on 2026-07-06T08:21Z: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, sensitive material check against smoke output, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, and `loom suite validate/carrier/evidence --target . --item HARBOR-169 --json`.",
   "reviewed_validation_summary_hash": "f89a243d192028627993191aa3b5e81c2d82bb020df32bed75a0ded1ed078142",
   "validation_summary_source": "recovery.latest_validation_summary",
@@ -27,6 +27,7 @@
     "work_item": ".loom/work-items/HARBOR-169.md",
     "recovery_entry": ".loom/progress/HARBOR-169.md",
     "status_surface": ".loom/status/current.md",
-    "build_checkpoint": "pass"
+    "build_checkpoint": "pass",
+    "merge_checkpoint_carrier": "scheduler-updated progress/status from build to merge without product code changes"
   }
 }
