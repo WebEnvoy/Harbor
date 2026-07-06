@@ -4,8 +4,8 @@
 
 - Item ID: HARBOR-169
 - Current Checkpoint: build
-- Current Stop: Runtime API identity consistency facts, tests, smoke wiring, and item-specific Loom carriers are integrated on work/harbor-159-identity-consistency-facts; local PR-ready validation passed.
-- Next Step: Commit, push, create a non-draft implementation PR, read back PR body/head SHA, and leave merge/closeout to the scheduler thread.
+- Current Stop: Implementation PR #192 is open for HARBOR-169; local validation, PR body readback, and PR metadata preflight passed.
+- Next Step: Scheduler thread handles semantic review, hosted gate rerun, merge, closeout, current pointer retire, and issue state; execution subagent must not merge or close issues.
 - Blockers: None recorded.
 - Latest Validation Summary: Local validation passed on 2026-07-06T08:21Z: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, sensitive material check against smoke output, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, and `loom suite validate/carrier/evidence --target . --item HARBOR-169 --json`.
 - Recovery Boundary: Harbor runtime API facts and item-specific Loom carriers only; no App/Core/Lode changes, no real browser launch beyond fixture smoke, no real account/profile/cookie/token material, no hosted browser, no cloud runtime, no Chromium user provider, no Donut Browser provider registration, no issue closeout.
