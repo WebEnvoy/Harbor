@@ -1,0 +1,6 @@
+# Task Carrier
+
+| carrier_type | carrier_locator | source_value | normalized_status | relationship | work_item_locator | breakdown_unit_locator | spec_scenario_locator | plan_phase_locator | validation_strategy_locator | provenance | freshness_rule |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| github_issue | https://github.com/WebEnvoy/Harbor/issues/169 | Absorb CloakBrowser-Manager provider capability and launch facts | in_progress | primary | .loom/work-items/HARBOR-169.md | .loom/specs/HARBOR-169/plan.md#steps | .loom/specs/HARBOR-169/spec.md#scenarios | .loom/specs/HARBOR-169/plan.md#steps | .loom/specs/HARBOR-169/evidence-map.md | Authored from Harbor #159/#169/#170/#171/#172 and story baseline #2 on 2026-07-06 UTC by Codex Harbor execution subagent | Recheck after PR retarget, issue state change, story baseline edit, or validation run. |
+| github_issue | https://github.com/WebEnvoy/Harbor/issues/159 | Output identity environment consistency facts | in_progress | mirror | .loom/work-items/HARBOR-169.md | .loom/specs/HARBOR-169/plan.md#steps | .loom/specs/HARBOR-169/spec.md#scenarios | .loom/specs/HARBOR-169/plan.md#steps | .loom/specs/HARBOR-169/evidence-map.md | Covered by the HARBOR-169 batch PR without closing issue in this execution thread | Recheck before PR body finalization. |

@@ -1,8 +1,5 @@
-import {
-  createLocalIdentityEnvironmentFacts,
-  type LocalIdentityEnvironmentFacts,
-  type LocalIdentityEnvironmentInput
-} from "./identity-environment.js";
+import { createIdentityConsistencyFacts, type IdentityConsistencyFacts, type IdentityConsistencyFactsInput } from "./identity-consistency.js";
+import { createLocalIdentityEnvironmentFacts, type LocalIdentityEnvironmentFacts, type LocalIdentityEnvironmentInput } from "./identity-environment.js";
 import {
   HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA,
   HARBOR_PAGE_SCENE_REFS_SCHEMA,
@@ -65,10 +62,8 @@ import {
 } from "./viewer-control.js";
 
 export { HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_PAGE_SCENE_REFS_SCHEMA } from "./page-scene.js";
-export {
-  createLocalIdentityEnvironmentFacts,
-  HARBOR_LOCAL_IDENTITY_ENVIRONMENT_SCHEMA
-} from "./identity-environment.js";
+export { createIdentityConsistencyFacts, HARBOR_IDENTITY_CONSISTENCY_FACTS_SCHEMA } from "./identity-consistency.js";
+export { createLocalIdentityEnvironmentFacts, HARBOR_LOCAL_IDENTITY_ENVIRONMENT_SCHEMA } from "./identity-environment.js";
 export {
   bindIdentityEnvironmentDefaultProvider,
   detectBrowserProviders,
@@ -79,15 +74,8 @@ export {
 } from "./provider-management.js";
 export { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-provider-launcher.js";
 export { HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA, HARBOR_WRITE_PRECHECK_FACTS_SCHEMA } from "./runtime-fixtures.js";
-export {
-  HARBOR_RUNTIME_FACTS_SCHEMA,
-  HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA
-} from "./runtime-session.js";
-export {
-  HARBOR_APP_RUNTIME_STATUS_FIXTURE_SCHEMA,
-  HARBOR_CORE_RUNTIME_FACTS_SCHEMA,
-  HARBOR_VIEWER_CONTROL_FACTS_SCHEMA
-} from "./viewer-control.js";
+export { HARBOR_RUNTIME_FACTS_SCHEMA, HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA } from "./runtime-session.js";
+export { HARBOR_APP_RUNTIME_STATUS_FIXTURE_SCHEMA, HARBOR_CORE_RUNTIME_FACTS_SCHEMA, HARBOR_VIEWER_CONTROL_FACTS_SCHEMA } from "./viewer-control.js";
 export type {
   CaptureFailureClass,
   CaptureMethod,
@@ -127,6 +115,16 @@ export type {
   WritePrecheckFacts,
   WritePrecheckInput
 } from "./runtime-fixtures.js";
+export type {
+  IdentityConsistencyFacts,
+  IdentityConsistencyFactsInput,
+  IdentityConsistencyReadiness,
+  IdentityConsistencyResourceFact,
+  IdentityConsistencyResourceKey,
+  IdentityConsistencyRiskEvent,
+  IdentityConsistencyRiskState,
+  IdentityConsistencyState
+} from "./identity-consistency.js";
 export type {
   BrowserStorageState,
   ExportPolicy,
@@ -242,6 +240,10 @@ export class HarborRuntime {
 
   getLocalIdentityEnvironmentFacts(input: LocalIdentityEnvironmentInput): LocalIdentityEnvironmentFacts {
     return createLocalIdentityEnvironmentFacts(input);
+  }
+
+  getIdentityConsistencyFacts(input: IdentityConsistencyFactsInput): IdentityConsistencyFacts {
+    return createIdentityConsistencyFacts(input);
   }
 
   captureSnapshot(runtime_session_ref: string, input: CaptureSnapshotInput = {}): SnapshotCaptureResult {
