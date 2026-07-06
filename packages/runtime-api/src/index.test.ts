@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   bindIdentityEnvironmentDefaultProvider,
   createFixtureLauncher,
+  DEFAULT_IDENTITY_SITE_URLS,
   detectBrowserProviders,
   diagnoseBrowserProviderFailure,
   HarborRuntime
@@ -291,6 +292,15 @@ test("manages local xhs and boss identity environments with redacted public outp
     if ("status" in session) throw new Error("managed identity environment session should open");
     assert.equal(session.identity_environment_ref, "identity-env_xhs-managed");
     assert.equal(session.profile_ref, "profile_xhs-managed");
+
+    const defaultBossSession = await runtime.openManagedDefaultSiteSession({
+      identity_environment_ref: "identity-env_boss-managed",
+      control_owner: "agent"
+    });
+    assert.equal("status" in defaultBossSession, false);
+    if ("status" in defaultBossSession) throw new Error("default BOSS session should open");
+    assert.equal(defaultBossSession.current_page.requested_url, DEFAULT_IDENTITY_SITE_URLS.boss);
+    assert.equal(defaultBossSession.current_page.current_url, DEFAULT_IDENTITY_SITE_URLS.boss);
 
     assert.throws(() => runtime.createLocalIdentityEnvironment({
       identity_environment_ref: "identity-env_rejected",
@@ -633,6 +643,49 @@ test("captures snapshot, refmap, and evidence refs without raw page payloads", a
   assert.equal(coreJson.includes("token"), false);
   assert.equal(coreJson.includes("profile_path"), false);
   assert.equal(coreJson.includes("webSocketDebuggerUrl"), false);
+});
+
+test("captures live page screenshot refs and artifact facts without raw screenshot bytes", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const session = await runtime.openIdentityEnvironmentSession({
+    identity_environment: {
+      site: {
+        site_id: "xiaohongshu",
+        origin: "https://www.xiaohongshu.com",
+        display_name: "小红书"
+      },
+      login_state: "logged_in",
+      storage_state: "present"
+    },
+    url: DEFAULT_IDENTITY_SITE_URLS.xiaohongshu,
+    control_owner: "agent"
+  });
+  assert.equal("status" in session, false);
+  if ("status" in session) throw new Error("identity environment session should open");
+
+  const capture = await runtime.captureLiveSnapshot(session.runtime_session_ref, {
+    elements: [{ label: "Default page", role: "document" }]
+  });
+  assert.equal(capture.status, "captured");
+  if (capture.status !== "captured") throw new Error("live capture should be available");
+  assert.equal(capture.core_scene_ref.page_summary.url, DEFAULT_IDENTITY_SITE_URLS.xiaohongshu);
+  assert.match(capture.core_scene_ref.screenshot_ref ?? "", /^screenshot_/);
+
+  const screenshotEvidence = capture.evidence_refs
+    .map((ref) => runtime.getEvidence(ref))
+    .find((record) => !("status" in record) && record.evidence_type === "screenshot");
+  assert.ok(screenshotEvidence);
+  if (!screenshotEvidence || "status" in screenshotEvidence) throw new Error("screenshot evidence should be readable");
+  assert.equal(screenshotEvidence.artifact?.mime_type, "image/png");
+  assert.equal((screenshotEvidence.artifact?.byte_length ?? 0) > 0, true);
+  assert.match(screenshotEvidence.artifact?.sha256 ?? "", /^[a-f0-9]{64}$/);
+  assert.equal(screenshotEvidence.artifact?.raw_bytes, "not_exposed");
+
+  const publicJson = JSON.stringify(capture);
+  assert.equal(publicJson.includes("data:image/png"), false);
+  assert.equal(publicJson.includes("webSocketDebuggerUrl"), false);
+  assert.equal(publicJson.includes("cookie"), false);
+  assert.equal(publicJson.includes("token"), false);
 });
 
 test("returns structured unavailable states for denied, missing, and stale refs", async () => {

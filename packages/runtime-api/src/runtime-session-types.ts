@@ -36,6 +36,15 @@ export interface RuntimeErrorFact {
 export type RuntimePageStatus = "ready" | "unavailable" | "unknown";
 export type RuntimeControlLockState = "held" | "released" | "closed";
 
+export interface LocalProviderScreenshotFacts {
+  screenshot_ref: string;
+  mime_type: "image/png";
+  byte_length: number;
+  sha256: string;
+  captured_at: string;
+  facts: RuntimeFact[];
+}
+
 export interface RuntimeViewerEntry {
   availability: ViewerAvailability;
   access_mode: ViewerAccessMode;
@@ -158,6 +167,7 @@ export type LocalProviderLaunchResult =
       page: LocalProviderPageFacts;
       facts: RuntimeFact[];
       openUrl: (url: string) => Promise<LocalProviderPageFacts>;
+      captureScreenshot: () => Promise<LocalProviderScreenshotFacts | RuntimeErrorFact>;
       close: () => Promise<void>;
     }
   | { status: "unavailable"; error: RuntimeErrorFact; facts: RuntimeFact[] };
