@@ -6,7 +6,7 @@
 - Goal: Manage local xiaohongshu and BOSS identity environments with local profile, Cookie/storage login-state status, provider binding, and environment consistency summaries.
 - Scope: Covers Harbor #203/#204/#205/#206/#207; excludes #208, real site actions, real xiaohongshu/BOSS page launches, risk-control bypass promises, and GitHub issue status changes.
 - Execution Path: work/harbor-203-local-identity-management
-- Workspace Entry: /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-203-local-identity-management
+- Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-204.md
 - Review Entry: .loom/reviews/HARBOR-204.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check
