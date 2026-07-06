@@ -1,5 +1,4 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +18,19 @@ import {
   type SnapshotCaptureResult,
   type SnapshotRecord
 } from "./page-scene.js";
+import {
+  bindIdentityEnvironmentDefaultProvider,
+  classifyLaunchFailure,
+  detectBrowserProviders,
+  diagnoseBrowserProviderFailure,
+  getDefaultBrowserProviderExecutable,
+  HARBOR_BROWSER_PROVIDER_STATUS_SCHEMA,
+  HARBOR_IDENTITY_PROVIDER_BINDING_SCHEMA,
+  type BrowserProviderCatalog,
+  type BrowserProviderDetectionInput,
+  type IdentityEnvironmentProviderBinding,
+  type IdentityEnvironmentProviderBindingInput
+} from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
 import {
   appRuntimeStatusFixture,
@@ -36,6 +48,14 @@ import {
 } from "./viewer-control.js";
 
 export { HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_PAGE_SCENE_REFS_SCHEMA } from "./page-scene.js";
+export {
+  bindIdentityEnvironmentDefaultProvider,
+  detectBrowserProviders,
+  diagnoseBrowserProviderFailure,
+  getDefaultBrowserProviderExecutable,
+  HARBOR_BROWSER_PROVIDER_STATUS_SCHEMA,
+  HARBOR_IDENTITY_PROVIDER_BINDING_SCHEMA
+} from "./provider-management.js";
 export {
   HARBOR_APP_RUNTIME_STATUS_FIXTURE_SCHEMA,
   HARBOR_CORE_RUNTIME_FACTS_SCHEMA,
@@ -65,6 +85,24 @@ export type {
   SourceTrace,
   StorageScope
 } from "./page-scene.js";
+export type {
+  BrowserProviderCapabilityFact,
+  BrowserProviderCapabilityKey,
+  BrowserProviderCapabilityState,
+  BrowserProviderCatalog,
+  BrowserProviderDetectionInput,
+  BrowserProviderDiagnostic,
+  BrowserProviderDownloadGuide,
+  BrowserProviderFailureClass,
+  BrowserProviderId,
+  BrowserProviderInstallFacts,
+  BrowserProviderInstallStatus,
+  BrowserProviderLaunchability,
+  BrowserProviderRole,
+  BrowserProviderStatus,
+  IdentityEnvironmentProviderBinding,
+  IdentityEnvironmentProviderBindingInput
+} from "./provider-management.js";
 export type {
   AppBrowserStatus,
   AppRuntimeStatusFixture,
@@ -371,6 +409,14 @@ export class HarborRuntime {
     return facts ? snapshot(facts) : null;
   }
 
+  getBrowserProviderStatus(input: BrowserProviderDetectionInput = {}): BrowserProviderCatalog {
+    return detectBrowserProviders(input);
+  }
+
+  getIdentityEnvironmentProviderBinding(input: IdentityEnvironmentProviderBindingInput = {}): IdentityEnvironmentProviderBinding {
+    return bindIdentityEnvironmentDefaultProvider(input);
+  }
+
   captureSnapshot(runtime_session_ref: string, input: CaptureSnapshotInput = {}): SnapshotCaptureResult {
     const record = this.sessions.get(runtime_session_ref);
     const result = this.pageScenes.capture(record?.facts ?? null, input);
@@ -662,9 +708,12 @@ export class HarborRuntime {
 }
 
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
-  const browserPath = input.browser_path || findBrowserPath();
+  const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
+  const providerBinding = explicitBrowserPath ? null : bindIdentityEnvironmentDefaultProvider();
+  const browserPath = explicitBrowserPath || providerBinding?.selected_provider?.install.path || "";
   if (!browserPath) {
-    return unavailable("provider_unavailable", "No local browser executable found. Set HARBOR_BROWSER_PATH to run the local smoke.");
+    const diagnostic = providerBinding?.diagnostics[0] ?? diagnoseBrowserProviderFailure({ provider_id: "cloakbrowser", failure_class: "not_installed" });
+    return unavailable("provider_unavailable", diagnostic.app_summary, providerBindingFacts(providerBinding));
   }
   const profileDir = await mkdtemp(join(tmpdir(), "harbor-profile-"));
   const args = [
@@ -684,6 +733,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
       status: "ready",
       cdp_ref: opaqueRef("cdp"),
       facts: [
+        ...providerBindingFacts(providerBinding),
         { key: "browser.launch", source: "observed", value: "ready", evidence_ref },
         { key: "cdp.version", source: "validation_evidence", value: `${version.Browser} ${version["Protocol-Version"]}`, evidence_ref }
       ],
@@ -691,7 +741,13 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     };
   } catch (error) {
     await closeBrowser(child, profileDir);
-    return unavailable("launch_failed", error instanceof Error ? error.message : "Browser launch failed.");
+    const diagnostic = diagnoseBrowserProviderFailure({
+      provider_id: providerBinding?.selected_provider_id ?? "cloakbrowser",
+      failure_class: classifyLaunchFailure(error),
+      path: browserPath,
+      message: error instanceof Error ? error.message : "Browser launch failed."
+    });
+    return unavailable("launch_failed", diagnostic.app_summary, providerBindingFacts(providerBinding));
   }
 }
 
@@ -713,24 +769,33 @@ export function createFixtureLauncher(status: "ready" | "unavailable" | "profile
   };
 }
 
-function unavailable(code: RuntimeErrorCode, message: string): LocalProviderLaunchResult {
+function unavailable(code: RuntimeErrorCode, message: string, facts: RuntimeFact[] = []): LocalProviderLaunchResult {
   return {
     status: "unavailable",
     error: { code, message, retryable: code !== "unsupported" },
-    facts: [{ key: "browser.launch", source: "observed", value: code }]
+    facts: [...facts, { key: "browser.launch", source: "observed", value: code }]
   };
 }
 
-function findBrowserPath(): string {
-  const candidates = [
-    process.env.HARBOR_BROWSER_PATH,
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser"
-  ].filter((candidate): candidate is string => Boolean(candidate));
-  return candidates.find((candidate) => existsSync(candidate)) ?? "";
+function providerBindingFacts(binding: IdentityEnvironmentProviderBinding | null): RuntimeFact[] {
+  const facts: RuntimeFact[] = [
+    { key: "provider.management.registered", source: "configured", value: "cloakbrowser,chrome_official" },
+    { key: "provider.default", source: "configured", value: "cloakbrowser" },
+    { key: "provider.excluded.chromium", source: "configured", value: "not_user_selectable" },
+    { key: "provider.reference.donut_browser", source: "configured", value: "mechanism_reference_only" }
+  ];
+  if (!binding) return facts;
+  facts.push(
+    { key: "identity_environment.provider_selection", source: "configured", value: binding.selection_reason },
+    { key: "identity_environment.provider_notice_required", source: "configured", value: String(binding.requires_user_notice) }
+  );
+  if (binding.selected_provider) {
+    facts.push(
+      { key: "provider.id", source: "configured", value: binding.selected_provider.provider_id },
+      { key: "provider.role", source: "configured", value: binding.selected_provider.role }
+    );
+  }
+  return facts;
 }
 
 async function waitForDevtoolsPort(profileDir: string, timeoutMs: number): Promise<string> {
