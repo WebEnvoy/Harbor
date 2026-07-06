@@ -27,3 +27,5 @@
 - packages/runtime-api/src/index.test.ts
 - packages/runtime-api/src/smoke.ts
 - .loom/specs/HARBOR-177/**
+- .loom/reviews/HARBOR-177.json
+- .loom/reviews/HARBOR-177.spec.json

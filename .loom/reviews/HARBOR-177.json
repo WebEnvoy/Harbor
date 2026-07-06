@@ -1,0 +1,60 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-177",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "通过：当前 head 的 provider 检测、能力矩阵、受限后备和诊断实现无阻断问题；未引入 Chromium/Donut provider、自动安装或真实启动。",
+  "reviewer": "codex-main-controller",
+  "authored_at": "2026-07-06T05:01:52Z",
+  "reviewed_head": "fe7a34d0ae41431efa3255331dc3593607930faa",
+  "reviewed_validation_summary": "`pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `git diff --check`; `loom suite validate --target . --item HARBOR-177 --json`; `loom suite evidence validate --target . --item HARBOR-177 --json`; `loom suite carrier validate --target . --item HARBOR-177 --json` passed locally on 2026-07-06T04:45Z. Loom doctor reported Codex runtime plugin cache stale, but CLI doctor/verify/fact-chain passed and no Loom tool repair was attempted.",
+  "reviewed_validation_summary_hash": "c77511743f50e7904e3488e64346772c50f31599e1fe94036c5d3ac91a72b2a1",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-177.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-177.md",
+    "recovery_entry": ".loom/progress/HARBOR-177.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "budget_risk": {
+      "schema_version": "loom-execution-budget-risk/v1",
+      "status": "not_applicable",
+      "enforcement": "advisory",
+      "highest_risk": "none",
+      "risk_dimensions": [],
+      "summary": "execution budget is not_applicable; budget risk remains advisory and non-blocking",
+      "budget_summary": "execution budget is not collected for this invocation.",
+      "adapter_evidence_locator": "",
+      "provenance": {
+        "source": "github_host"
+      }
+    },
+    "engine_adapter": null,
+    "engine_evidence": null,
+    "normalized_findings": null,
+    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor --item HARBOR-177 --json",
+    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor --item HARBOR-177 --json",
+    "suite_evidence_map": ".loom/specs/HARBOR-177/evidence-map.md",
+    "suite_consistency_analysis": null,
+    "suite_task_carriers": [
+      ".loom/specs/HARBOR-177/task-carrier.md"
+    ],
+    "suite_evidence_consumed_contracts": [
+      "docs/methodology/harness/full-spec-suite-cli-surface.md",
+      "docs/methodology/templates/evidence-map.md"
+    ],
+    "suite_carrier_consumed_contracts": [
+      "docs/methodology/harness/task-carrier-contract.md",
+      "docs/methodology/templates/execution-breakdown.md",
+      "docs/methodology/harness/full-spec-suite-cli-surface.md"
+    ]
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Authored implementation review approved the current head for merge checkpoint consumption."
+  }
+}
