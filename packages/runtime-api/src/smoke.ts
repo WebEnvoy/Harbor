@@ -28,6 +28,26 @@ const identityEnvironment = runtime.getLocalIdentityEnvironmentFacts({
   human_verification: ["manual_login", "captcha"]
 });
 const session = await runtime.createSession();
+const browserSession = await runtime.openIdentityEnvironmentSession({
+  identity_environment: identityEnvironment,
+  url: useLocalProvider ? "about:blank" : "https://example.test/runtime-session",
+  control_owner: "agent",
+  holder_ref: "smoke-agent"
+});
+const browserSessionReusable = "status" in browserSession || browserSession.lifecycle_state !== "active"
+  ? browserSession
+  : await runtime.openIdentityEnvironmentSession({
+      identity_environment: identityEnvironment,
+      url: useLocalProvider ? "about:blank" : "https://example.test/runtime-session/reused",
+      control_owner: "agent",
+      holder_ref: "smoke-agent"
+    });
+const browserSessionReleased = "status" in browserSessionReusable || browserSessionReusable.lifecycle_state !== "active"
+  ? browserSessionReusable
+  : runtime.releaseSession(browserSessionReusable.runtime_session_ref, { control_owner: "agent" });
+const browserSessionStopped = "status" in browserSessionReleased || browserSessionReleased.lifecycle_state === "failed"
+  ? browserSessionReleased
+  : await runtime.stopSession(browserSessionReleased.runtime_session_ref);
 const capture = session.lifecycle_state === "active"
   ? runtime.captureSnapshot(session.runtime_session_ref, {
       title: useLocalProvider ? "Local runtime smoke" : "Fixture runtime smoke",
@@ -61,6 +81,10 @@ console.log(JSON.stringify({
 	  providerStatus,
 	  providerBinding,
   identityEnvironment,
+  browserSession,
+  browserSessionReusable,
+  browserSessionReleased,
+  browserSessionStopped,
 	  capture,
   scene,
   previewEvidence,
@@ -77,6 +101,13 @@ console.log(JSON.stringify({
   closed
 }, null, 2));
 
+const localUnavailableAllowed = useLocalProvider && session.lifecycle_state === "failed" && Boolean(session.current_error);
+const browserSessionReady = !("status" in browserSession) && browserSession.current_page.status === "ready";
+const browserSessionFailedWithFacts = "status" in browserSession || (!("status" in browserSession) && browserSession.current_error !== null);
+const staleEvidenceInvalid = !staleEvidenceStatus ||
+  "status" in staleEvidenceStatus ||
+  staleEvidenceStatus.scene_status.display_state !== "stale";
+
 if (
 	  !readback ||
 	  !closed ||
@@ -87,21 +118,19 @@ if (
 	  identityEnvironment.schema_version !== "harbor-local-identity-environment/v0" ||
 	  identityEnvironment.login_state.recovery_required !== true ||
 	  identityEnvironment.consumer_boundary.not_exposed.includes("cookie_value") !== true ||
-	  !capture ||
-  capture.status !== "captured" ||
+	  (!localUnavailableAllowed && (!capture || capture.status !== "captured")) ||
+  (!useLocalProvider && !browserSessionReady) ||
+  (useLocalProvider && !browserSessionReady && !browserSessionFailedWithFacts) ||
   "status" in viewerControl ||
   "status" in handoff ||
   "status" in coreRuntime ||
   "status" in validationRuntime ||
-  "status" in writePrecheck ||
+  (!localUnavailableAllowed && "status" in writePrecheck) ||
   "status" in appStatus ||
-  !evidenceStatus ||
-  "status" in evidenceStatus ||
-  "status" in previewEvidence ||
-  "status" in redactedPreviewExport ||
-  !staleEvidenceStatus ||
-  "status" in staleEvidenceStatus ||
-  staleEvidenceStatus.scene_status.display_state !== "stale"
+  (!localUnavailableAllowed && (!evidenceStatus || "status" in evidenceStatus)) ||
+  (!localUnavailableAllowed && "status" in previewEvidence) ||
+  (!localUnavailableAllowed && "status" in redactedPreviewExport) ||
+  (!localUnavailableAllowed && staleEvidenceInvalid)
 ) {
   process.exitCode = 1;
 }

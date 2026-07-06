@@ -5,7 +5,7 @@ export const HARBOR_CORE_RUNTIME_FACTS_SCHEMA = "harbor-core-runtime-facts/v0";
 export const HARBOR_APP_RUNTIME_STATUS_FIXTURE_SCHEMA = "harbor-app-runtime-status-fixture/v0";
 
 export type AppBrowserStatus = "ready" | "unavailable" | "closed";
-export type ControlOwner = "system" | "user" | "app" | "provider" | "none" | "unknown";
+export type ControlOwner = "system" | "user" | "agent" | "core_task" | "app" | "provider" | "none" | "unknown";
 export type HandoffReason =
   | "login_required"
   | "captcha_required"
@@ -35,6 +35,7 @@ export interface ViewerControlSessionFacts {
   provider_ref: string;
   provider_mode: string;
   lifecycle_state: string;
+  control_owner?: ControlOwner;
   availability: {
     cdp: string;
     viewer: string;
@@ -148,7 +149,7 @@ export class ViewerControlStore {
         unavailable_reason: "unsupported"
       },
       control: {
-        owner: session.lifecycle_state === "failed" ? "none" : "system",
+        owner: session.lifecycle_state === "failed" ? "none" : session.control_owner ?? "system",
         previous_owner: null,
         handoff_reason: null,
         takeover: {
