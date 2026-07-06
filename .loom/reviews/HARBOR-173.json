@@ -3,10 +3,10 @@
   "item_id": "HARBOR-173",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "通过：HARBOR-173 新增真实现场证据和查看入口公共事实，供 Core/App 消费截图、页面、元素、证据和控制者引用。",
+  "summary": "通过：HARBOR-173 closeout carrier 消费 PR #195、merge commit、关闭 issue 和 post-merge evidence。",
   "reviewer": "codex-main-controller",
-  "authored_at": "2026-07-06T09:12:00Z",
-  "reviewed_head": "605cc41d0657b28b920031891ba9bad3574f1cba",
+  "authored_at": "2026-07-06T09:20:00Z",
+  "reviewed_head": "6cb5f96fea5dc3654120918c86a2e118007663b6",
   "reviewed_validation_summary": "Local validation passed on 2026-07-06T09:08Z: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, sensitive material check against smoke output, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, and `loom suite validate/carrier/evidence --target . --item HARBOR-173 --json`.",
   "reviewed_validation_summary_hash": "b6cf39986d1821410097ef6f655b6eb14a08571fd47e5cc310a2f0831385d7c4",
   "validation_summary_source": "recovery.latest_validation_summary",
@@ -18,16 +18,17 @@
   "consumed_inputs": {
     "work_item": ".loom/work-items/HARBOR-173.md",
     "recovery_entry": ".loom/progress/HARBOR-173.md",
-    "suite_evidence_map": ".loom/specs/HARBOR-173/evidence-map.md",
-    "suite_task_carriers": [
-      ".loom/specs/HARBOR-173/task-carrier.md"
-    ],
     "status_surface": ".loom/status/current.md",
     "build_checkpoint": "pass",
-    "merge_checkpoint_carrier": "scheduler-updated progress/status from build to merge without product code changes"
+    "merge_commit": "6cb5f96fea5dc3654120918c86a2e118007663b6",
+    "issue_closeout": "Harbor #160/#173/#174/#175/#176 closed with post-merge evidence"
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Reviewed the current implementation head for Harbor #160/#173/#174/#175/#176. The public facts expose Harbor-mediated screenshot, page/frame, element, evidence, viewer, and controller refs without exposing credentials, cookies, tokens, raw CDP/VNC endpoints, raw DOM, raw network, or platform-private detection details."
+    "reason": "Reviewed the closeout carrier for Harbor #160/#173/#174/#175/#176. It records PR #195 merge evidence, closed issue evidence, and keeps the scope limited to carrier closeout."
+  },
+  "carrier_only_closeout_review": {
+    "status": "passed",
+    "reason": "This closeout PR only updates HARBOR-173 Loom carrier/status facts after implementation PR #195 merged; it does not change Harbor runtime behavior."
   }
 }
