@@ -403,6 +403,32 @@ test("reports viewer ref, control owner, and handoff facts", async () => {
   assert.equal(runtime.getSession(session.runtime_session_ref)?.control_owner, "user");
 });
 
+test("returns a Harbor-mediated local viewer entry without raw endpoints", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const session = await runtime.createSession({ headless: false, control_owner: "core_task" });
+
+  assert.equal(session.availability.viewer, "available");
+  const viewer = runtime.getViewerControlFacts(session.runtime_session_ref);
+  assert.equal("status" in viewer, false);
+  if ("status" in viewer) throw new Error("local viewer facts should be readable");
+  assert.equal(viewer.viewer.availability, "available");
+  assert.equal(viewer.viewer.transport, "local_window");
+  assert.equal(viewer.viewer.access_mode, "interactive");
+  assert.deepEqual(viewer.viewer.input_capabilities, ["keyboard_mouse"]);
+  assert.equal(viewer.viewer.viewer_url, null);
+  assert.equal(viewer.control.owner, "core_task");
+  assert.equal(viewer.privacy_boundary.raw_cdp_endpoint, "not_exposed");
+  assert.equal(viewer.privacy_boundary.raw_vnc_endpoint, "not_exposed");
+  assert.equal(viewer.privacy_boundary.full_profile_storage, "not_exposed");
+
+  const publicJson = JSON.stringify({ session, viewer });
+  assert.equal(publicJson.includes("ws://"), false);
+  assert.equal(publicJson.includes("vnc://"), false);
+  assert.equal(publicJson.includes("webSocketDebuggerUrl"), false);
+  assert.equal(publicJson.includes("cookie"), false);
+  assert.equal(publicJson.includes("token"), false);
+});
+
 test("returns Core runtime facts and App status fixture from the same Harbor facts", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const session = await runtime.createSession();
@@ -458,8 +484,11 @@ test("captures snapshot, refmap, and evidence refs without raw page payloads", a
   if (capture.status !== "captured") throw new Error("capture should be available");
   assert.match(capture.snapshot_ref, /^snapshot_/);
   assert.match(capture.refmap_ref ?? "", /^refmap_/);
+  assert.match(capture.core_scene_ref.screenshot_ref ?? "", /^screenshot_/);
+  assert.match(capture.core_scene_ref.page_ref, /^page_/);
+  assert.match(capture.core_scene_ref.frame_ref, /^frame_/);
   assert.equal(capture.core_scene_ref.page_summary.summary, "Inbox with two visible messages.");
-  assert.equal(capture.core_scene_ref.evidence_refs.length, 3);
+  assert.equal(capture.core_scene_ref.evidence_refs.length, 4);
 
   const snapshot = runtime.getSnapshot(capture.snapshot_ref);
   assert.equal("snapshot_ref" in snapshot, true);
@@ -471,6 +500,7 @@ test("captures snapshot, refmap, and evidence refs without raw page payloads", a
   assert.equal("refmap_ref" in refmap, true);
   if (!("refmap_ref" in refmap)) throw new Error("refmap should be readable");
   assert.match(refmap.element_refs[0]?.element_ref ?? "", /^element_/);
+  assert.match(refmap.element_refs[0]?.source_evidence_ref ?? "", /^evidence_/);
   assert.equal(refmap.element_refs[0]?.label, "Open first message");
 
   const evidence = runtime.getEvidence(capture.evidence_refs[0] ?? "");
@@ -483,7 +513,6 @@ test("captures snapshot, refmap, and evidence refs without raw page payloads", a
   const coreJson = JSON.stringify(capture.core_scene_ref);
   assert.equal(coreJson.includes("raw_dom"), false);
   assert.equal(coreJson.includes("raw_har"), false);
-  assert.equal(coreJson.includes("screenshot"), false);
   assert.equal(coreJson.includes("video"), false);
   assert.equal(coreJson.includes("cookie"), false);
   assert.equal(coreJson.includes("token"), false);
@@ -557,7 +586,7 @@ test("returns App-safe evidence status fixture without private raw material", as
   assert.equal(status.privacy_boundary.export_consent, "granted");
   assert.equal(status.privacy_boundary.retention_policy, "ephemeral_by_default");
   assert.equal(status.privacy_boundary.deletion_policy, "expire_or_drop_ref");
-  assert.equal(status.evidence_status.length, 3);
+  assert.equal(status.evidence_status.length, 4);
   assert.equal(status.evidence_status.every((entry) => entry.display_state === "redacted"), true);
   assert.equal(status.evidence_status.every((entry) => entry.retention_state === "retained"), true);
 
@@ -638,7 +667,7 @@ test("returns preview evidence refs, provenance, and freshness states", async ()
   assert.equal(preview.target_state_provenance.captured_url, "https://example.test/write-precheck");
   assert.equal(preview.target_state_provenance.current_url, "https://example.test/write-precheck");
   assert.equal(preview.freshness.state, "available");
-  assert.equal(preview.viewer_evidence_status.evidence_status.length, 3);
+  assert.equal(preview.viewer_evidence_status.evidence_status.length, 4);
 
   const changed = runtime.getPreviewEvidenceStatusFixture(preview.before_preview.snapshot_ref, "https://example.test/changed");
   assert.equal("status" in changed, false);

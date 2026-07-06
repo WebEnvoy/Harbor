@@ -36,6 +36,13 @@ export interface ViewerControlSessionFacts {
   provider_mode: string;
   lifecycle_state: string;
   control_owner?: ControlOwner;
+  viewer_entry?: {
+    availability: ViewerAvailability;
+    access_mode: ViewerAccessMode;
+    transport: ViewerTransport;
+    input_capabilities: InputCapability[];
+    unavailable_reason?: TakeoverUnavailableReason;
+  };
   availability: {
     cdp: string;
     viewer: string;
@@ -77,6 +84,14 @@ export interface ViewerControlFacts {
   provider_ref: string;
   viewer: ViewerRefFacts;
   control: ControlOwnerFacts;
+  privacy_boundary: {
+    access_policy: "harbor_mediated_ref";
+    raw_cdp_endpoint: "not_exposed";
+    raw_vnc_endpoint: "not_exposed";
+    browser_private_state: "not_exposed";
+    auth_private_state: "not_exposed";
+    full_profile_storage: "not_exposed";
+  };
   unavailable: null;
 }
 
@@ -139,14 +154,14 @@ export class ViewerControlStore {
       viewer: {
         viewer_ref: opaqueRef("viewer"),
         viewer_url: null,
-        availability: "unsupported",
-        access_mode: "none",
-        transport: "not_applicable",
-        input_capabilities: [],
+        availability: session.viewer_entry?.availability ?? "unsupported",
+        access_mode: session.viewer_entry?.access_mode ?? "none",
+        transport: session.viewer_entry?.transport ?? "not_applicable",
+        input_capabilities: session.viewer_entry?.input_capabilities ?? [],
         access_boundary: "harbor_ref_only",
         created_at,
         expires_at: expiresAfter(created_at, 60 * 60 * 1000),
-        unavailable_reason: "unsupported"
+        unavailable_reason: session.viewer_entry?.unavailable_reason ?? defaultViewerUnavailableReason(session.viewer_entry?.availability)
       },
       control: {
         owner: session.lifecycle_state === "failed" ? "none" : session.control_owner ?? "system",
@@ -157,6 +172,14 @@ export class ViewerControlStore {
           unavailable_reason: "viewer_unavailable"
         },
         updated_at: created_at
+      },
+      privacy_boundary: {
+        access_policy: "harbor_mediated_ref",
+        raw_cdp_endpoint: "not_exposed",
+        raw_vnc_endpoint: "not_exposed",
+        browser_private_state: "not_exposed",
+        auth_private_state: "not_exposed",
+        full_profile_storage: "not_exposed"
       },
       unavailable: null
     };
@@ -276,6 +299,11 @@ function defaultTakeoverReason(owner: ControlOwner): TakeoverUnavailableReason {
   if (owner === "user") return "already_user_controlled";
   if (owner === "none") return "session_unavailable";
   return "viewer_unavailable";
+}
+
+function defaultViewerUnavailableReason(availability: ViewerAvailability | undefined): TakeoverUnavailableReason | undefined {
+  if (availability === "available") return undefined;
+  return availability === "permission_denied" ? "permission_denied" : "unsupported";
 }
 
 function expiresAfter(created_at: string, ttlMs: number): string {

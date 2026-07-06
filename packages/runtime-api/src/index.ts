@@ -176,6 +176,7 @@ export type {
   RuntimeSessionControlInput,
   RuntimeSessionFacts,
   RuntimeSessionUnavailable,
+  RuntimeViewerEntry,
   ValidationRuntimeFacts
 } from "./runtime-session.js";
 export type {

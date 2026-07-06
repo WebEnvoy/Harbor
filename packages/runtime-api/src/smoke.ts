@@ -39,6 +39,9 @@ const identityConsistency = runtime.getIdentityConsistencyFacts({
   risk_events: ["login_missing"]
 });
 const session = await runtime.createSession();
+const visibleViewerRuntime = new HarborRuntime(createFixtureLauncher("ready"));
+const visibleViewerSession = await visibleViewerRuntime.createSession({ headless: false, control_owner: "core_task" });
+const visibleViewerControl = visibleViewerRuntime.getViewerControlFacts(visibleViewerSession.runtime_session_ref);
 const browserSession = await runtime.openIdentityEnvironmentSession({
   identity_environment: identityEnvironment,
   url: useLocalProvider ? "about:blank" : "https://example.test/runtime-session",
@@ -89,6 +92,8 @@ const staleEvidenceStatus = capture?.status === "captured" ? runtime.getEvidence
 console.log(JSON.stringify({
   mode: useLocalProvider ? "local" : "fixture",
   session,
+  visibleViewerSession,
+  visibleViewerControl,
   providerStatus,
   providerBinding,
   identityEnvironment,
@@ -127,6 +132,8 @@ if (
   !providerStatus.excluded_providers.some((provider) => provider.provider === "chromium") ||
   !providerStatus.excluded_providers.some((provider) => provider.provider === "donut_browser") ||
   providerBinding.schema_version !== "harbor-identity-provider-binding/v0" ||
+  visibleViewerSession.availability.viewer !== "available" ||
+  "status" in visibleViewerControl ||
   identityEnvironment.schema_version !== "harbor-local-identity-environment/v0" ||
   identityConsistency.schema_version !== "harbor-identity-consistency-facts/v0" ||
   identityEnvironment.login_state.recovery_required !== true ||

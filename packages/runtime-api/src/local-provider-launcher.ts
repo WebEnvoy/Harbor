@@ -45,6 +45,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     return {
       status: "ready",
       cdp_ref: opaqueRef("cdp"),
+      viewer_entry: viewerEntry(input.headless),
       page,
       facts: [
         ...providerBindingFacts(providerBinding),
@@ -77,6 +78,7 @@ export function createFixtureLauncher(status: "ready" | "unavailable" | "profile
     return {
       status: "ready",
       cdp_ref: opaqueRef("cdp"),
+      viewer_entry: viewerEntry(input.headless),
       page,
       facts: [
         { key: "browser.launch", source: "observed", value: "ready", evidence_ref },
@@ -134,6 +136,21 @@ function providerBindingFacts(binding: IdentityEnvironmentProviderBinding | null
     );
   }
   return facts;
+}
+
+function viewerEntry(headless: boolean): Exclude<LocalProviderLaunchResult, { status: "unavailable" }>["viewer_entry"] {
+  return headless ? {
+    availability: "unsupported",
+    access_mode: "none",
+    transport: "not_applicable",
+    input_capabilities: [],
+    unavailable_reason: "unsupported"
+  } : {
+    availability: "available",
+    access_mode: "interactive",
+    transport: "local_window",
+    input_capabilities: ["keyboard_mouse"]
+  };
 }
 
 async function waitForDevtoolsPort(profileDir: string, timeoutMs: number): Promise<string> {
