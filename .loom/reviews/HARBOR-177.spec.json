@@ -3,12 +3,12 @@
   "item_id": "HARBOR-177",
   "decision": "allow",
   "kind": "spec_review",
-  "summary": "通过：provider 管理范围、非目标、语义故事和验证证据与 Harbor #177/#178/#179/#180/#181 一致；本审查不覆盖真实浏览器启动、下载或安装。",
+  "summary": "通过：HARBOR-177 closeout carrier 只记录 PR #183 合并、issue closeout 和 closed_out 状态，不扩大 provider 产品语义。",
   "reviewer": "codex-main-controller",
-  "authored_at": "2026-07-06T05:00:52Z",
-  "reviewed_head": "fe7a34d0ae41431efa3255331dc3593607930faa",
-  "reviewed_validation_summary": "`pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `git diff --check`; `loom suite validate --target . --item HARBOR-177 --json`; `loom suite evidence validate --target . --item HARBOR-177 --json`; `loom suite carrier validate --target . --item HARBOR-177 --json` passed locally on 2026-07-06T04:45Z. Loom doctor reported Codex runtime plugin cache stale, but CLI doctor/verify/fact-chain passed and no Loom tool repair was attempted.",
-  "reviewed_validation_summary_hash": "c77511743f50e7904e3488e64346772c50f31599e1fe94036c5d3ac91a72b2a1",
+  "authored_at": "2026-07-06T05:29:51Z",
+  "reviewed_head": "7d059132adc77f792673b0fd9c8556348e21e8eb",
+  "reviewed_validation_summary": "`git diff --check`; `jq empty .loom/bootstrap/init-result.json`; `loom fact-chain --target . --json`; `loom verify --target . --json`; local `loom pr gate --surface closeout` passed for PR #184. This is a closeout-carrier-only review; it does not change Harbor runtime/provider product semantics or launch a browser.",
+  "reviewed_validation_summary_hash": "266554a1ea43290f775dae243515abbbcd3075467004792c3a3cf9371611b14b",
   "validation_summary_source": "recovery.latest_validation_summary",
   "validation_summary_locator": ".loom/progress/HARBOR-177.md",
   "fallback_to": null,
@@ -50,5 +50,9 @@
       "docs/methodology/harness/full-spec-suite-cli-surface.md",
       "docs/methodology/templates/spec-suite.md"
     ]
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Closeout carrier review approved the current head for terminal closeout consumption."
   }
 }
