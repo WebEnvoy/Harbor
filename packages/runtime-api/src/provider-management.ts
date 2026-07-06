@@ -174,8 +174,8 @@ export function detectBrowserProviders(input: BrowserProviderDetectionInput = {}
       providerStatus("chrome_official", "Google Chrome", "restricted_fallback", detectChrome(ctx))
     ],
     excluded_providers: [
-      { provider: "chromium", reason: "Chromium stays internal to development/testing and is not user-selectable provider management." },
-      { provider: "donut_browser", reason: "Donut Browser is mechanism reference only; it is not registered as a Harbor provider." }
+      { provider: "chromium", reason: "Chromium 仅保留为开发/测试内部实现，不进入用户可选 provider 管理。" },
+      { provider: "donut_browser", reason: "Donut Browser 只作为机制参考，不注册为 Harbor provider。" }
     ]
   };
 }
@@ -191,14 +191,14 @@ export function bindIdentityEnvironmentDefaultProvider(input: IdentityEnvironmen
   }
   if (requested && !isLaunchable(requested)) {
     return binding(input, null, chrome.provider_id, "requested_provider_unavailable", true, [
-      `${requested.display_name} is not launchable; Harbor will not silently replace the requested provider.`
+      `${requested.display_name} 当前不可启动；Harbor 不会静默替换用户指定的 provider。`
     ]);
   }
   if (isLaunchable(cloak)) return binding(input, cloak, null, "cloakbrowser_default", false);
   if (isLaunchable(chrome)) {
     return binding(input, chrome, chrome.provider_id, "chrome_restricted_fallback", true, [
-      "CloakBrowser is missing or not launchable; official Chrome is only a restricted fallback.",
-      "Chrome does not provide native fingerprint control or full identity-environment consistency."
+      "CloakBrowser 缺失或不可启动；官方 Chrome 只能作为受限后备。",
+      "Chrome 不提供原生指纹控制，也不能提供完整身份环境一致性。"
     ]);
   }
   return binding(input, null, null, "no_launchable_provider", true);
@@ -214,20 +214,20 @@ export function diagnoseBrowserProviderFailure(input: {
   path?: string | null;
   message?: string;
 }): BrowserProviderDiagnostic {
-  const name = input.provider_id === "cloakbrowser" ? "CloakBrowser" : "official Chrome";
+  const name = input.provider_id === "cloakbrowser" ? "CloakBrowser" : "官方 Chrome";
   const pathText = input.path ? ` (${input.path})` : "";
   const table: Record<BrowserProviderFailureClass, [string, string, boolean]> = {
-    not_installed: [`${name} is not installed${pathText}.`, "Install the provider from the official source, then run detection again.", true],
-    path_invalid: [`${name} path is invalid${pathText}.`, "Fix the configured executable path or remove the override.", true],
-    version_unknown: [`${name} version could not be read${pathText}.`, "Reinstall or point Harbor to a readable official binary.", true],
-    version_unsupported: [`${name} version is unsupported${pathText}.`, "Update to a supported official build.", true],
-    launch_args_incompatible: [`${name} rejected the launch arguments.`, "Remove unsupported launch args and retry.", true],
-    profile_dir_unavailable: [`${name} could not use the profile directory.`, "Check profile directory permissions and remove stale locks.", true],
-    proxy_unavailable: [`${name} could not use the configured proxy.`, "Check proxy reachability and credentials before retrying.", true],
-    cdp_unavailable: [`${name} did not expose CDP readiness.`, "Retry after closing stale browser processes or increasing timeout.", true],
-    launch_timeout: [`${name} launch timed out.`, "Retry after checking local CPU, permissions, and browser startup prompts.", true],
-    permission_denied: [`${name} cannot be executed because permission is denied${pathText}.`, "Grant execute permission or reinstall the provider.", true],
-    unknown: [`${name} launch failed.`, "Inspect local Harbor logs and provider diagnostics.", true]
+    not_installed: [`未检测到 ${name}${pathText}。`, "请从官方来源安装该 provider，然后重新检测。", true],
+    path_invalid: [`${name} 路径无效${pathText}。`, "请修正已配置的可执行文件路径，或移除覆盖配置。", true],
+    version_unknown: [`无法读取 ${name} 版本${pathText}。`, "请重新安装，或让 Harbor 指向可读取的官方二进制。", true],
+    version_unsupported: [`${name} 版本不受支持${pathText}。`, "请更新到受支持的官方构建。", true],
+    launch_args_incompatible: [`${name} 拒绝了启动参数。`, "请移除不受支持的启动参数后重试。", true],
+    profile_dir_unavailable: [`${name} 无法使用 profile 目录。`, "请检查 profile 目录权限并清理残留锁。", true],
+    proxy_unavailable: [`${name} 无法使用已配置代理。`, "请检查代理可达性和凭据后重试。", true],
+    cdp_unavailable: [`${name} 未暴露 CDP ready 状态。`, "请关闭残留浏览器进程，或增加 timeout 后重试。", true],
+    launch_timeout: [`${name} 启动超时。`, "请检查本机 CPU、权限和浏览器启动提示后重试。", true],
+    permission_denied: [`${name} 因权限不足无法执行${pathText}。`, "请授予执行权限，或重新安装该 provider。", true],
+    unknown: [`${name} 启动失败。`, "请查看本机 Harbor 日志和 provider 诊断。", true]
   };
   const [summary, suggested_action, retryable] = table[input.failure_class];
   const detail = input.message ? `${summary} ${input.message}` : summary;
@@ -274,11 +274,11 @@ function providerStatus(
 }
 
 function detectCloakBrowser(ctx: DetectionContext): BrowserProviderInstallFacts {
-  return detectPath(ctx, cloakCandidates(ctx), "CloakBrowser is not installed in the official cache and no override path is configured.");
+  return detectPath(ctx, cloakCandidates(ctx), "未在官方缓存中检测到 CloakBrowser，且未配置覆盖路径。");
 }
 
 function detectChrome(ctx: DetectionContext): BrowserProviderInstallFacts {
-  return detectPath(ctx, chromeCandidates(ctx), "Official Chrome is not installed in a known system location and no override path is configured.");
+  return detectPath(ctx, chromeCandidates(ctx), "未在已知系统位置检测到官方 Chrome，且未配置覆盖路径。");
 }
 
 function detectPath(ctx: DetectionContext, candidates: ProviderPathCandidate[], missingReason: string): BrowserProviderInstallFacts {
@@ -306,7 +306,7 @@ function installFacts(ctx: DetectionContext, candidate: ProviderPathCandidate, e
       version: candidate.version,
       version_status: candidate.version ? "known" : "unknown",
       launchability: "not_checked",
-      reason: explicit ? `Configured path does not exist: ${candidate.path}` : "Browser executable is missing."
+      reason: explicit ? `已配置路径不存在：${candidate.path}` : "浏览器可执行文件缺失。"
     };
   }
   const launchable = ctx.isExecutable(candidate.path);
@@ -317,7 +317,7 @@ function installFacts(ctx: DetectionContext, candidate: ProviderPathCandidate, e
     version,
     version_status: version ? "known" : "unknown",
     launchability: launchable ? "launchable" : "not_executable",
-    reason: launchable ? null : `Browser executable is not launchable: ${candidate.path}`
+    reason: launchable ? null : `浏览器可执行文件不可启动：${candidate.path}`
   };
 }
 
@@ -393,7 +393,7 @@ function binding(
     selected_provider: selected,
     warnings,
     diagnostics,
-    unavailable_reason: selected ? null : "No launchable CloakBrowser or official Chrome provider is available."
+    unavailable_reason: selected ? null : "当前没有可启动的 CloakBrowser 或官方 Chrome provider。"
   };
 }
 

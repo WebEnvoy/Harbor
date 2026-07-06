@@ -8,57 +8,57 @@ import type {
 
 export function cloakCapabilities(): BrowserProviderCapabilityFact[] {
   return [
-    capability("persistent_profile", "supported", "configured", "Uses dedicated persistent browser profile storage."),
-    capability("independent_user_data_dir", "supported", "configured", "Keeps identity storage separate from user daily browser data."),
-    capability("proxy", "provider_claim", "provider_claim", "Provider supports proxy-bound identity configuration; Harbor still needs runtime validation."),
-    capability("timezone", "provider_claim", "provider_claim", "Provider claims native timezone alignment through binary arguments."),
-    capability("locale", "provider_claim", "provider_claim", "Provider claims locale alignment through binary arguments."),
-    capability("viewport", "provider_claim", "provider_claim", "Provider supports viewport/window consistency controls."),
-    capability("extensions", "supported", "configured", "Extension support is part of the Chromium profile model."),
-    capability("cookie_persistence", "supported", "configured", "Cookies persist through the dedicated profile."),
-    capability("cdp", "supported", "configured", "Harbor can launch/connect through CDP refs without exposing raw endpoints."),
-    capability("viewer", "limited", "provider_claim", "Viewer is a Manager mechanism reference, not a public raw endpoint."),
-    capability("snapshot_refs", "limited", "configured", "Harbor snapshot refs depend on a live Runtime Session."),
-    capability("evidence_refs", "limited", "configured", "Harbor evidence refs depend on policy and live Runtime Session."),
-    capability("native_fingerprint_control", "provider_claim", "provider_claim", "Native fingerprint control remains a provider claim until Harbor validation evidence exists."),
-    capability("anti_detection_binary_patches", "provider_claim", "provider_claim", "Anti-detection patches are recorded as claims, not task success guarantees."),
-    capability("automation_exposure_reduction", "provider_claim", "provider_claim", "Provider claims reduced automation exposure; Harbor does not promise target-site success.")
+    capability("persistent_profile", "supported", "configured", "使用专用持久化浏览器 profile 存储。"),
+    capability("independent_user_data_dir", "supported", "configured", "身份环境数据与用户日常浏览器数据分离。"),
+    capability("proxy", "provider_claim", "provider_claim", "provider 声称支持代理绑定身份配置；Harbor 仍需运行时验证。"),
+    capability("timezone", "provider_claim", "provider_claim", "provider 声称可通过二进制启动参数对齐时区。"),
+    capability("locale", "provider_claim", "provider_claim", "provider 声称可通过二进制启动参数对齐语言区域。"),
+    capability("viewport", "provider_claim", "provider_claim", "provider 声称支持视口和窗口一致性控制。"),
+    capability("extensions", "supported", "configured", "扩展能力沿用 Chromium profile 模型。"),
+    capability("cookie_persistence", "supported", "configured", "Cookie 会随专用 profile 持久化。"),
+    capability("cdp", "supported", "configured", "Harbor 可通过 CDP ref 启动或连接，不暴露原始 endpoint。"),
+    capability("viewer", "limited", "provider_claim", "Viewer 只作为 Manager 机制参考，不是公开原始 endpoint。"),
+    capability("snapshot_refs", "limited", "configured", "Harbor snapshot ref 依赖存活的 Runtime Session。"),
+    capability("evidence_refs", "limited", "configured", "Harbor evidence ref 依赖策略和存活的 Runtime Session。"),
+    capability("native_fingerprint_control", "provider_claim", "provider_claim", "原生指纹控制在 Harbor 有验证证据前只记为 provider claim。"),
+    capability("anti_detection_binary_patches", "provider_claim", "provider_claim", "反检测补丁只记录为能力声明，不承诺任务成功率。"),
+    capability("automation_exposure_reduction", "provider_claim", "provider_claim", "provider 声称降低自动化暴露；Harbor 不承诺目标站点通过。")
   ];
 }
 
 export function chromeCapabilities(): BrowserProviderCapabilityFact[] {
   return [
-    capability("persistent_profile", "limited", "configured", "Harbor can use a dedicated profile, but Chrome has no provider-native identity controls."),
-    capability("independent_user_data_dir", "supported", "configured", "A dedicated user data dir can isolate Harbor from daily Chrome."),
-    capability("proxy", "limited", "configured", "Proxy can be configured at launch or environment level but lacks provider-native consistency facts."),
-    capability("timezone", "limited", "configured", "Timezone changes are automation-layer or system-level, not native fingerprint control."),
-    capability("locale", "limited", "configured", "Locale can be configured, but consistency is limited."),
-    capability("viewport", "limited", "configured", "Viewport can be configured through automation."),
-    capability("extensions", "limited", "configured", "Extension support depends on launch mode and user policy."),
-    capability("cookie_persistence", "supported", "configured", "Cookies persist through the dedicated profile."),
-    capability("cdp", "supported", "configured", "Chrome supports CDP refs."),
-    capability("viewer", "limited", "configured", "Local window observation is possible, but Harbor viewer facts remain mediated."),
-    capability("snapshot_refs", "limited", "configured", "Harbor snapshot refs depend on a live Runtime Session."),
-    capability("evidence_refs", "limited", "configured", "Harbor evidence refs depend on policy and live Runtime Session."),
-    capability("native_fingerprint_control", "unsupported", "configured", "Official Chrome has no native fingerprint provider controls."),
-    capability("anti_detection_binary_patches", "unsupported", "configured", "Official Chrome has no CloakBrowser binary patches."),
-    capability("automation_exposure_reduction", "limited", "configured", "Harbor can reduce some temporary automation exposure but cannot provide full identity consistency.")
+    capability("persistent_profile", "limited", "configured", "Harbor 可使用专用 profile，但 Chrome 没有 provider 原生身份控制。"),
+    capability("independent_user_data_dir", "supported", "configured", "专用 user data dir 可隔离 Harbor 与日常 Chrome。"),
+    capability("proxy", "limited", "configured", "代理可在启动或环境层配置，但缺少 provider 原生一致性事实。"),
+    capability("timezone", "limited", "configured", "时区只能通过自动化层或系统层处理，不是原生指纹控制。"),
+    capability("locale", "limited", "configured", "语言区域可配置，但一致性能力有限。"),
+    capability("viewport", "limited", "configured", "视口可通过自动化配置。"),
+    capability("extensions", "limited", "configured", "扩展能力取决于启动模式和用户策略。"),
+    capability("cookie_persistence", "supported", "configured", "Cookie 会随专用 profile 持久化。"),
+    capability("cdp", "supported", "configured", "Chrome 支持 CDP ref。"),
+    capability("viewer", "limited", "configured", "可观察本地窗口，但 Harbor viewer facts 仍由 Harbor 中介。"),
+    capability("snapshot_refs", "limited", "configured", "Harbor snapshot ref 依赖存活的 Runtime Session。"),
+    capability("evidence_refs", "limited", "configured", "Harbor evidence ref 依赖策略和存活的 Runtime Session。"),
+    capability("native_fingerprint_control", "unsupported", "configured", "官方 Chrome 不提供 provider 原生指纹控制。"),
+    capability("anti_detection_binary_patches", "unsupported", "configured", "官方 Chrome 没有 CloakBrowser 二进制补丁。"),
+    capability("automation_exposure_reduction", "limited", "configured", "Harbor 可降低部分临时自动化暴露，但不能提供完整身份一致性。")
   ];
 }
 
 export function cloakLimitations(): string[] {
   return [
-    "Provider claims require Harbor validation evidence before Core treats them as observed facts.",
-    "Harbor does not redistribute or auto-download the CloakBrowser binary.",
-    "No target-site pass rate or anti-detection success guarantee is exposed."
+    "provider claim 必须有 Harbor 验证证据后，Core 才能当作 observed fact 使用。",
+    "Harbor 不重新分发、也不自动下载 CloakBrowser 二进制。",
+    "不暴露目标站点通过率或反检测成功保证。"
   ];
 }
 
 export function chromeLimitations(): string[] {
   return [
-    "Restricted fallback only when CloakBrowser is missing or unavailable.",
-    "No native fingerprint control or anti-detection binary patches.",
-    "Must be shown as limited identity-environment consistency, not silent default."
+    "仅在 CloakBrowser 缺失或不可用时作为受限后备。",
+    "没有原生指纹控制或反检测二进制补丁。",
+    "必须展示为身份环境一致性受限，不能静默作为默认 provider。"
   ];
 }
 
@@ -67,11 +67,11 @@ export function cloakDownloadGuide(): BrowserProviderDownloadGuide {
     action: "manual_install",
     primary_url: "https://cloakbrowser.dev",
     fallback_url: "https://github.com/CloakHQ/CloakBrowser/releases",
-    install_hint: "Install CloakBrowser from official CloakHQ channels or set CLOAKBROWSER_BINARY_PATH/HARBOR_CLOAKBROWSER_PATH to a verified local binary.",
+    install_hint: "请从 CloakHQ 官方渠道安装 CloakBrowser，或设置 CLOAKBROWSER_BINARY_PATH/HARBOR_CLOAKBROWSER_PATH 指向已验证的本机二进制。",
     missing_impacts: [
-      "CloakBrowser cannot be selected as the primary provider.",
-      "Native fingerprint and anti-detection provider claims are unavailable.",
-      "Identity environments may fall back to official Chrome with reduced consistency."
+      "CloakBrowser 不能作为主力 provider 被选择。",
+      "原生指纹和反检测 provider claim 不可用。",
+      "身份环境可能后备到官方 Chrome，且一致性能力降低。"
     ]
   };
 }
@@ -80,10 +80,10 @@ export function chromeDownloadGuide(): BrowserProviderDownloadGuide {
   return {
     action: "manual_install",
     primary_url: "https://www.google.com/chrome/",
-    install_hint: "Install official Google Chrome or set HARBOR_CHROME_PATH/CHROME_PATH to the Chrome executable.",
+    install_hint: "请安装官方 Google Chrome，或设置 HARBOR_CHROME_PATH/CHROME_PATH 指向 Chrome 可执行文件。",
     missing_impacts: [
-      "No restricted fallback provider is available if CloakBrowser is also missing.",
-      "Local smoke cannot use official Chrome as a backup runtime."
+      "如果 CloakBrowser 也缺失，将没有受限后备 provider。",
+      "本地 smoke 不能把官方 Chrome 用作备用 runtime。"
     ]
   };
 }

@@ -98,7 +98,7 @@ test("binds identity environments to CloakBrowser by default and warns on Chrome
   assert.equal(chromeFallback.selected_provider_id, "chrome_official");
   assert.equal(chromeFallback.selection_reason, "chrome_restricted_fallback");
   assert.equal(chromeFallback.requires_user_notice, true);
-  assert.equal(chromeFallback.warnings.some((warning) => warning.includes("restricted fallback")), true);
+  assert.equal(chromeFallback.warnings.some((warning) => warning.includes("受限后备")), true);
 
   const unavailableRequested = bindIdentityEnvironmentDefaultProvider({
     ...providerFixture({ [chromePath]: { executable: true } }),
@@ -122,13 +122,13 @@ test("explains provider install and launch failure diagnostics", () => {
     message: "Proxy auth failed."
   });
   assert.equal(proxy.failure_class, "proxy_unavailable");
-  assert.equal(proxy.app_summary.includes("proxy"), true);
+  assert.equal(proxy.app_summary.includes("代理"), true);
 
   const args = diagnoseBrowserProviderFailure({
     provider_id: "chrome_official",
     failure_class: "launch_args_incompatible"
   });
-  assert.equal(args.suggested_action.includes("launch args"), true);
+  assert.equal(args.suggested_action.includes("启动参数"), true);
 });
 
 test("reports profile and session blockers as structured validation runtime facts", async () => {
