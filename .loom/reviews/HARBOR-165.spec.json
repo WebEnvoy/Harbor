@@ -1,0 +1,26 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-165",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "Spec review accepts the bounded Harbor #158 runtime session lifecycle slice.",
+  "reviewer": "codex-main-controller",
+  "authored_at": "2026-07-06T07:39:00Z",
+  "reviewed_head": "46a7c9e0cc21d4db2d9b34b52a7b4834c04a1bd0",
+  "reviewed_validation_summary": "`pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-165 --json`, `loom suite carrier validate --target . --item HARBOR-165 --json`, and `loom suite evidence validate --target . --item HARBOR-165 --json` passed locally on 2026-07-06T07:35Z.",
+  "reviewed_validation_summary_hash": "1d0a4ffe078ae1ffde7d2e3f2ef27c30ac11a72d9d0ff8a24acf778b4fb76705",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-165.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "The spec covers user value, success and failure states, sensitive data boundary, provider boundary, and non-goals for this runtime session lifecycle batch."
+  },
+  "implementation_review_disposition": {
+    "status": "passed",
+    "reason": "The implementation remains within the accepted spec and minimal suite path."
+  }
+}

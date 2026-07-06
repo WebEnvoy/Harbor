@@ -201,6 +201,133 @@ test("returns local identity environment facts without protected material", () =
   assert.equal(publicJson.includes("proxy-password"), false);
 });
 
+test("opens an identity environment session with page and controller facts", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const session = await runtime.openIdentityEnvironmentSession({
+    identity_environment: {
+      ...providerFixture({ [cloakPath]: { executable: true } }),
+      identity_environment_ref: "identity-env_xhs-open",
+      execution_identity_ref: "execution-identity_xhs-open",
+      profile_ref: "profile_xhs-open",
+      site: {
+        site_id: "xiaohongshu",
+        origin: "https://www.xiaohongshu.com",
+        display_name: "小红书"
+      },
+      login_state: "logged_in",
+      storage_state: "present"
+    },
+    url: "https://www.xiaohongshu.com/explore",
+    control_owner: "agent",
+    holder_ref: "agent_run_1"
+  });
+
+  assert.equal("status" in session, false);
+  if ("status" in session) throw new Error("identity environment session should open");
+  assert.equal(session.identity_environment_ref, "identity-env_xhs-open");
+  assert.equal(session.execution_identity_ref, "execution-identity_xhs-open");
+  assert.equal(session.profile_ref, "profile_xhs-open");
+  assert.equal(session.current_page.requested_url, "https://www.xiaohongshu.com/explore");
+  assert.equal(session.current_page.current_url, "https://www.xiaohongshu.com/explore");
+  assert.equal(session.current_page.title, "Fixture page for https://www.xiaohongshu.com/explore");
+  assert.equal(session.current_page.status, "ready");
+  assert.equal(session.control_owner, "agent");
+  assert.equal(session.control_lock.owner, "agent");
+  assert.equal(session.control_lock.holder_ref, "agent_run_1");
+  assert.equal(session.facts.some((fact) => fact.key === "lifecycle.reference.donut_browser"), true);
+
+  const publicJson = JSON.stringify(session);
+  assert.equal(publicJson.includes("webSocketDebuggerUrl"), false);
+  assert.equal(publicJson.includes("cookie"), false);
+  assert.equal(publicJson.includes("token"), false);
+});
+
+test("reuses, locks, releases, and stops identity environment sessions", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const identity_environment = runtime.getLocalIdentityEnvironmentFacts({
+    ...providerFixture({ [cloakPath]: { executable: true } }),
+    identity_environment_ref: "identity-env_boss",
+    execution_identity_ref: "execution-identity_boss",
+    profile_ref: "profile_boss",
+    site: {
+      site_id: "boss",
+      origin: "https://www.zhipin.com",
+      display_name: "BOSS 直聘"
+    },
+    login_state: "logged_in",
+    storage_state: "present"
+  });
+  const opened = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com",
+    control_owner: "agent"
+  });
+  assert.equal("status" in opened, false);
+  if ("status" in opened) throw new Error("initial session should open");
+
+  const reused = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/job",
+    control_owner: "agent"
+  });
+  assert.equal("status" in reused, false);
+  if ("status" in reused) throw new Error("session should be reused by same controller");
+  assert.equal(reused.runtime_session_ref, opened.runtime_session_ref);
+  assert.equal(reused.current_page.current_url, "https://www.zhipin.com/web/geek/job");
+
+  const locked = runtime.lockSession(opened.runtime_session_ref, { control_owner: "user", holder_ref: "manual_user" });
+  assert.equal("status" in locked, true);
+  if (!("status" in locked)) throw new Error("different controller should not take held session");
+  assert.equal(locked.failure_class, "session_locked");
+
+  const released = runtime.releaseSession(opened.runtime_session_ref, { control_owner: "agent" });
+  assert.equal("status" in released, false);
+  if ("status" in released) throw new Error("owner should release session");
+  assert.equal(released.lifecycle_state, "idle");
+  assert.equal(released.control_owner, "none");
+  assert.equal(released.control_lock.state, "released");
+
+  const userLocked = runtime.lockSession(opened.runtime_session_ref, { control_owner: "user", holder_ref: "manual_user" });
+  assert.equal("status" in userLocked, false);
+  if ("status" in userLocked) throw new Error("released session should be lockable by user");
+  assert.equal(userLocked.lifecycle_state, "locked");
+  assert.equal(userLocked.control_owner, "user");
+
+  const conflict = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/job",
+    control_owner: "core_task"
+  });
+  assert.equal("status" in conflict, true);
+  if (!("status" in conflict)) throw new Error("core_task should not take user lock");
+  assert.equal(conflict.current_error.code, "session_locked");
+
+  const stopped = await runtime.stopSession(opened.runtime_session_ref, { control_owner: "user" });
+  assert.equal("status" in stopped, false);
+  if ("status" in stopped) throw new Error("user should stop locked session");
+  assert.equal(stopped.lifecycle_state, "closed");
+  assert.equal(stopped.control_lock.state, "closed");
+});
+
+test("returns structured failure for invalid target URLs", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const result = await runtime.openIdentityEnvironmentSession({
+    identity_environment: {
+      site: {
+        site_id: "xhs",
+        origin: "https://www.xiaohongshu.com"
+      }
+    },
+    url: "javascript:alert(1)"
+  });
+
+  assert.equal("status" in result, true);
+  if (!("status" in result)) throw new Error("invalid URL should not launch");
+  assert.equal(result.failure_class, "url_unreachable");
+  assert.equal(result.current_error.code, "url_unreachable");
+  assert.equal(result.retryable, false);
+});
+
 test("reports profile and session blockers as structured validation runtime facts", async () => {
   const locked = await new HarborRuntime(createFixtureLauncher("profile_locked")).createSession();
   assert.equal(locked.lifecycle_state, "failed");

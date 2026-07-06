@@ -1,0 +1,36 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-165",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Review accepts the Harbor #158 runtime session lifecycle implementation. The PR adds local browser session open/reuse/lock/release/stop behavior, public page/control/error facts, and tests without expanding into hosted browser, credential storage, login automation, or cross-repo changes.",
+  "reviewer": "codex-main-controller",
+  "authored_at": "2026-07-06T07:39:00Z",
+  "reviewed_head": "46a7c9e0cc21d4db2d9b34b52a7b4834c04a1bd0",
+  "reviewed_validation_summary": "`pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-165 --json`, `loom suite carrier validate --target . --item HARBOR-165 --json`, and `loom suite evidence validate --target . --item HARBOR-165 --json` passed locally on 2026-07-06T07:35Z.",
+  "reviewed_validation_summary_hash": "1d0a4ffe078ae1ffde7d2e3f2ef27c30ac11a72d9d0ff8a24acf778b4fb76705",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-165.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "Harbor #160 should consume the runtime session lifecycle to produce real scene evidence/viewer refs."
+  ],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-165.md",
+    "recovery_entry": ".loom/progress/HARBOR-165.md",
+    "suite_evidence_map": ".loom/specs/HARBOR-165/evidence-map.md",
+    "suite_task_carriers": [
+      ".loom/specs/HARBOR-165/task-carrier.md"
+    ]
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "The implementation matches Harbor #158 stories #8/#9/#10 and keeps provider scope to CloakBrowser primary/default, official Chrome restricted fallback, and Donut Browser mechanism reference only."
+  },
+  "implementation_review_disposition": {
+    "status": "passed",
+    "reason": "Runtime session lifecycle modules are split below the file-size threshold, validation passed, and public facts avoid raw CDP endpoint, credentials, cookies, tokens, full profile path, raw DOM, HAR, or storage material."
+  }
+}
