@@ -1,0 +1,26 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-161",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "Spec review accepts the bounded Harbor local website identity environment model for FR #157.",
+  "reviewer": "Codex thread 019f2731-5b28-72d1-897e-8d1199e94fdc",
+  "authored_at": "2026-07-06T06:15:21Z",
+  "reviewed_head": "4a57c6d6361578b248c26f08bf65b0fdfcde8a4a",
+  "reviewed_validation_summary": "`pnpm typecheck`; `pnpm test` (17 tests); `pnpm smoke:runtime`; `git diff --check`; `loom verify --target . --json`; `loom fact-chain --target . --json`; `loom suite validate --target . --item HARBOR-161 --json`; `loom suite evidence validate --target . --item HARBOR-161 --json`; `loom suite carrier validate --target . --item HARBOR-161 --json`; and `loom build --target . --item HARBOR-161 --build-evidence .loom/specs/HARBOR-161/build-evidence.json --json` passed locally. Hosted py-compile, demo-bootstrap, repo-local-cli, and loom-check passed on PR #186 run 28771310582.",
+  "reviewed_validation_summary_hash": "6270dc8461878c5f066485d3a4d3a19626cb5b0b87da3767cb55cadbcf38d94d",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-161.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "The spec keeps Harbor as local identity environment/runtime owner and excludes cloud account hosting, team password vaults, live login automation, CAPTCHA/2FA bypass, App/Core/Lode contracts, and raw private material export."
+  },
+  "implementation_review_disposition": {
+    "status": "passed",
+    "reason": "Implementation is limited to runtime-api model/tests/smoke and item-specific carrier."
+  }
+}
