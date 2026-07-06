@@ -1,0 +1,119 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "required_inputs": {
+    "target_repo": "WebEnvoy/Harbor",
+    "work_item": "HARBOR-161",
+    "branch": "work/harbor-157-local-identity-environments",
+    "suite_path": "minimal",
+    "worktree": "."
+  },
+  "ownership_contract": {
+    "task_goal": "PR Ready implementation for Harbor FR #157 local website identity environment facts.",
+    "context_locators": [
+      "https://github.com/WebEnvoy/Harbor/issues/157",
+      "https://github.com/WebEnvoy/Harbor/issues/161",
+      "https://github.com/WebEnvoy/Harbor/issues/162",
+      "https://github.com/WebEnvoy/Harbor/issues/163",
+      "https://github.com/WebEnvoy/Harbor/issues/164",
+      "https://github.com/WebEnvoy/Harbor/issues/182",
+      "https://github.com/WebEnvoy/Harbor/pull/183",
+      ".loom/specs/HARBOR-161/evidence-map.md"
+    ],
+    "read_scope": "Harbor repository, GitHub issue/PR metadata, and read-only research/source locators outside Harbor.",
+    "write_ownership": "Harbor runtime-api files and HARBOR-161 Loom carriers only.",
+    "non_goals": [
+      "No App/Core/Lode changes",
+      "No research/source edits",
+      "No live website login",
+      "No real credential/cookie/token/profile material",
+      "No cloud account hosting",
+      "No CAPTCHA/2FA bypass",
+      "No merge or issue closeout"
+    ],
+    "validation_expectation": [
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm smoke:runtime",
+      "git diff --check",
+      "loom verify --target . --json",
+      "loom fact-chain --target . --json",
+      "loom suite validate --target . --item HARBOR-161 --json",
+      "loom suite evidence validate --target . --item HARBOR-161 --json",
+      "loom suite carrier validate --target . --item HARBOR-161 --json"
+    ],
+    "output_format": "Implementation PR with metadata covering #161 #162 #163 #164 #182 and final subagent report to the main controller.",
+    "integration_target": [
+      "packages/runtime-api/src/identity-environment.ts",
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/index.test.ts",
+      "packages/runtime-api/src/smoke.ts",
+      ".loom/work-items/HARBOR-161.md",
+      ".loom/progress/HARBOR-161.md",
+      ".loom/specs/HARBOR-161/**"
+    ]
+  },
+  "ownership_constraints": [
+    "Write ownership is limited to Harbor runtime-api files and HARBOR-161 Loom carriers.",
+    "Forbidden writes include App, Lode, WebEnvoy/Core, research, and sources paths.",
+    "No live account, browser profile, credential, cookie/token, CAPTCHA/2FA bypass, merge, or issue closeout actions."
+  ],
+  "ownership_constraints_detail": {
+    "write_ownership": [
+      "packages/runtime-api/src/identity-environment.ts",
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/index.test.ts",
+      "packages/runtime-api/src/smoke.ts",
+      ".loom/work-items/HARBOR-161.md",
+      ".loom/progress/HARBOR-161.md",
+      ".loom/specs/HARBOR-161/**",
+      ".loom/status/current.md",
+      ".loom/bootstrap/init-result.json"
+    ],
+    "forbidden_writes": [
+      "App/**",
+      "Lode/**",
+      "WebEnvoy/**",
+      "Core/**",
+      "/Volumes/2T/dev/WebEnvoy/research/**",
+      "/Volumes/2T/dev/WebEnvoy/sources/**"
+    ],
+    "external_action_boundary": "No live account, browser profile, credential, cookie/token, CAPTCHA/2FA bypass, merge, or issue closeout actions."
+  },
+  "delegations": [],
+  "delegation_evidence": {
+    "used_nested_subagents": false,
+    "unintegrated_subagent_output": false
+  },
+  "integration_evidence": [
+    "Local identity environment model integrated into runtime-api exports and HarborRuntime.getLocalIdentityEnvironmentFacts.",
+    "Runtime smoke emits identityEnvironment fixture facts and asserts schema, recovery requirement, and consumer not-exposed boundary.",
+    "node:test coverage verifies site binding, login/storage lifecycle, environment summaries, provider binding, credential/manual-auth boundary, import/export/delete/local encryption boundary, and no sample plaintext protected material.",
+    "Validation passed: pnpm typecheck, pnpm test with 17 tests, pnpm smoke:runtime, git diff --check, loom verify, loom fact-chain, loom suite validate, loom suite evidence validate, loom suite carrier validate."
+  ],
+  "integration_evidence_detail": {
+    "code": [
+      "Local identity environment model integrated into runtime-api exports and HarborRuntime.getLocalIdentityEnvironmentFacts.",
+      "Runtime smoke emits identityEnvironment fixture facts and asserts schema, recovery requirement, and consumer not-exposed boundary.",
+      "node:test coverage verifies site binding, login/storage lifecycle, environment summaries, provider binding, credential/manual-auth boundary, import/export/delete/local encryption boundary, and no sample plaintext protected material."
+    ],
+    "validation": [
+      "pnpm typecheck passed",
+      "pnpm test passed, 17 tests",
+      "pnpm smoke:runtime passed",
+      "git diff --check passed",
+      "loom verify passed",
+      "loom fact-chain passed",
+      "loom suite validate passed",
+      "loom suite evidence validate passed",
+      "loom suite carrier validate passed"
+    ]
+  },
+  "ownership_conflicts": [],
+  "repeated_blocker_signal": null,
+  "suite_path_consumption": {
+    "suite_path": "minimal",
+    "not_applicable_rationale": "Facts/fixture contract slice with no persistent storage migration, no real browser launch, no external account/profile use, and no cross-repo schema publication.",
+    "consumer_boundary": "App/Core/Lode receive public summaries, refs, readiness states, blocking reasons, and no-bypass risk boundary only.",
+    "recheck_condition": "Upgrade to full suite when adding persistent identity storage, real profile import/export/delete, real keychain integration, live site authentication, cross-repo API schema publication, or external visible account actions."
+  }
+}

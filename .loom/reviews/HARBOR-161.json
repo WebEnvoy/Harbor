@@ -1,0 +1,34 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-161",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Implementation review accepts Harbor local website identity environment facts, credential/manual-auth boundary, protected material handling, provider compatibility facts, and runtime smoke coverage for Harbor #161/#162/#163/#164/#182.",
+  "reviewer": "Codex thread 019f2731-5b28-72d1-897e-8d1199e94fdc",
+  "authored_at": "2026-07-06T06:15:21Z",
+  "reviewed_head": "4a57c6d6361578b248c26f08bf65b0fdfcde8a4a",
+  "reviewed_validation_summary": "`pnpm typecheck`; `pnpm test` (17 tests); `pnpm smoke:runtime`; `git diff --check`; `loom verify --target . --json`; `loom fact-chain --target . --json`; `loom suite validate --target . --item HARBOR-161 --json`; `loom suite evidence validate --target . --item HARBOR-161 --json`; `loom suite carrier validate --target . --item HARBOR-161 --json`; and `loom build --target . --item HARBOR-161 --build-evidence .loom/specs/HARBOR-161/build-evidence.json --json` passed locally. Hosted py-compile, demo-bootstrap, repo-local-cli, and loom-check passed on PR #186 run 28771310582.",
+  "reviewed_validation_summary_hash": "6270dc8461878c5f066485d3a4d3a19626cb5b0b87da3767cb55cadbcf38d94d",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-161.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-161.md",
+    "recovery_entry": ".loom/progress/HARBOR-161.md",
+    "suite_evidence_map": ".loom/specs/HARBOR-161/evidence-map.md",
+    "suite_task_carriers": [
+      ".loom/specs/HARBOR-161/task-carrier.md"
+    ]
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Harbor owns identity environment facts and protected-material boundaries while keeping credentials, cookies, tokens, profile storage, raw capture, and risk-bypass guarantees out of exportable shared truth."
+  },
+  "implementation_review_disposition": {
+    "status": "passed",
+    "reason": "Typecheck, tests, runtime smoke, diff check, Loom verification, suite carrier/evidence checks, and build evidence pass locally."
+  }
+}
