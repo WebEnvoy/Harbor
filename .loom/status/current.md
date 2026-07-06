@@ -2,22 +2,22 @@
 
 ## Derived Fact Chain View
 
-- Item ID: HARBOR-169
-- Goal: Output identity environment consistency facts for Harbor #159 so users can see whether a local identity environment is usable and Core/App can consume provider, environment, login, drift, and risk summaries.
-- Scope: Covers Harbor #159/#169/#170/#171/#172 and semantic story #2; ownership is limited to Harbor runtime-api identity consistency files and HARBOR-169 Loom carriers; excludes App/Core/Lode changes, issue closeout, dependency graph edits, real account/profile/cookie/token material, platform-private detection strategies, risk-bypass promises, cloud hosting, Chromium provider registration, and Donut Browser provider registration.
-- Execution Path: work/harbor-159-identity-consistency-facts
-- Workspace Entry: .
-- Recovery Entry: .loom/progress/HARBOR-169.md
-- Review Entry: .loom/reviews/HARBOR-169.json
-- Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; sensitive material check; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate/carrier/evidence --target . --item HARBOR-169 --json
-- Closing Condition: Implementation PR #192 merged; #159/#169/#170/#171/#172 closed with post-merge evidence; closeout carrier PR is pending.
-- Current Checkpoint: closed_out
-- Current Stop: Implementation PR #192 merged; Harbor #159/#169/#170/#171/#172 have post-merge evidence comments and are closed.
-- Next Step: Merge this closeout carrier PR, then retire the current pointer back to no_active_item.
-- Blockers: None recorded.
-- Latest Validation Summary: Local validation passed on 2026-07-06T08:21Z: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, sensitive material check against smoke output, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, and `loom suite validate/carrier/evidence --target . --item HARBOR-169 --json`.
-- Recovery Boundary: Harbor runtime API facts and item-specific Loom carriers only; no App/Core/Lode changes, no real browser launch beyond fixture smoke, no real account/profile/cookie/token material, no hosted browser, no cloud runtime, no Chromium user provider, no Donut Browser provider registration, no issue closeout.
-- Current Lane: closeout
+- Item ID: no_active_item
+- Goal: not_applicable
+- Scope: not_applicable
+- Execution Path: not_applicable
+- Workspace Entry: not_applicable
+- Recovery Entry: not_applicable
+- Review Entry: not_applicable
+- Validation Entry: not_applicable
+- Closing Condition: not_applicable
+- Current Checkpoint: not_applicable
+- Current Stop: not_applicable
+- Next Step: not_applicable
+- Blockers: not_applicable
+- Latest Validation Summary: not_applicable
+- Recovery Boundary: not_applicable
+- Current Lane: not_applicable
 
 ## Runtime Evidence
 
@@ -25,11 +25,11 @@
 - Logs Entry: not_applicable
 - Diagnostics Entry: not_applicable
 - Verification Entry: loom verify --target . --json
-- Lane Entry: .loom/specs/HARBOR-169/task-carrier.md
+- Lane Entry: no_active_item
 
 ## Sources
 
-- Static Truth: .loom/work-items/HARBOR-169.md
-- Dynamic Truth: .loom/progress/HARBOR-169.md
+- Static Truth: not_applicable
+- Dynamic Truth: not_applicable
 - Locator Truth: .loom/bootstrap/init-result.json
 - Fact Chain CLI: loom fact-chain --target . --json
