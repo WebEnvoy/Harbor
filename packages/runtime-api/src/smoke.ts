@@ -27,6 +27,17 @@ const identityEnvironment = runtime.getLocalIdentityEnvironmentFacts({
   login_method: "manual",
   human_verification: ["manual_login", "captcha"]
 });
+const identityConsistency = runtime.getIdentityConsistencyFacts({
+  identity_environment: identityEnvironment,
+  observed_environment: {
+    proxy_ref: "proxy_smoke",
+    region: "US",
+    language: "en-US",
+    timezone: "America/Los_Angeles",
+    login_state: "manual_auth_required"
+  },
+  risk_events: ["login_missing"]
+});
 const session = await runtime.createSession();
 const browserSession = await runtime.openIdentityEnvironmentSession({
   identity_environment: identityEnvironment,
@@ -77,15 +88,16 @@ const staleEvidenceStatus = capture?.status === "captured" ? runtime.getEvidence
 
 console.log(JSON.stringify({
   mode: useLocalProvider ? "local" : "fixture",
-	  session,
-	  providerStatus,
-	  providerBinding,
+  session,
+  providerStatus,
+  providerBinding,
   identityEnvironment,
+  identityConsistency,
   browserSession,
   browserSessionReusable,
   browserSessionReleased,
   browserSessionStopped,
-	  capture,
+  capture,
   scene,
   previewEvidence,
   readback,
@@ -109,16 +121,19 @@ const staleEvidenceInvalid = !staleEvidenceStatus ||
   staleEvidenceStatus.scene_status.display_state !== "stale";
 
 if (
-	  !readback ||
-	  !closed ||
-	  providerStatus.providers.length !== 2 ||
-	  !providerStatus.excluded_providers.some((provider) => provider.provider === "chromium") ||
-	  !providerStatus.excluded_providers.some((provider) => provider.provider === "donut_browser") ||
-	  providerBinding.schema_version !== "harbor-identity-provider-binding/v0" ||
-	  identityEnvironment.schema_version !== "harbor-local-identity-environment/v0" ||
-	  identityEnvironment.login_state.recovery_required !== true ||
-	  identityEnvironment.consumer_boundary.not_exposed.includes("cookie_value") !== true ||
-	  (!localUnavailableAllowed && (!capture || capture.status !== "captured")) ||
+  !readback ||
+  !closed ||
+  providerStatus.providers.length !== 2 ||
+  !providerStatus.excluded_providers.some((provider) => provider.provider === "chromium") ||
+  !providerStatus.excluded_providers.some((provider) => provider.provider === "donut_browser") ||
+  providerBinding.schema_version !== "harbor-identity-provider-binding/v0" ||
+  identityEnvironment.schema_version !== "harbor-local-identity-environment/v0" ||
+  identityConsistency.schema_version !== "harbor-identity-consistency-facts/v0" ||
+  identityEnvironment.login_state.recovery_required !== true ||
+  identityConsistency.resources.some((resource) => resource.key === "proxy") !== true ||
+  identityConsistency.public_facts.core !== "admission_resource_facts_and_blocking_reasons" ||
+  identityEnvironment.consumer_boundary.not_exposed.includes("cookie_value") !== true ||
+  (!localUnavailableAllowed && (!capture || capture.status !== "captured")) ||
   (!useLocalProvider && !browserSessionReady) ||
   (useLocalProvider && !browserSessionReady && !browserSessionFailedWithFacts) ||
   "status" in viewerControl ||
