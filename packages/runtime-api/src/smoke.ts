@@ -2,6 +2,8 @@ import { createFixtureLauncher, HarborRuntime } from "./index.js";
 
 const useLocalProvider = process.argv.includes("--local");
 const runtime = new HarborRuntime(useLocalProvider ? undefined : createFixtureLauncher("ready"));
+const providerStatus = runtime.getBrowserProviderStatus();
+const providerBinding = runtime.getIdentityEnvironmentProviderBinding();
 const session = await runtime.createSession();
 const capture = session.lifecycle_state === "active"
   ? runtime.captureSnapshot(session.runtime_session_ref, {
@@ -32,8 +34,10 @@ const staleEvidenceStatus = capture?.status === "captured" ? runtime.getEvidence
 
 console.log(JSON.stringify({
   mode: useLocalProvider ? "local" : "fixture",
-  session,
-  capture,
+	  session,
+	  providerStatus,
+	  providerBinding,
+	  capture,
   scene,
   previewEvidence,
   readback,
@@ -50,9 +54,13 @@ console.log(JSON.stringify({
 }, null, 2));
 
 if (
-  !readback ||
-  !closed ||
-  !capture ||
+	  !readback ||
+	  !closed ||
+	  providerStatus.providers.length !== 2 ||
+	  !providerStatus.excluded_providers.some((provider) => provider.provider === "chromium") ||
+	  !providerStatus.excluded_providers.some((provider) => provider.provider === "donut_browser") ||
+	  providerBinding.schema_version !== "harbor-identity-provider-binding/v0" ||
+	  !capture ||
   capture.status !== "captured" ||
   "status" in viewerControl ||
   "status" in handoff ||

@@ -1,6 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createFixtureLauncher, HarborRuntime } from "./index.js";
+import {
+  bindIdentityEnvironmentDefaultProvider,
+  createFixtureLauncher,
+  detectBrowserProviders,
+  diagnoseBrowserProviderFailure,
+  HarborRuntime
+} from "./index.js";
+
+const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const cloakPath = "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium";
+
+function providerFixture(paths: Record<string, { executable?: boolean; text?: string }>) {
+  return {
+    platform: "darwin" as const,
+    arch: "arm64",
+    home_dir: "/Users/test",
+    env: {},
+    path_exists: (path: string) => path in paths,
+    is_executable: (path: string) => paths[path]?.executable ?? false,
+    read_text: (path: string) => paths[path]?.text ?? null
+  };
+}
 
 test("creates, reads, and closes a runtime session", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
@@ -34,6 +55,80 @@ test("reports provider unavailability as structured runtime facts", async () => 
   assert.equal(session.lifecycle_state, "failed");
   assert.equal(session.current_error?.code, "provider_unavailable");
   assert.equal(session.availability.cdp, "unavailable");
+});
+
+test("detects only CloakBrowser and official Chrome provider status", () => {
+  const catalog = detectBrowserProviders(providerFixture({
+    [cloakPath]: { executable: true },
+    [chromePath]: { executable: true },
+    "/Applications/Google Chrome.app/Contents/Info.plist": {
+      text: "<plist><dict><key>CFBundleShortVersionString</key><string>125.0.1</string></dict></plist>"
+    },
+    "/Applications/Chromium.app/Contents/MacOS/Chromium": { executable: true }
+  }));
+
+  assert.deepEqual(catalog.providers.map((provider) => provider.provider_id), ["cloakbrowser", "chrome_official"]);
+  assert.equal(catalog.providers.some((provider) => provider.display_name === "Chromium"), false);
+  assert.equal(catalog.excluded_providers.some((provider) => provider.provider === "chromium"), true);
+  assert.equal(catalog.excluded_providers.some((provider) => provider.provider === "donut_browser"), true);
+
+  const cloak = catalog.providers[0]!;
+  const chrome = catalog.providers[1]!;
+  assert.equal(cloak.role, "primary");
+  assert.equal(cloak.default_for_identity_environment, true);
+  assert.equal(cloak.install.status, "installed");
+  assert.equal(cloak.install.version, "145.0.7632.109.2");
+  assert.equal(chrome.role, "restricted_fallback");
+  assert.equal(chrome.install.version, "125.0.1");
+  assert.equal(chrome.capabilities.find((capability) => capability.key === "native_fingerprint_control")?.state, "unsupported");
+});
+
+test("binds identity environments to CloakBrowser by default and warns on Chrome fallback", () => {
+  const cloakDefault = bindIdentityEnvironmentDefaultProvider(providerFixture({
+    [cloakPath]: { executable: true },
+    [chromePath]: { executable: true }
+  }));
+  assert.equal(cloakDefault.selected_provider_id, "cloakbrowser");
+  assert.equal(cloakDefault.selection_reason, "cloakbrowser_default");
+  assert.equal(cloakDefault.requires_user_notice, false);
+
+  const chromeFallback = bindIdentityEnvironmentDefaultProvider(providerFixture({
+    [chromePath]: { executable: true }
+  }));
+  assert.equal(chromeFallback.selected_provider_id, "chrome_official");
+  assert.equal(chromeFallback.selection_reason, "chrome_restricted_fallback");
+  assert.equal(chromeFallback.requires_user_notice, true);
+  assert.equal(chromeFallback.warnings.some((warning) => warning.includes("restricted fallback")), true);
+
+  const unavailableRequested = bindIdentityEnvironmentDefaultProvider({
+    ...providerFixture({ [chromePath]: { executable: true } }),
+    requested_provider_id: "cloakbrowser"
+  });
+  assert.equal(unavailableRequested.selected_provider_id, null);
+  assert.equal(unavailableRequested.selection_reason, "requested_provider_unavailable");
+});
+
+test("explains provider install and launch failure diagnostics", () => {
+  const invalidPath = detectBrowserProviders({
+    ...providerFixture({}),
+    env: { HARBOR_CLOAKBROWSER_PATH: "/missing/cloak" }
+  }).providers[0]!;
+  assert.equal(invalidPath.install.status, "path_invalid");
+  assert.equal(invalidPath.diagnostics[0]?.failure_class, "path_invalid");
+
+  const proxy = diagnoseBrowserProviderFailure({
+    provider_id: "cloakbrowser",
+    failure_class: "proxy_unavailable",
+    message: "Proxy auth failed."
+  });
+  assert.equal(proxy.failure_class, "proxy_unavailable");
+  assert.equal(proxy.app_summary.includes("proxy"), true);
+
+  const args = diagnoseBrowserProviderFailure({
+    provider_id: "chrome_official",
+    failure_class: "launch_args_incompatible"
+  });
+  assert.equal(args.suggested_action.includes("launch args"), true);
 });
 
 test("reports profile and session blockers as structured validation runtime facts", async () => {
