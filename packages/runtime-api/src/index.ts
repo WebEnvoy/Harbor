@@ -1,6 +1,14 @@
 import { createIdentityConsistencyFacts, type IdentityConsistencyFacts, type IdentityConsistencyFactsInput } from "./identity-consistency.js";
 import { createLocalIdentityEnvironmentFacts, type LocalIdentityEnvironmentFacts, type LocalIdentityEnvironmentInput } from "./identity-environment.js";
 import {
+  HARBOR_LOCAL_IDENTITY_ENVIRONMENT_STORE_SCHEMA,
+  LocalIdentityEnvironmentManager,
+  type LocalIdentityEnvironmentManagerOptions,
+  type LocalIdentityEnvironmentPublicRecord,
+  type LocalIdentityEnvironmentStateUpdate,
+  type ManagedLocalIdentityEnvironmentInput
+} from "./identity-environment-manager.js";
+import {
   HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA,
   HARBOR_PAGE_SCENE_REFS_SCHEMA,
   PageSceneStore,
@@ -64,6 +72,7 @@ import {
 export { HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_PAGE_SCENE_REFS_SCHEMA } from "./page-scene.js";
 export { createIdentityConsistencyFacts, HARBOR_IDENTITY_CONSISTENCY_FACTS_SCHEMA } from "./identity-consistency.js";
 export { createLocalIdentityEnvironmentFacts, HARBOR_LOCAL_IDENTITY_ENVIRONMENT_SCHEMA } from "./identity-environment.js";
+export { HARBOR_LOCAL_IDENTITY_ENVIRONMENT_STORE_SCHEMA, LocalIdentityEnvironmentManager } from "./identity-environment-manager.js";
 export {
   bindIdentityEnvironmentDefaultProvider,
   detectBrowserProviders,
@@ -138,6 +147,16 @@ export type {
   SiteBindingInput
 } from "./identity-environment.js";
 export type {
+  LocalIdentityEnvironmentManagerOptions,
+  LocalIdentityEnvironmentOperation,
+  LocalIdentityEnvironmentPublicRecord,
+  LocalIdentityEnvironmentReadiness,
+  LocalIdentityEnvironmentStateUpdate,
+  ManagedLocalIdentityEnvironmentInput,
+  ManagedSiteId,
+  StoredLocalIdentityEnvironmentRecord
+} from "./identity-environment-manager.js";
+export type {
   BrowserProviderCapabilityFact,
   BrowserProviderCapabilityKey,
   BrowserProviderCapabilityState,
@@ -201,9 +220,11 @@ export type {
 export class HarborRuntime {
   private readonly pageScenes = new PageSceneStore();
   private readonly viewerControls = new ViewerControlStore();
+  private readonly identityEnvironments: LocalIdentityEnvironmentManager;
   private readonly runtimeSessions: RuntimeSessionStore;
 
-  constructor(launcher: LocalProviderLauncher = launchLocalDedicatedProvider) {
+  constructor(launcher: LocalProviderLauncher = launchLocalDedicatedProvider, identityEnvironmentOptions: LocalIdentityEnvironmentManagerOptions = {}) {
+    this.identityEnvironments = new LocalIdentityEnvironmentManager(identityEnvironmentOptions);
     this.runtimeSessions = new RuntimeSessionStore(this.viewerControls, launcher);
   }
 
@@ -241,6 +262,48 @@ export class HarborRuntime {
 
   getLocalIdentityEnvironmentFacts(input: LocalIdentityEnvironmentInput): LocalIdentityEnvironmentFacts {
     return createLocalIdentityEnvironmentFacts(input);
+  }
+
+  createLocalIdentityEnvironment(input: ManagedLocalIdentityEnvironmentInput): LocalIdentityEnvironmentPublicRecord {
+    return this.identityEnvironments.create(input);
+  }
+
+  importLocalIdentityEnvironment(input: ManagedLocalIdentityEnvironmentInput): LocalIdentityEnvironmentPublicRecord {
+    return this.identityEnvironments.importIdentityEnvironment(input);
+  }
+
+  updateLocalIdentityEnvironment(identity_environment_ref: string, input: LocalIdentityEnvironmentStateUpdate): LocalIdentityEnvironmentPublicRecord | null {
+    return this.identityEnvironments.update(identity_environment_ref, input);
+  }
+
+  getManagedLocalIdentityEnvironment(identity_environment_ref: string): LocalIdentityEnvironmentPublicRecord | null {
+    return this.identityEnvironments.get(identity_environment_ref);
+  }
+
+  listLocalIdentityEnvironments(): LocalIdentityEnvironmentPublicRecord[] {
+    return this.identityEnvironments.list();
+  }
+
+  deleteLocalIdentityEnvironment(identity_environment_ref: string): LocalIdentityEnvironmentPublicRecord | null {
+    return this.identityEnvironments.delete(identity_environment_ref);
+  }
+
+  async openManagedIdentityEnvironmentSession(input: Omit<OpenIdentityEnvironmentSessionInput, "identity_environment"> & { identity_environment_ref: string }): Promise<RuntimeSessionFacts | RuntimeSessionUnavailable> {
+    const identity_environment = this.identityEnvironments.getFacts(input.identity_environment_ref);
+    if (!identity_environment) {
+      return {
+        status: "unavailable",
+        failure_class: "identity_environment_unavailable",
+        message: "Local identity environment is not registered.",
+        retryable: true,
+        current_error: {
+          code: "identity_environment_unavailable",
+          message: "Local identity environment is not registered.",
+          retryable: true
+        }
+      };
+    }
+    return this.runtimeSessions.openIdentityEnvironmentSession({ ...input, identity_environment });
   }
 
   getIdentityConsistencyFacts(input: IdentityConsistencyFactsInput): IdentityConsistencyFacts {

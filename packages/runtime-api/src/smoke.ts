@@ -38,6 +38,25 @@ const identityConsistency = runtime.getIdentityConsistencyFacts({
   },
   risk_events: ["login_missing"]
 });
+const managedIdentityEnvironment = runtime.createLocalIdentityEnvironment({
+  identity_environment_ref: "identity-env_smoke-managed",
+  execution_identity_ref: "execution-identity_smoke-managed",
+  profile_ref: "profile_smoke-managed",
+  profile_storage_ref: "profile-storage_smoke-managed",
+  site: {
+    site_id: "xiaohongshu",
+    origin: "https://www.xiaohongshu.com",
+    display_name: "小红书",
+    account_ref: "account_smoke-managed"
+  },
+  login_state: "manual_auth_required",
+  storage_state: "present",
+  proxy_ref: "proxy_smoke-managed",
+  region: "US",
+  language: "en-US",
+  timezone: "America/Los_Angeles",
+  fingerprint_summary: "fixture-provider-claim"
+});
 const session = await runtime.createSession();
 const visibleViewerRuntime = new HarborRuntime(createFixtureLauncher("ready"));
 const visibleViewerSession = await visibleViewerRuntime.createSession({ headless: false, control_owner: "core_task" });
@@ -47,6 +66,12 @@ const browserSession = await runtime.openIdentityEnvironmentSession({
   url: useLocalProvider ? "about:blank" : "https://example.test/runtime-session",
   control_owner: "agent",
   holder_ref: "smoke-agent"
+});
+const managedBrowserSession = await runtime.openManagedIdentityEnvironmentSession({
+  identity_environment_ref: "identity-env_smoke-managed",
+  url: useLocalProvider ? "about:blank" : "https://www.xiaohongshu.com/explore",
+  control_owner: "agent",
+  holder_ref: "smoke-managed-agent"
 });
 const browserSessionReusable = "status" in browserSession || browserSession.lifecycle_state !== "active"
   ? browserSession
@@ -98,7 +123,9 @@ console.log(JSON.stringify({
   providerBinding,
   identityEnvironment,
   identityConsistency,
+  managedIdentityEnvironment,
   browserSession,
+  managedBrowserSession,
   browserSessionReusable,
   browserSessionReleased,
   browserSessionStopped,
@@ -140,8 +167,11 @@ if (
   identityConsistency.resources.some((resource) => resource.key === "proxy") !== true ||
   identityConsistency.public_facts.core !== "admission_resource_facts_and_blocking_reasons" ||
   identityEnvironment.consumer_boundary.not_exposed.includes("cookie_value") !== true ||
+  managedIdentityEnvironment.public_boundary.output !== "status_and_redacted_refs_only" ||
+  runtime.listLocalIdentityEnvironments().length !== 1 ||
   (!localUnavailableAllowed && (!capture || capture.status !== "captured")) ||
   (!useLocalProvider && !browserSessionReady) ||
+  (!useLocalProvider && ("status" in managedBrowserSession || managedBrowserSession.current_page.status !== "ready")) ||
   (useLocalProvider && !browserSessionReady && !browserSessionFailedWithFacts) ||
   "status" in viewerControl ||
   "status" in handoff ||
