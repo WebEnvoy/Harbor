@@ -1,0 +1,32 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-169",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "通过：HARBOR-169 规格覆盖语义故事 #2、Provider 口径、身份环境一致性事实和敏感材料边界。",
+  "reviewer": "codex-main-controller",
+  "authored_at": "2026-07-06T08:42:00Z",
+  "reviewed_head": "29cb582ab6052dec43a4e50e6bca56a5d08ae218",
+  "reviewed_validation_summary": "Local validation passed on 2026-07-06T08:21Z: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, sensitive material check against smoke output, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, and `loom suite validate/carrier/evidence --target . --item HARBOR-169 --json`.",
+  "reviewed_validation_summary_hash": "f89a243d192028627993191aa3b5e81c2d82bb020df32bed75a0ded1ed078142",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-169.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Specification review approved the declared public facts scope: CloakBrowser primary provider, official Chrome restricted fallback, no Chromium user provider, Donut Browser research-only, and no sensitive material exposure."
+  },
+  "implementation_review_disposition": {
+    "status": "passed",
+    "reason": "Implementation is limited to Harbor runtime API facts, tests, smoke output, and HARBOR-169 item-specific carrier."
+  },
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-169.md",
+    "recovery_entry": ".loom/progress/HARBOR-169.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass"
+  }
+}
