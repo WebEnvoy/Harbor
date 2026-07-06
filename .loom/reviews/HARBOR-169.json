@@ -3,10 +3,10 @@
   "item_id": "HARBOR-169",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "通过：HARBOR-169 新增身份环境一致性公共事实，供用户、Core 和 App 判断身份环境是否可用。",
+  "summary": "通过：HARBOR-169 closeout carrier 消费 PR #192、merge commit、关闭 issue 和 post-merge evidence。",
   "reviewer": "codex-main-controller",
-  "authored_at": "2026-07-06T08:48:00Z",
-  "reviewed_head": "6ab5c7af897a2daa33a00eebe4fd722d027827e4",
+  "authored_at": "2026-07-06T08:50:00Z",
+  "reviewed_head": "4bb78503088cda500c5fafbc6c67fe30d2080309",
   "reviewed_validation_summary": "Local validation passed on 2026-07-06T08:21Z: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, sensitive material check against smoke output, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, and `loom suite validate/carrier/evidence --target . --item HARBOR-169 --json`.",
   "reviewed_validation_summary_hash": "f89a243d192028627993191aa3b5e81c2d82bb020df32bed75a0ded1ed078142",
   "validation_summary_source": "recovery.latest_validation_summary",
@@ -24,10 +24,15 @@
     ],
     "status_surface": ".loom/status/current.md",
     "build_checkpoint": "pass",
-    "merge_checkpoint_carrier": "scheduler-updated progress/status from build to merge without product code changes"
+    "merge_commit": "4bb78503088cda500c5fafbc6c67fe30d2080309",
+    "issue_closeout": "Harbor #159/#169/#170/#171/#172 closed with post-merge evidence"
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Reviewed the current implementation head for Harbor #159/#169/#170/#171/#172. The public facts expose provider posture, resource satisfaction, drift, login readiness and risk states without exposing credentials, cookies, tokens, raw endpoints or platform-private detection details."
+    "reason": "Reviewed the closeout carrier for Harbor #159/#169/#170/#171/#172. It records PR #192 merge evidence, closed issue evidence, and keeps the scope limited to carrier closeout."
+  },
+  "carrier_only_closeout_review": {
+    "status": "passed",
+    "reason": "This closeout PR only updates HARBOR-169 Loom carrier/status facts after implementation PR #192 merged; it does not change Harbor runtime behavior."
   }
 }

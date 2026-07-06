@@ -10,14 +10,14 @@
 - Recovery Entry: .loom/progress/HARBOR-169.md
 - Review Entry: .loom/reviews/HARBOR-169.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; sensitive material check; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate/carrier/evidence --target . --item HARBOR-169 --json
-- Closing Condition: Implementation PR for #159/#169/#170/#171/#172 is PR Ready; merge, issue closeout, current pointer retire, and downstream dependency handling stay with the scheduler thread.
-- Current Checkpoint: merge
-- Current Stop: Implementation PR #192 is open for HARBOR-169; scheduler-owned semantic review carrier is recorded and PR metadata/head readback is current.
-- Next Step: Hosted merge gate should consume the current PR metadata and review carrier, then scheduler thread will merge PR #192 and perform issue closeout/current pointer retire.
+- Closing Condition: Implementation PR #192 merged; #159/#169/#170/#171/#172 closed with post-merge evidence; closeout carrier PR is pending.
+- Current Checkpoint: closed_out
+- Current Stop: Implementation PR #192 merged; Harbor #159/#169/#170/#171/#172 have post-merge evidence comments and are closed.
+- Next Step: Merge this closeout carrier PR, then retire the current pointer back to no_active_item.
 - Blockers: None recorded.
 - Latest Validation Summary: Local validation passed on 2026-07-06T08:21Z: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, sensitive material check against smoke output, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, and `loom suite validate/carrier/evidence --target . --item HARBOR-169 --json`.
 - Recovery Boundary: Harbor runtime API facts and item-specific Loom carriers only; no App/Core/Lode changes, no real browser launch beyond fixture smoke, no real account/profile/cookie/token material, no hosted browser, no cloud runtime, no Chromium user provider, no Donut Browser provider registration, no issue closeout.
-- Current Lane: identity environment consistency facts
+- Current Lane: closeout
 
 ## Runtime Evidence
 
