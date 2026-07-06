@@ -10,7 +10,7 @@
 - Recovery Entry: .loom/progress/HARBOR-169.md
 - Review Entry: .loom/reviews/HARBOR-169.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; sensitive material check; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate/carrier/evidence --target . --item HARBOR-169 --json
-- Closing Condition: Implementation PR for #159/#169/#170/#171/#172 is PR Ready; merge, issue closeout, current pointer retire, and downstream dependency handling stay with the scheduler thread.
+- Closing Condition: Implementation PR #192 merged; #159/#169/#170/#171/#172 closed with post-merge evidence; closeout carrier PR is pending.
 
 ## Covered Work Items
 

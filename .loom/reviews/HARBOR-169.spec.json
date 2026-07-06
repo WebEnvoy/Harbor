@@ -3,10 +3,10 @@
   "item_id": "HARBOR-169",
   "decision": "allow",
   "kind": "spec_review",
-  "summary": "通过：HARBOR-169 规格覆盖语义故事 #2、Provider 口径、身份环境一致性事实和敏感材料边界。",
+  "summary": "通过：HARBOR-169 closeout carrier 与已合并实现范围一致。",
   "reviewer": "codex-main-controller",
-  "authored_at": "2026-07-06T08:48:00Z",
-  "reviewed_head": "6ab5c7af897a2daa33a00eebe4fd722d027827e4",
+  "authored_at": "2026-07-06T08:50:00Z",
+  "reviewed_head": "4bb78503088cda500c5fafbc6c67fe30d2080309",
   "reviewed_validation_summary": "Local validation passed on 2026-07-06T08:21Z: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, sensitive material check against smoke output, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, and `loom suite validate/carrier/evidence --target . --item HARBOR-169 --json`.",
   "reviewed_validation_summary_hash": "f89a243d192028627993191aa3b5e81c2d82bb020df32bed75a0ded1ed078142",
   "validation_summary_source": "recovery.latest_validation_summary",
@@ -17,17 +17,22 @@
   "follow_ups": [],
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Specification review approved the declared public facts scope: CloakBrowser primary provider, official Chrome restricted fallback, no Chromium user provider, Donut Browser research-only, and no sensitive material exposure."
+    "reason": "Specification closeout review approved that PR #192 satisfied the declared HARBOR-169 public facts scope and did not expand provider or sensitive material boundaries."
   },
   "implementation_review_disposition": {
     "status": "passed",
-    "reason": "Implementation is limited to Harbor runtime API facts, tests, smoke output, and HARBOR-169 item-specific carrier."
+    "reason": "Implementation PR #192 merged and #159/#169/#170/#171/#172 closed with post-merge evidence."
   },
   "consumed_inputs": {
     "work_item": ".loom/work-items/HARBOR-169.md",
     "recovery_entry": ".loom/progress/HARBOR-169.md",
     "status_surface": ".loom/status/current.md",
     "build_checkpoint": "pass",
-    "merge_checkpoint_carrier": "scheduler-updated progress/status from build to merge without product code changes"
+    "merge_commit": "4bb78503088cda500c5fafbc6c67fe30d2080309",
+    "issue_closeout": "Harbor #159/#169/#170/#171/#172 closed with post-merge evidence"
+  },
+  "carrier_only_closeout_review": {
+    "status": "passed",
+    "reason": "This closeout PR only updates HARBOR-169 Loom carrier/status facts after implementation PR #192 merged; it does not change Harbor runtime behavior."
   }
 }
