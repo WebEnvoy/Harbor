@@ -11,9 +11,9 @@
 - Review Entry: .loom/reviews/HARBOR-177.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check
 - Closing Condition: Implementation PR merged, #177/#178/#179/#180/#181 closeout evidence posted, and current pointer returns to no_active_item.
-- Current Checkpoint: merge
-- Current Stop: PR #183 revision local checks passed after Chinese product text and research locator updates.
-- Next Step: Host review/gate can consume PR #183 after PR body readback confirms the new head SHA.
+- Current Checkpoint: closed_out
+- Current Stop: PR #183 已合并，覆盖 issue 已写入 post-merge closeout evidence 并关闭。
+- Next Step: no_active_item；后续由 Harbor #157/#158/#159/#160/#182 继续身份环境与真实会话能力。
 - Blockers: None recorded.
 - Latest Validation Summary: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `git diff --check`; `loom suite validate --target . --item HARBOR-177 --json`; `loom suite evidence validate --target . --item HARBOR-177 --json`; `loom suite carrier validate --target . --item HARBOR-177 --json` passed locally on 2026-07-06T04:45Z. Loom doctor reported Codex runtime plugin cache stale, but CLI doctor/verify/fact-chain passed and no Loom tool repair was attempted.
 - Recovery Boundary: Harbor runtime API/provider facts only; no real external browser launch, no download/install, no Chromium provider registration, no Donut Browser provider registration, no App/Core/Lode changes.
