@@ -1,0 +1,33 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-173",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "通过：HARBOR-173 规格覆盖语义故事 #11/#12、真实现场证据、查看入口和敏感材料保护边界。",
+  "reviewer": "codex-main-controller",
+  "authored_at": "2026-07-06T09:12:00Z",
+  "reviewed_head": "605cc41d0657b28b920031891ba9bad3574f1cba",
+  "reviewed_validation_summary": "Local validation passed on 2026-07-06T09:08Z: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, sensitive material check against smoke output, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, and `loom suite validate/carrier/evidence --target . --item HARBOR-173 --json`.",
+  "reviewed_validation_summary_hash": "b6cf39986d1821410097ef6f655b6eb14a08571fd47e5cc310a2f0831385d7c4",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-173.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Specification review approved the declared Harbor public refs scope: screenshot/page/frame/element/evidence/viewer/controller facts, Harbor-mediated access, and no raw/private material exposure."
+  },
+  "implementation_review_disposition": {
+    "status": "passed",
+    "reason": "Implementation is limited to Harbor runtime API facts, tests, smoke output, and HARBOR-173 item-specific carrier."
+  },
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-173.md",
+    "recovery_entry": ".loom/progress/HARBOR-173.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "merge_checkpoint_carrier": "scheduler-updated progress/status from build to merge without product code changes"
+  }
+}

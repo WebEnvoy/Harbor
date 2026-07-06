@@ -15,7 +15,7 @@ export type CaptureFailureClass =
   | "selector_unstable";
 export type CaptureMethod = "provided_context" | "fixture";
 export type EvidenceAccessState = "available" | "missing" | "stale" | "expired" | "redacted" | "access_denied";
-export type EvidenceType = "snapshot" | "refmap" | "source_trace";
+export type EvidenceType = "snapshot" | "refmap" | "source_trace" | "screenshot";
 export type EvidenceFreshnessState = "fresh" | "stale" | "expired" | "missing";
 export type EvidenceStatusDisplayState = "available" | "redacted" | "private" | "stale" | "expired" | "missing" | "unavailable";
 export type RedactionState = "not_required" | "redacted" | "capture_denied";
@@ -32,6 +32,7 @@ export interface PageSceneSessionFacts {
 
 export interface EvidenceCapturePolicy {
   capture?: "allow" | "deny";
+  screenshot?: "allow" | "deny";
   redaction_state?: Exclude<RedactionState, "capture_denied">;
   retention_state?: Exclude<RetentionState, "expired">;
   export_consent?: ExportConsentState;
@@ -83,11 +84,8 @@ export interface SnapshotRecord {
   provider_ref: string;
   source_trace: SourceTrace;
   captured_at: string;
-  page: {
-    title: string;
-    url: string;
-    summary: string;
-  };
+  screenshot_ref?: string;
+  page: { title: string; url: string; summary: string };
   redaction_state: RedactionState;
   retention_state: RetentionState;
   access_state: EvidenceAccessState;
@@ -99,6 +97,7 @@ export interface RefMapElementRef {
   element_ref: string;
   index: number;
   label: string;
+  source_evidence_ref?: string;
   role?: string;
   text?: string;
   locator_hint?: string;
@@ -126,6 +125,7 @@ export interface EvidenceRecord {
     runtime_session_ref: string;
     snapshot_ref?: string;
     refmap_ref?: string;
+    screenshot_ref?: string;
   };
   redaction_state: RedactionState;
   retention_state: RetentionState;
@@ -159,23 +159,9 @@ export interface EvidenceStatusFixture {
   snapshot_ref: string;
   refmap_ref?: string;
   source_trace_ref: string;
-  scene_status: {
-    display_state: "available" | "stale" | "missing" | "unavailable";
-    freshness_state: EvidenceFreshnessState;
-    blocking_reason: CaptureFailureClass | null;
-    retryable: boolean;
-  };
+  scene_status: { display_state: "available" | "stale" | "missing" | "unavailable"; freshness_state: EvidenceFreshnessState; blocking_reason: CaptureFailureClass | null; retryable: boolean };
   evidence_status: EvidenceStatusEntry[];
-  privacy_boundary: {
-    access_boundary: "harbor_refs_only";
-    raw_material: "not_exposed";
-    private_capture: "local_only";
-    private_capture_store: "process_memory_only";
-    redacted_export_boundary: "redacted_fixture_refs_only";
-    export_consent: ExportConsentState;
-    retention_policy: "ephemeral_by_default";
-    deletion_policy: "expire_or_drop_ref";
-  };
+  privacy_boundary: { access_boundary: "harbor_refs_only"; raw_material: "not_exposed"; private_capture: "local_only"; private_capture_store: "process_memory_only"; redacted_export_boundary: "redacted_fixture_refs_only"; export_consent: ExportConsentState; retention_policy: "ephemeral_by_default"; deletion_policy: "expire_or_drop_ref" };
   unavailable: null;
 }
 
@@ -184,25 +170,18 @@ export interface CoreSceneReference {
   runtime_session_ref: string;
   snapshot_ref: string;
   refmap_ref?: string;
+  screenshot_ref?: string;
   evidence_refs: string[];
   source_trace_ref: string;
+  page_ref: string;
+  frame_ref: string;
   captured_at: string;
-  page_summary: {
-    title: string;
-    url: string;
-    summary: string;
-  };
+  page_summary: { title: string; url: string; summary: string };
   unavailable: null;
 }
 
 export type SnapshotCaptureResult =
-  | {
-      status: "captured";
-      snapshot_ref: string;
-      refmap_ref?: string;
-      evidence_refs: string[];
-      core_scene_ref: CoreSceneReference;
-    }
+  | { status: "captured"; snapshot_ref: string; refmap_ref?: string; evidence_refs: string[]; core_scene_ref: CoreSceneReference }
   | PageSceneUnavailable;
 
 export class PageSceneStore {
@@ -249,6 +228,7 @@ export class PageSceneStore {
         snapshot_ref,
         refmap_ref
       }, redaction_state, retention_state);
+      for (const element of element_refs) element.source_evidence_ref = refmap_evidence.evidence_ref;
       this.refmaps.set(refmap_ref, {
         schema_version: HARBOR_PAGE_SCENE_REFS_SCHEMA,
         refmap_ref,
@@ -267,6 +247,12 @@ export class PageSceneStore {
       snapshot_ref,
       refmap_ref
     }, redaction_state, retention_state);
+    const screenshot_ref = input.evidence_policy?.screenshot === "deny" ? undefined : opaqueRef("screenshot");
+    const screenshot_evidence = screenshot_ref ? this.createEvidence("screenshot", source_trace, {
+      runtime_session_ref: session.runtime_session_ref,
+      snapshot_ref,
+      screenshot_ref
+    }, redaction_state, retention_state) : undefined;
     const snapshot_record: SnapshotRecord = {
       schema_version: HARBOR_PAGE_SCENE_REFS_SCHEMA,
       snapshot_ref,
@@ -275,6 +261,7 @@ export class PageSceneStore {
       provider_ref: session.provider_ref,
       source_trace,
       captured_at,
+      screenshot_ref,
       page: normalizePageContext(input),
       redaction_state,
       retention_state,
@@ -285,6 +272,7 @@ export class PageSceneStore {
     this.snapshots.set(snapshot_ref, snapshot_record);
 
     const evidence_refs = [snapshot_evidence.evidence_ref, source_trace_evidence.evidence_ref];
+    if (screenshot_evidence) evidence_refs.push(screenshot_evidence.evidence_ref);
     if (refmap_evidence) evidence_refs.push(refmap_evidence.evidence_ref);
     return {
       status: "captured",
@@ -460,8 +448,11 @@ function coreSceneReference(record: SnapshotRecord, evidence_refs: string[]): Co
     runtime_session_ref: record.runtime_session_ref,
     snapshot_ref: record.snapshot_ref,
     refmap_ref: record.refmap_ref,
+    screenshot_ref: record.screenshot_ref,
     evidence_refs,
     source_trace_ref: record.source_trace.source_trace_ref,
+    page_ref: record.source_trace.page_ref,
+    frame_ref: record.source_trace.frame_ref,
     captured_at: record.captured_at,
     page_summary: clone(record.page),
     unavailable: null
@@ -479,7 +470,8 @@ function compareEvidenceRecords(left: EvidenceRecord, right: EvidenceRecord): nu
 function evidenceTypeOrder(evidence_type: EvidenceType): number {
   if (evidence_type === "snapshot") return 0;
   if (evidence_type === "source_trace") return 1;
-  return 2;
+  if (evidence_type === "screenshot") return 2;
+  return 3;
 }
 
 function normalizePageContext(input: CaptureSnapshotInput): SnapshotRecord["page"] {

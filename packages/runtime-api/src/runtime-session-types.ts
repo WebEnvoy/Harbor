@@ -1,5 +1,5 @@
 import type { LocalIdentityEnvironmentFacts, LocalIdentityEnvironmentInput } from "./identity-environment.js";
-import type { ControlOwner } from "./viewer-control.js";
+import type { ControlOwner, InputCapability, TakeoverUnavailableReason, ViewerAccessMode, ViewerAvailability, ViewerTransport } from "./viewer-control.js";
 
 export const HARBOR_RUNTIME_FACTS_SCHEMA = "harbor-runtime-facts/v0";
 export const HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA = "harbor-validation-runtime-facts/v0";
@@ -35,6 +35,14 @@ export interface RuntimeErrorFact {
 
 export type RuntimePageStatus = "ready" | "unavailable" | "unknown";
 export type RuntimeControlLockState = "held" | "released" | "closed";
+
+export interface RuntimeViewerEntry {
+  availability: ViewerAvailability;
+  access_mode: ViewerAccessMode;
+  transport: ViewerTransport;
+  input_capabilities: InputCapability[];
+  unavailable_reason?: TakeoverUnavailableReason;
+}
 
 export interface RuntimePageFacts {
   requested_url: string;
@@ -81,6 +89,7 @@ export interface RuntimeSessionFacts {
   };
   cdp_ref?: string;
   viewer_ref?: string;
+  viewer_entry?: RuntimeViewerEntry;
   current_page: RuntimePageFacts;
   control_owner: ControlOwner;
   control_lock: RuntimeControlLockFacts;
@@ -145,6 +154,7 @@ export type LocalProviderLaunchResult =
   | {
       status: "ready";
       cdp_ref: string;
+      viewer_entry: RuntimeViewerEntry;
       page: LocalProviderPageFacts;
       facts: RuntimeFact[];
       openUrl: (url: string) => Promise<LocalProviderPageFacts>;

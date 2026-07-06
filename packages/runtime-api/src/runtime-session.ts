@@ -19,6 +19,7 @@ import {
   type RuntimeSessionControlInput,
   type RuntimeSessionFacts,
   type RuntimeSessionUnavailable,
+  type RuntimeViewerEntry,
   type ValidationRuntimeFacts
 } from "./runtime-session-types.js";
 import type {
@@ -52,6 +53,7 @@ export type {
   RuntimeSessionControlInput,
   RuntimeSessionFacts,
   RuntimeSessionUnavailable,
+  RuntimeViewerEntry,
   ValidationRuntimeFacts
 } from "./runtime-session-types.js";
 
@@ -92,6 +94,13 @@ export class RuntimeSessionStore {
     });
     const runtime_session_ref = opaqueRef("session");
     const ready = launch.status === "ready";
+    const viewer_entry: RuntimeViewerEntry = ready ? launch.viewer_entry : {
+      availability: "unsupported",
+      access_mode: "none",
+      transport: "not_applicable",
+      input_capabilities: [],
+      unavailable_reason: "unsupported"
+    };
     const current_error = ready ? launch.page.error ?? null : launch.error;
     const current_page = ready ? pageFacts(requestedUrl, launch.page, now) : unavailablePage(requestedUrl, launch.error, now);
     const facts: RuntimeSessionFacts = {
@@ -107,11 +116,12 @@ export class RuntimeSessionStore {
       last_seen_at: now,
       availability: {
         cdp: ready ? "available" : "unavailable",
-        viewer: "unsupported",
+        viewer: viewerAvailabilityState(viewer_entry.availability),
         snapshot: "unavailable",
         evidence: "unavailable"
       },
       cdp_ref: ready ? launch.cdp_ref : undefined,
+      viewer_entry,
       current_page,
       control_owner: ready ? controlOwner : "none",
       control_lock: {
@@ -133,6 +143,7 @@ export class RuntimeSessionStore {
       { key: "page.status", source: ready ? "observed" : "configured", value: current_page.status },
       { key: "viewer.ref", source: "configured", value: viewerControl.viewer.viewer_ref },
       { key: "viewer.availability", source: "configured", value: viewerControl.viewer.availability },
+      { key: "viewer.transport", source: "configured", value: viewerControl.viewer.transport },
       { key: "control.owner", source: "configured", value: viewerControl.control.owner },
       { key: "control.lock_state", source: "configured", value: facts.control_lock.state },
       { key: "lifecycle.reference.donut_browser", source: "configured", value: "mechanism_reference_only" }
@@ -399,6 +410,12 @@ function pageFacts(requested_url: string, page: LocalProviderPageFacts, observed
     error_reason: page.error ?? null,
     observed_at
   };
+}
+
+function viewerAvailabilityState(availability: RuntimeViewerEntry["availability"]): RuntimeSessionFacts["availability"]["viewer"] {
+  if (availability === "available") return "available";
+  if (availability === "permission_denied") return "policy_denied";
+  return availability === "unsupported" ? "unsupported" : "unavailable";
 }
 
 function unavailablePage(requested_url: string, current_error: RuntimeErrorFact, observed_at: string): RuntimePageFacts {
