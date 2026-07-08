@@ -106,6 +106,29 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
   }
 });
 
+test("returns structured failure when identity environment session has no identity input", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    const response = await fetch(`${running.url}/runtime/identity-environment-sessions`, {
+      method: "POST",
+      body: JSON.stringify({
+        url: "https://example.test/runtime-api",
+        control_owner: "agent"
+      }),
+      headers: { "content-type": "application/json" }
+    });
+    assert.equal(response.status, 400);
+    const failure = await response.json();
+    assert.equal(failure.status, "unavailable");
+    assert.equal(failure.failure_class, "identity_environment_required");
+    assert.equal(failure.retryable, true);
+    assert.equal(failure.public_boundary.raw_material, "not_exposed");
+  } finally {
+    await running.close();
+  }
+});
+
 test("persists identity environment public records for the local runtime API", async () => {
   const persistence_path = join(mkdtempSync(join(tmpdir(), "harbor-identity-")), "identity-environments.json");
   const first = await startHarborRuntimeServer({ port: 0, runtime: new HarborRuntime(createFixtureLauncher("ready"), { persistence_path }) });

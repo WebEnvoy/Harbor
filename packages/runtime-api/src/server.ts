@@ -102,6 +102,10 @@ async function route(runtime: HarborRuntime, request: IncomingMessage, response:
       writeJson(response, 201, result);
       return;
     }
+    if (!body.identity_environment) {
+      writeJson(response, 400, identityEnvironmentRequired());
+      return;
+    }
     writeJson(response, 201, await runtime.openIdentityEnvironmentSession(body));
     return;
   }
@@ -230,6 +234,19 @@ function identityEnvironmentMissing(identity_environment_ref: string): object {
     status: "unavailable",
     failure_class: "identity_environment_missing",
     identity_environment_ref,
+    retryable: true,
+    public_boundary: {
+      output: "status_and_redacted_refs_only",
+      raw_material: "not_exposed"
+    }
+  };
+}
+
+function identityEnvironmentRequired(): object {
+  return {
+    status: "unavailable",
+    failure_class: "identity_environment_required",
+    message: "identity_environment_ref or identity_environment is required.",
     retryable: true,
     public_boundary: {
       output: "status_and_redacted_refs_only",
