@@ -96,6 +96,9 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
     const missingIdentity = await fetch(`${running.url}/runtime/identity-environments/identity-env_server-test`);
     assert.equal(missingIdentity.status, 404);
     assert.equal((await missingIdentity.json()).failure_class, "identity_environment_missing");
+
+    const nestedIdentityPath = await fetch(`${running.url}/runtime/identity-environments/identity-env_server-test/extra`);
+    assert.equal(nestedIdentityPath.status, 404);
   } finally {
     await running.close();
   }

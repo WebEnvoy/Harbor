@@ -109,7 +109,7 @@ async function route(runtime: HarborRuntime, request: IncomingMessage, response:
     return;
   }
 
-  if (parts[0] === "runtime" && parts[1] === "identity-environments" && parts[2]) {
+  if (parts[0] === "runtime" && parts[1] === "identity-environments" && parts[2] && parts.length === 3) {
     await routeIdentityEnvironment(runtime, parts[2], method, request, response);
     return;
   }
