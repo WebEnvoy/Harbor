@@ -3,14 +3,14 @@
   "item_id": "HARBOR-204",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Code review allows HARBOR-204 identity environment Runtime API correction at head dce91aadaa93f15a9abf79e3ce486987d5bfd004; no blocking findings after strict per-ref route matching and redacted refs/persistence coverage.",
+  "summary": "Retire carrier review accepts PR #228 current-pointer-only updates for HARBOR-204; this review covers .loom/bootstrap/init-result.json, .loom/progress/HARBOR-204.md, .loom/reviews/HARBOR-204*.json, and .loom/status/current.md only and does not replace PR #227 implementation evidence.",
   "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
-  "authored_at": "2026-07-08T11:38:50Z",
-  "reviewed_head": "dce91aadaa93f15a9abf79e3ce486987d5bfd004",
-  "reviewed_validation_summary": "On 2026-07-08 UTC, `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `git diff --check`, `jq empty .loom/bootstrap/init-result.json .loom/specs/HARBOR-204/build-evidence.json`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-204 --json`, `loom suite carrier validate --target . --item HARBOR-204 --json`, and `loom suite evidence validate --target . --item HARBOR-204 --json` passed locally. `pnpm smoke:runtime` is fixture-mode API evidence and is not live browser/site evidence.",
-  "reviewed_validation_summary_hash": "0ef6fc1bffa067ea8a96036c3146bb8bbb06212e07d2c026414a3553391dc396",
-  "validation_summary_source": "recovery.latest_validation_summary",
-  "validation_summary_locator": ".loom/progress/HARBOR-204.md",
+  "authored_at": "2026-07-08T11:58:00Z",
+  "reviewed_head": "cba8c0b40f3684926f9a2b0b78ab1d45262343bd",
+  "reviewed_validation_summary": "`jq empty .loom/bootstrap/init-result.json .loom/specs/HARBOR-204/build-evidence.json`, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom pr metadata-readback 228 --target . --surface closeout --json`, `loom pr metadata-readback 228 --target . --surface merge_ready --json`, `loom pr gate 228 --target . --surface closeout --json`, `loom pr gate 228 --target . --surface merge_ready --json`, and `loom_flow.py pr-gate check --target . --pr 228 --head-sha cba8c0b40f3684926f9a2b0b78ab1d45262343bd` passed locally on 2026-07-08 UTC for PR #228 head cba8c0b40f3684926f9a2b0b78ab1d45262343bd.",
+  "reviewed_validation_summary_hash": "f179dc43a9e3027564e16c9e7053acc72581f021f86f569f42a07d375883bbc0",
+  "validation_summary_source": "local PR #228 retire validation",
+  "validation_summary_locator": ".loom/status/current.md",
   "fallback_to": null,
   "findings": [
     {
@@ -36,7 +36,7 @@
   ],
   "blocking_issues": [],
   "follow_ups": [
-    "This approval covers #203/#204/#205/#206/#207 API correction only; #208/#209/#210/#211/#212 live browser/session/site evidence remains excluded.",
+    "PR #227 remains the product/runtime code evidence for #203/#204/#205/#206/#207 API correction; PR #228 only retires the current pointer to idle.",
     "No real browser profile, account, Cookie, production page, submit, publish, send, hosted browser, marketplace, batch collection, or risk-control bypass action was performed."
   ],
   "consumed_inputs": {
@@ -60,25 +60,26 @@
     "engine_adapter": null,
     "engine_evidence": null,
     "normalized_findings": null,
-    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-204-runtime-identity-api-correction --item HARBOR-204 --json",
-    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-204-runtime-identity-api-correction --item HARBOR-204 --json",
-    "suite_evidence_map": ".loom/specs/HARBOR-204/evidence-map.md",
-    "suite_consistency_analysis": null,
-    "suite_task_carriers": [
-      ".loom/specs/HARBOR-204/task-carrier.md"
-    ],
-    "suite_evidence_consumed_contracts": [
-      "docs/methodology/harness/full-spec-suite-cli-surface.md",
-      "docs/methodology/templates/evidence-map.md"
-    ],
-    "suite_carrier_consumed_contracts": [
-      "docs/methodology/harness/task-carrier-contract.md",
-      "docs/methodology/templates/execution-breakdown.md",
-      "docs/methodology/harness/full-spec-suite-cli-surface.md"
+    "implementation_pr": "https://github.com/WebEnvoy/Harbor/pull/227",
+    "retire_pr": "https://github.com/WebEnvoy/Harbor/pull/228",
+    "carrier_only_paths": [
+      ".loom/bootstrap/init-result.json",
+      ".loom/progress/HARBOR-204.md",
+      ".loom/reviews/HARBOR-204.json",
+      ".loom/reviews/HARBOR-204.spec.json",
+      ".loom/status/current.md"
     ]
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Authored implementation review approved the current head for merge checkpoint consumption."
+    "reason": "This retire carrier-only PR returns the fact chain to no_active_item after HARBOR-204 closeout; it changes no product/runtime code and does not approve or replace PR #227 implementation behavior."
+  },
+  "implementation_review_disposition": {
+    "status": "not_applicable",
+    "reason": "PR #228 is a current-pointer retire PR. Product/runtime implementation behavior was delivered and reviewed in PR #227."
+  },
+  "carrier_only_closeout_review": {
+    "status": "passed",
+    "reason": "Authored retire review approved only current-pointer idle metadata consumption; it does not approve product implementation behavior."
   }
 }
