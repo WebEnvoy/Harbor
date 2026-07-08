@@ -1,0 +1,107 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "item_id": "HARBOR-219",
+  "generated_at": "2026-07-08T07:08:16Z",
+  "branch": "work/harbor-219-runtime-api-readiness",
+  "pre_commit_head": "a6b2a2020c16c6642ece8dcca5442ffa3b3450fc",
+  "delegations": [],
+  "subagent_notes": [
+    "App lane completed read-only analysis and confirmed Harbor long-running runtime API is a blocker for App runtime supervision.",
+    "Core lane failed with 504 before delivering output; no Core output consumed.",
+    "Lode lane failed with 502 before delivering output; no Lode output consumed."
+  ],
+  "ownership_constraints": {
+    "write_ownership": [
+      "packages/runtime-api/src/server.ts",
+      "packages/runtime-api/src/runtime-server.ts",
+      "packages/runtime-api/src/server.test.ts",
+      "package.json",
+      ".loom/work-items/HARBOR-219.md",
+      ".loom/progress/HARBOR-219.md",
+      ".loom/specs/HARBOR-219/**"
+    ],
+    "forbidden_targets": [
+      "App/Core/Lode repositories",
+      "provider launch internals",
+      "user daily browser profile",
+      "raw cookies",
+      "raw tokens",
+      "raw DOM",
+      "raw HAR",
+      "network response bodies",
+      "GitHub issue closeout",
+      "merge"
+    ],
+    "shared_carrier_policy": ".loom/status/current.md remains no_active_item because local fact-chain expects idle derived status; HARBOR-219 truth is item-specific carrier."
+  },
+  "validation": {
+    "passed": [
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm smoke:runtime",
+      "HTTP readiness/provider readback",
+      "git diff --check",
+      "loom fact-chain --target . --json",
+      "loom verify --target . --json",
+      "loom suite validate --target . --item HARBOR-219 --json",
+      "loom suite carrier validate --target . --item HARBOR-219 --json",
+      "loom suite evidence validate --target . --item HARBOR-219 --json"
+    ],
+    "to_refresh_after_commit": [
+      "head SHA",
+      "suite evidence freshness context",
+      "PR metadata readback"
+    ]
+  },
+  "runtime_boundary": {
+    "provider_detection": "local filesystem/process readiness facts only",
+    "profile": "none opened by HTTP readback",
+    "forbidden_actions": [
+      "login",
+      "submit",
+      "publish",
+      "apply",
+      "greet",
+      "send_message",
+      "captcha_or_risk_bypass",
+      "raw_cookie_token_profile_dom_har_or_body_export"
+    ],
+    "raw_debug_endpoint": "not_exposed",
+    "raw_screenshot_bytes": "not_exposed"
+  },
+  "http_readback": {
+    "readiness": {
+      "schema_version": "harbor-runtime-api-readiness/v0",
+      "status": "ready",
+      "service": "harbor-runtime-api",
+      "raw_credentials": "not_exposed",
+      "hosted_browser": "not_provided",
+      "external_write_actions": "not_performed"
+    },
+    "providers": [
+      {
+        "provider_id": "cloakbrowser",
+        "install_status": "missing",
+        "launchability": "not_checked",
+        "path": "/Users/claw/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium",
+        "version_status": "unknown"
+      },
+      {
+        "provider_id": "chrome_official",
+        "install_status": "installed",
+        "launchability": "launchable",
+        "path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "version_status": "known"
+      }
+    ],
+    "excluded_providers": [
+      "chromium",
+      "donut_browser"
+    ]
+  },
+  "remaining_limitations": [
+    "This PR adds Harbor runtime API endpoint plumbing; it does not complete App packaged runtime supervision, Core real task execution, or Lode registry consumption.",
+    "CloakBrowser is not installed on this workstation; provider detection reports missing rather than launchable.",
+    "No real account, browser profile, production page, or external visible action was used."
+  ]
+}
