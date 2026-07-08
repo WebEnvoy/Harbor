@@ -3,43 +3,45 @@
   "item_id": "HARBOR-212",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Implementation review accepts PR #229 head b053c3006752205b0548b2947b7f4e6bcb489be3 for Harbor #212 screenshot failure evidence semantics.",
+  "summary": "Retire carrier review accepts PR #230 current-pointer-only updates for HARBOR-212; this review covers .loom/bootstrap/init-result.json, .loom/progress/HARBOR-212.md, .loom/reviews/HARBOR-212*.json, and .loom/status/current.md only and does not replace PR #229 implementation evidence.",
   "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
-  "authored_at": "2026-07-08T13:43:00Z",
-  "reviewed_head": "b053c3006752205b0548b2947b7f4e6bcb489be3",
-  "reviewed_validation_summary": "2026-07-08T13:41Z UTC carrier refresh passed locally: `jq empty .loom/specs/HARBOR-212/build-evidence.json .loom/bootstrap/init-result.json`, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-212 --json`, `loom suite carrier validate --target . --item HARBOR-212 --json`, and `loom suite evidence validate --target . --item HARBOR-212 --json`. The underlying code validation remained current from 2026-07-08T13:15Z UTC: `pnpm typecheck`, `pnpm test` (30 tests), `pnpm smoke:runtime` (fixture mode only), `git diff --check`, `loom build --target . --item HARBOR-212 --build-evidence .loom/specs/HARBOR-212/build-evidence.json --json`, `loom verify --target . --json`, and suite validate/carrier/evidence checks passed locally. `tools/skills_surface.py check`, `tools/loom_check.py --profile source --source-surface contract-only`, `tools/check_release_surface.py`, `tools/version_surface_check.py`, and `tools/check_npm_package.py` were executed against the installed global Loom package because Harbor has no repo-local `tools/` directory; they failed on installed Loom source/release/parity markers unrelated to HARBOR-212 and are classified as external Loom tool surface issues outside this PR write scope. `pnpm smoke:runtime:local` was not run because it launches a real local browser and can visit production pages.",
-  "reviewed_validation_summary_hash": "bb35b71e297d23691a40ec64d82f2bc25164230b0a8f9c0ecd89c3ac78272a24",
-  "validation_summary_source": "recovery.latest_validation_summary",
+  "authored_at": "2026-07-08T14:05:00Z",
+  "reviewed_head": "b0698760af1386ff14550e6bcc26f1198f1cd2b1",
+  "reviewed_validation_summary": "2026-07-08T13:57Z UTC closeout carrier sync passed locally: `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-212 --json`, `loom suite carrier validate --target . --item HARBOR-212 --json`, and `loom suite evidence validate --target . --item HARBOR-212 --json`. PR #229 merged at head 85ec3f0a2f0c124ef525e5be182f5d89c71907ed with merge commit 7abd0cdf28e76fcf7335e6320b31b7000ce31f6d. The underlying code validation remained current from 2026-07-08T13:15Z UTC: `pnpm typecheck`, `pnpm test` (30 tests), `pnpm smoke:runtime` (fixture mode only), `git diff --check`, `loom build --target . --item HARBOR-212 --build-evidence .loom/specs/HARBOR-212/build-evidence.json --json`, `loom verify --target . --json`, and suite validate/carrier/evidence checks passed locally. `pnpm smoke:runtime:local` was not run because it launches a real local browser and can visit production pages.",
+  "reviewed_validation_summary_hash": "c8ba4f53fbe59d5b8cb20536d20c663b987219ebd19feb8af1676ec4ea338a37",
+  "validation_summary_source": "local PR #230 retire validation",
   "validation_summary_locator": ".loom/progress/HARBOR-212.md",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
   "follow_ups": [
-    "Provider exceptions thrown instead of returned as structured screenshot failure are outside this PR and should be handled by a separate Work Item if required.",
-    "This implementation approval does not close Harbor #209/#210/#211/#208/#218 and does not prove App/Core packaged E2E."
+    "Implementation PR #229 remains the product/runtime code evidence for HARBOR-212 screenshot failure evidence semantics; PR #230 only retires the current pointer to idle.",
+    "This retire approval does not close Harbor #208/#210/#211/#218 and does not prove App/Core packaged E2E."
   ],
   "consumed_inputs": {
     "work_item": ".loom/work-items/HARBOR-212.md",
     "recovery_entry": ".loom/progress/HARBOR-212.md",
-    "suite_evidence_map": ".loom/specs/HARBOR-212/evidence-map.md",
-    "suite_task_carriers": [
-      ".loom/specs/HARBOR-212/task-carrier.md"
-    ],
-    "runtime_modules": [
-      "packages/runtime-api/src/index.ts",
-      "packages/runtime-api/src/index.test.ts",
-      "packages/runtime-api/src/page-scene.ts"
-    ],
-    "pull_request": "https://github.com/WebEnvoy/Harbor/pull/229",
-    "independent_review_agent": "019f41f0-cd1d-79d0-a20a-914854fe317c",
-    "reviewed_diff": "git diff origin/main...b053c3006752205b0548b2947b7f4e6bcb489be3"
+    "status_surface": ".loom/status/current.md",
+    "implementation_pr": "https://github.com/WebEnvoy/Harbor/pull/229",
+    "retire_pr": "https://github.com/WebEnvoy/Harbor/pull/230",
+    "carrier_only_paths": [
+      ".loom/bootstrap/init-result.json",
+      ".loom/progress/HARBOR-212.md",
+      ".loom/reviews/HARBOR-212.json",
+      ".loom/reviews/HARBOR-212.spec.json",
+      ".loom/status/current.md"
+    ]
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "The behavior now denies screenshot refs/evidence when live screenshot capture returns a structured failure, so Harbor no longer misrepresents a failed screenshot as evidence."
+    "reason": "This retire carrier-only PR returns the fact chain to no_active_item after HARBOR-212 closeout; it changes no product/runtime code and does not approve or replace PR #229 implementation behavior."
   },
   "implementation_review_disposition": {
+    "status": "not_applicable",
+    "reason": "PR #230 is a current-pointer retire PR. Product/runtime implementation behavior was delivered and reviewed in PR #229."
+  },
+  "carrier_only_closeout_review": {
     "status": "passed",
-    "reason": "The code change is limited to `captureLiveSnapshot`, regression coverage proves no screenshot evidence is minted on structured failure, and validation passed without real browser/profile/production-page actions."
+    "reason": "Authored retire review approved only current-pointer idle metadata consumption; it does not approve product implementation behavior."
   }
 }
