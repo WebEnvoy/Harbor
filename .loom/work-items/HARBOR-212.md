@@ -4,13 +4,13 @@
 
 - Item ID: HARBOR-212
 - Goal: Ensure live snapshot capture never mints screenshot refs or screenshot evidence when the underlying browser screenshot capture fails.
-- Scope: Covers Harbor #212 only as a narrow evidence-safety correction under parent Harbor #208/#218.
+- Scope: Covers Harbor #212 only as a narrow evidence-safety correction under parent Harbor #208/#218. Ownership is limited to `packages/runtime-api/src/index.ts`, `packages/runtime-api/src/index.test.ts`, and HARBOR-212 item-specific Loom carriers.
 - Execution Path: work/harbor-212-screenshot-failure-refs
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-212.md
 - Review Entry: .loom/reviews/HARBOR-212.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-212 --json; loom suite carrier validate --target . --item HARBOR-212 --json; loom suite evidence validate --target . --item HARBOR-212 --json
-- Closing Condition: PR created and pushed for Harbor #212 with PR body listing covered and non-covered issues; no issue closeout before merge.
+- Closing Condition: PR created and pushed for Harbor #212 with PR body listing covered and non-covered issues, plus ownership boundaries and validation evidence; no issue closeout before merge.
 
 ## Covered Work Items
 

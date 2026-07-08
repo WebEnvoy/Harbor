@@ -89,6 +89,7 @@
   },
   "delegations": [
     {
+      "id": "harbor-212-code-worker",
       "lane_id": "harbor-212-code-worker",
       "task_goal": "Patch live snapshot capture so screenshot capture failure does not mint screenshot refs/evidence.",
       "context_locators": [
@@ -124,7 +125,7 @@
         ".loom/progress/HARBOR-212.md",
         ".loom/specs/HARBOR-212/evidence-map.md"
       ],
-      "status": "completed",
+      "status": "integrated",
       "summary": "Worker edited only packages/runtime-api/src/index.ts and packages/runtime-api/src/index.test.ts. Main controller read back the diff, installed worktree dependencies, reran validation, and integrated evidence into HARBOR-212 carriers."
     }
   ],
@@ -137,10 +138,22 @@
     "integration_summary": "Worker output was accepted after main-controller diff readback and validation. Worker did not write shared carriers or GitHub."
   },
   "integration_evidence": [
-    "`captureLiveSnapshot` now sets screenshot capture policy to deny when the session screenshot provider returns a structured error.",
-    "The failed screenshot path still produces page/source trace/refmap refs from readable page facts.",
-    "The failed screenshot path does not produce `screenshot_ref` or screenshot-type evidence.",
-    "Regression coverage is in `captures live page refs without screenshot evidence when screenshot capture fails`."
+    {
+      "locator": "packages/runtime-api/src/index.ts",
+      "summary": "`captureLiveSnapshot` now sets screenshot capture policy to deny when the session screenshot provider returns a structured error."
+    },
+    {
+      "locator": "packages/runtime-api/src/index.ts",
+      "summary": "The failed screenshot path still produces page/source trace/refmap refs from readable page facts."
+    },
+    {
+      "locator": "packages/runtime-api/src/index.test.ts",
+      "summary": "The failed screenshot path does not produce `screenshot_ref` or screenshot-type evidence."
+    },
+    {
+      "locator": "packages/runtime-api/src/index.test.ts",
+      "summary": "Regression coverage is in `captures live page refs without screenshot evidence when screenshot capture fails`."
+    }
   ],
   "ownership_conflicts": [],
   "repeated_blocker_signal": null,
