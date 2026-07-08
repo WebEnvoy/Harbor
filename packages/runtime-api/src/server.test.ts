@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { createFixtureLauncher, HarborRuntime } from "./index.js";
 import { startHarborRuntimeServer } from "./server.js";
@@ -47,6 +50,20 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
       fingerprint_summary: "fixture-provider-claim"
     });
     assert.equal(created.identity_environment_ref, "identity-env_server-test");
+    assert.equal(created.public_boundary.raw_material, "not_exposed");
+    assert.equal(created.refs.profile_storage_ref.startsWith("profile_storage_ref_"), true);
+
+    const identityReadback = await getJson(`${running.url}/runtime/identity-environments/identity-env_server-test`);
+    assert.equal(identityReadback.identity_environment_ref, "identity-env_server-test");
+    assert.equal(identityReadback.environment_summary.language, "zh-CN");
+    assert.equal(JSON.stringify(identityReadback).includes("profile-storage_server-test"), false);
+
+    const updatedIdentity = await patchJson(`${running.url}/runtime/identity-environments/identity-env_server-test`, {
+      login_state: "logged_in",
+      storage_state: "present"
+    });
+    assert.equal(["ready", "needs_auth", "blocked", "unknown"].includes(updatedIdentity.status.readiness), true);
+    assert.equal(updatedIdentity.status.login_state, "logged_in");
 
     const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_server-test",
@@ -72,8 +89,56 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
 
     const aliasReadback = await getJson(`${running.url}/runtime/identity-environment-sessions/${session.runtime_session_ref}`);
     assert.equal(aliasReadback.runtime_session_ref, session.runtime_session_ref);
+
+    const deletedIdentity = await deleteJson(`${running.url}/runtime/identity-environments/identity-env_server-test`);
+    assert.equal(deletedIdentity.identity_environment_ref, "identity-env_server-test");
+
+    const missingIdentity = await fetch(`${running.url}/runtime/identity-environments/identity-env_server-test`);
+    assert.equal(missingIdentity.status, 404);
+    assert.equal((await missingIdentity.json()).failure_class, "identity_environment_missing");
+
+    const nestedIdentityPath = await fetch(`${running.url}/runtime/identity-environments/identity-env_server-test/extra`);
+    assert.equal(nestedIdentityPath.status, 404);
   } finally {
     await running.close();
+  }
+});
+
+test("persists identity environment public records for the local runtime API", async () => {
+  const persistence_path = join(mkdtempSync(join(tmpdir(), "harbor-identity-")), "identity-environments.json");
+  const first = await startHarborRuntimeServer({ port: 0, runtime: new HarborRuntime(createFixtureLauncher("ready"), { persistence_path }) });
+  try {
+    await postJson(`${first.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_persisted",
+      execution_identity_ref: "execution-identity_persisted",
+      profile_ref: "profile_persisted",
+      profile_storage_ref: "profile-storage_persisted",
+      site: {
+        site_id: "boss",
+        origin: "https://www.zhipin.com",
+        display_name: "BOSS",
+        account_ref: "account_persisted"
+      },
+      login_state: "manual_auth_required",
+      storage_state: "present",
+      region: "CN",
+      language: "zh-CN",
+      timezone: "Asia/Shanghai",
+      fingerprint_summary: "provider_claim:persisted"
+    });
+  } finally {
+    await first.close();
+  }
+
+  const second = await startHarborRuntimeServer({ port: 0, runtime: new HarborRuntime(createFixtureLauncher("ready"), { persistence_path }) });
+  try {
+    const record = await getJson(`${second.url}/runtime/identity-environments/identity-env_persisted`);
+    assert.equal(record.site.site_id, "boss");
+    assert.equal(record.environment_summary.region, "CN");
+    assert.equal(record.public_boundary.raw_material, "not_exposed");
+    assert.equal(JSON.stringify(record).includes("profile-storage_persisted"), false);
+  } finally {
+    await second.close();
   }
 });
 
@@ -105,5 +170,21 @@ async function postJson(url: string, body: unknown): Promise<any> {
     headers: { "content-type": "application/json" }
   });
   assert.equal(response.status === 200 || response.status === 201, true);
+  return response.json();
+}
+
+async function patchJson(url: string, body: unknown): Promise<any> {
+  const response = await fetch(url, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" }
+  });
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+async function deleteJson(url: string): Promise<any> {
+  const response = await fetch(url, { method: "DELETE" });
+  assert.equal(response.status, 200);
   return response.json();
 }

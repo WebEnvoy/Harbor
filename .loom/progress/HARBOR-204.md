@@ -3,13 +3,13 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-204
-- Current Checkpoint: merge_ready
-- Current Stop: PR #213 opened for #203/#204/#205/#206/#207 and reviewed by the master controller; no merge and no issue closeout performed.
-- Next Step: Run hosted gate, merge PR #213, write post-merge closeout evidence, then retire the current pointer.
+- Current Checkpoint: merge
+- Current Stop: PR #227 is open for head `15db4586f4d97a764bbae459346e6070c8bfe776`; implementation and spec review artifacts are recorded, and the branch is waiting on PR merge gate and hosted checks.
+- Next Step: Run PR metadata readback and PR merge gate for PR #227 at head `15db4586f4d97a764bbae459346e6070c8bfe776`, then merge only after hosted checks pass.
 - Blockers: None recorded.
-- Latest Validation Summary: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `git diff --check`; `loom fact-chain --target . --json`; `loom verify --target . --json`; `loom suite carrier validate --target . --item HARBOR-204 --json` passed locally.
-- Recovery Boundary: Harbor Runtime API local identity environment management only; no #208, no real xiaohongshu/BOSS launch, no real login, no risk bypass guarantee, no Core/Lode/App changes, no issue state changes.
-- Current Lane: local identity environment management
+- Latest Validation Summary: On 2026-07-08 UTC, `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `git diff --check`, `jq empty .loom/bootstrap/init-result.json .loom/specs/HARBOR-204/build-evidence.json`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-204 --json`, `loom suite carrier validate --target . --item HARBOR-204 --json`, and `loom suite evidence validate --target . --item HARBOR-204 --json` passed locally. `pnpm smoke:runtime` is fixture-mode API evidence and is not live browser/site evidence.
+- Recovery Boundary: Harbor Runtime API local identity environment management only; no #208/#209/#210/#211/#212, no real browser launch, no real xiaohongshu/BOSS launch, no real login, no risk bypass guarantee, no Core/Lode/App changes, no issue closeout before merge.
+- Current Lane: runtime identity environment API correction
 
 ## Execution Ledger
 

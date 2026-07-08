@@ -3,41 +3,82 @@
   "item_id": "HARBOR-204",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Implementation review accepts Harbor local identity environment management for #203/#204/#205/#206/#207.",
-  "reviewer": "Codex master controller thread 019f2731-5b28-72d1-897e-8d1199e94fdc",
-  "authored_at": "2026-07-06T16:04:00Z",
-  "reviewed_head": "e71602bcb40194d7bdb600b6b66fa9016d9adedf",
-  "reviewed_validation_summary": "`pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime`; `git diff --check`; `loom fact-chain --target . --json`; `loom verify --target . --json`; `loom suite carrier validate --target . --item HARBOR-204 --json` passed locally.",
-  "reviewed_validation_summary_hash": "a8e2a69f1084b009e3bdb2d37ea43c10d03cc95e09fc9767dec2fed31c73a2ca",
+  "summary": "Code review allows HARBOR-204 identity environment Runtime API correction at head dce91aadaa93f15a9abf79e3ce486987d5bfd004; no blocking findings after strict per-ref route matching and redacted refs/persistence coverage.",
+  "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
+  "authored_at": "2026-07-08T11:38:50Z",
+  "reviewed_head": "dce91aadaa93f15a9abf79e3ce486987d5bfd004",
+  "reviewed_validation_summary": "On 2026-07-08 UTC, `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `git diff --check`, `jq empty .loom/bootstrap/init-result.json .loom/specs/HARBOR-204/build-evidence.json`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-204 --json`, `loom suite carrier validate --target . --item HARBOR-204 --json`, and `loom suite evidence validate --target . --item HARBOR-204 --json` passed locally. `pnpm smoke:runtime` is fixture-mode API evidence and is not live browser/site evidence.",
+  "reviewed_validation_summary_hash": "0ef6fc1bffa067ea8a96036c3146bb8bbb06212e07d2c026414a3553391dc396",
   "validation_summary_source": "recovery.latest_validation_summary",
   "validation_summary_locator": ".loom/progress/HARBOR-204.md",
   "fallback_to": null,
-  "findings": [],
+  "findings": [
+    {
+      "id": "compat-follow-up-1",
+      "summary": "This approval covers #203/#204/#205/#206/#207 API correction only; #208/#209/#210/#211/#212 live browser/session/site evidence remains excluded.",
+      "severity": "warn",
+      "rebuttal": null,
+      "disposition": {
+        "status": "deferred",
+        "summary": "Projected from compatibility `follow_ups`."
+      }
+    },
+    {
+      "id": "compat-follow-up-2",
+      "summary": "No real browser profile, account, Cookie, production page, submit, publish, send, hosted browser, marketplace, batch collection, or risk-control bypass action was performed.",
+      "severity": "warn",
+      "rebuttal": null,
+      "disposition": {
+        "status": "deferred",
+        "summary": "Projected from compatibility `follow_ups`."
+      }
+    }
+  ],
   "blocking_issues": [],
   "follow_ups": [
-    "Future protected payload custody should add encrypted local storage or OS keychain integration; this PR stores and exposes refs/status only."
+    "This approval covers #203/#204/#205/#206/#207 API correction only; #208/#209/#210/#211/#212 live browser/session/site evidence remains excluded.",
+    "No real browser profile, account, Cookie, production page, submit, publish, send, hosted browser, marketplace, batch collection, or risk-control bypass action was performed."
   ],
   "consumed_inputs": {
     "work_item": ".loom/work-items/HARBOR-204.md",
     "recovery_entry": ".loom/progress/HARBOR-204.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "budget_risk": {
+      "schema_version": "loom-execution-budget-risk/v1",
+      "status": "not_applicable",
+      "enforcement": "advisory",
+      "highest_risk": "none",
+      "risk_dimensions": [],
+      "summary": "execution budget is not_applicable; budget risk remains advisory and non-blocking",
+      "budget_summary": "execution budget is not collected for this invocation.",
+      "adapter_evidence_locator": "",
+      "provenance": {
+        "source": "github_host"
+      }
+    },
+    "engine_adapter": null,
+    "engine_evidence": null,
+    "normalized_findings": null,
+    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-204-runtime-identity-api-correction --item HARBOR-204 --json",
+    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-204-runtime-identity-api-correction --item HARBOR-204 --json",
     "suite_evidence_map": ".loom/specs/HARBOR-204/evidence-map.md",
+    "suite_consistency_analysis": null,
     "suite_task_carriers": [
       ".loom/specs/HARBOR-204/task-carrier.md"
     ],
-    "implementation_files": [
-      "packages/runtime-api/src/identity-environment-manager.ts",
-      "packages/runtime-api/src/identity-environment.ts",
-      "packages/runtime-api/src/index.ts",
-      "packages/runtime-api/src/index.test.ts",
-      "packages/runtime-api/src/smoke.ts"
+    "suite_evidence_consumed_contracts": [
+      "docs/methodology/harness/full-spec-suite-cli-surface.md",
+      "docs/methodology/templates/evidence-map.md"
+    ],
+    "suite_carrier_consumed_contracts": [
+      "docs/methodology/harness/task-carrier-contract.md",
+      "docs/methodology/templates/execution-breakdown.md",
+      "docs/methodology/harness/full-spec-suite-cli-surface.md"
     ]
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "The implementation introduces local identity environment refs, login/storage status, provider binding, and redacted public output without claiming risk bypass or touching real site actions."
-  },
-  "implementation_review_disposition": {
-    "status": "passed",
-    "reason": "Runtime API tests and smoke coverage cover create/import/update/list/delete, managed session open, sensitive input rejection, provider binding, and public redaction boundaries."
+    "reason": "Authored implementation review approved the current head for merge checkpoint consumption."
   }
 }

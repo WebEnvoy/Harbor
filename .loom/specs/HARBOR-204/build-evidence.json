@@ -1,0 +1,111 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "item_id": "HARBOR-204",
+  "generated_at": "2026-07-08T11:23:54Z",
+  "branch": "work/harbor-204-runtime-identity-api-correction",
+  "pre_commit_head": "fa7598d322845907b9df342baa80bbbc306dd771",
+  "covered_issues": [
+    203,
+    204,
+    205,
+    206,
+    207
+  ],
+  "excluded_issues": [
+    208,
+    209,
+    210,
+    211,
+    212
+  ],
+  "delegations": [],
+  "subagent_notes": [
+    "Harbor dependency audit recommended HARBOR-204 as the next narrow batch after HARBOR-219 retired, covering #203/#204/#205/#206/#207 only.",
+    "App and GitHub-truth lanes confirm downstream App/Core work remains blocked on Harbor identity/session API surfaces, but this PR must not claim live browser or site evidence."
+  ],
+  "ownership_constraints": {
+    "write_ownership": [
+      "packages/runtime-api/src/server.ts",
+      "packages/runtime-api/src/runtime-server.ts",
+      "packages/runtime-api/src/server.test.ts",
+      ".loom/work-items/HARBOR-204.md",
+      ".loom/progress/HARBOR-204.md",
+      ".loom/status/current.md",
+      ".loom/bootstrap/init-result.json",
+      ".loom/specs/HARBOR-204/**"
+    ],
+    "forbidden_targets": [
+      "App/Core/Lode repositories",
+      "Harbor #208/#209/#210/#211/#212 implementation",
+      "provider launch internals beyond existing Runtime API plumbing",
+      "user daily browser profile",
+      "raw cookies",
+      "raw tokens",
+      "raw DOM",
+      "raw HAR",
+      "network response bodies",
+      "GitHub issue closeout before merge",
+      "real account login",
+      "real xiaohongshu/BOSS pages"
+    ],
+    "shared_carrier_policy": ".loom/status/current.md and .loom/bootstrap/init-result.json are set to active HARBOR-204 for this implementation PR and must be retired to no_active_item after post-merge closeout."
+  },
+  "validation": {
+    "passed": [
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm smoke:runtime",
+      "git diff --check",
+      "jq empty .loom/bootstrap/init-result.json .loom/specs/HARBOR-204/build-evidence.json",
+      "loom fact-chain --target . --json",
+      "loom verify --target . --json",
+      "loom suite validate --target . --item HARBOR-204 --json",
+      "loom suite carrier validate --target . --item HARBOR-204 --json",
+      "loom suite evidence validate --target . --item HARBOR-204 --json"
+    ],
+    "to_refresh_after_commit": [
+      "head SHA",
+      "PR metadata readback",
+      "PR gate",
+      "hosted checks"
+    ]
+  },
+  "runtime_boundary": {
+    "identity_environment_api": "public status and redacted refs only",
+    "persistence": "optional local JSON refs/status/summary store through HARBOR_IDENTITY_ENVIRONMENTS_PATH",
+    "profile": "no real profile opened or imported by this validation",
+    "provider_detection": "not changed by this PR",
+    "forbidden_actions": [
+      "login",
+      "submit",
+      "publish",
+      "apply",
+      "greet",
+      "send_message",
+      "captcha_or_risk_bypass",
+      "raw_cookie_token_profile_dom_har_or_body_export"
+    ],
+    "raw_debug_endpoint": "not_exposed",
+    "raw_screenshot_bytes": "not_exposed"
+  },
+  "http_api_readback": {
+    "identity_environment_routes": [
+      "GET /runtime/identity-environments",
+      "POST /runtime/identity-environments",
+      "POST /runtime/identity-environments/import",
+      "GET /runtime/identity-environments/{identity_environment_ref}",
+      "PATCH /runtime/identity-environments/{identity_environment_ref}",
+      "DELETE /runtime/identity-environments/{identity_environment_ref}"
+    ],
+    "missing_identity_failure_class": "identity_environment_missing",
+    "public_boundary": {
+      "output": "status_and_redacted_refs_only",
+      "raw_material": "not_exposed"
+    }
+  },
+  "remaining_limitations": [
+    "This PR covers local identity environment Runtime API correction only.",
+    "It does not launch real browser sessions, open xiaohongshu/BOSS, capture live screenshots, or generate live site evidence.",
+    "It does not complete App packaged runtime supervision, Core real task execution, or Lode registry consumption."
+  ]
+}
