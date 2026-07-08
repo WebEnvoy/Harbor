@@ -244,7 +244,7 @@
     }
   ],
   "fact_chain": {
-    "mode": "idle",
+    "mode": "active",
     "read_entry": "loom fact-chain --target . --json",
     "entry_points": {
       "current_item_id": "HARBOR-212",
