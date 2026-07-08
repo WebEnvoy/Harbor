@@ -4,16 +4,16 @@
 
 - Item ID: HARBOR-212
 - Goal: Ensure live snapshot capture never mints screenshot refs or screenshot evidence when the underlying browser screenshot capture fails.
-- Scope: Covers Harbor #212 only as a narrow evidence-safety correction under parent Harbor #208/#218. Ownership is limited to `packages/runtime-api/src/index.ts`, `packages/runtime-api/src/index.test.ts`, and HARBOR-212 item-specific Loom carriers. Excludes #209/#210/#211 implementation changes, App/Core/Lode changes, real browser launch, production page actions, real account/profile/Cookie access, raw evidence export, and issue closeout before merge.
+- Scope: Covers Harbor #212 only as a narrow evidence-safety correction under parent Harbor #208/#218. Ownership is limited to `packages/runtime-api/src/index.ts`, `packages/runtime-api/src/index.test.ts`, and HARBOR-212 item-specific Loom carriers.
 - Execution Path: work/harbor-212-screenshot-failure-refs
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-212.md
 - Review Entry: .loom/reviews/HARBOR-212.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-212 --json; loom suite carrier validate --target . --item HARBOR-212 --json; loom suite evidence validate --target . --item HARBOR-212 --json
-- Closing Condition: Implementation PR merged, Harbor #212 receives post-merge closeout evidence with explicit non-live boundary, and current pointer returns to no_active_item.
+- Closing Condition: PR created and pushed for Harbor #212 with PR body listing covered and non-covered issues, plus ownership boundaries and validation evidence; no issue closeout before merge.
 - Current Checkpoint: build
-- Current Stop: Code/test patch and HARBOR-212 carriers are integrated locally.
-- Next Step: Re-run build readiness, then push and open PR for Harbor #212.
+- Current Stop: Code/test patch integrated for the screenshot capture failure evidence-ref correction.
+- Next Step: Finish Loom validation, commit, push, and prepare PR metadata for Harbor #212.
 - Blockers: None recorded.
 - Latest Validation Summary: 2026-07-08T13:15Z UTC `pnpm typecheck`, `pnpm test` (30 tests), `pnpm smoke:runtime` (fixture mode only), `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-212 --json`, `loom suite carrier validate --target . --item HARBOR-212 --json`, and `loom suite evidence validate --target . --item HARBOR-212 --json` passed locally. `pnpm smoke:runtime:local` was not run because it launches a real local browser and can visit production pages.
 - Recovery Boundary: Harbor #212 evidence-safety correction only; no App/Core/Lode changes, no real browser launch, no production page access, no account/profile/Cookie access, no raw evidence export, and no submit/publish/send/write action.
