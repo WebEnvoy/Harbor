@@ -3,9 +3,9 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-204
-- Current Checkpoint: build
-- Current Stop: Correction implementation is staged in branch `work/harbor-204-runtime-identity-api-correction`; PR has not been created yet.
-- Next Step: Commit HARBOR-204 correction implementation, push branch, open PR for #204 covering #203/#204/#205/#206/#207, run PR metadata readback and gate, then merge only after hosted checks pass.
+- Current Checkpoint: merge
+- Current Stop: PR #227 is open for head `15db4586f4d97a764bbae459346e6070c8bfe776`; implementation and spec review artifacts are recorded, and the branch is waiting on PR merge gate and hosted checks.
+- Next Step: Run PR metadata readback and PR merge gate for PR #227 at head `15db4586f4d97a764bbae459346e6070c8bfe776`, then merge only after hosted checks pass.
 - Blockers: None recorded.
 - Latest Validation Summary: On 2026-07-08 UTC, `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `git diff --check`, `jq empty .loom/bootstrap/init-result.json .loom/specs/HARBOR-204/build-evidence.json`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-204 --json`, `loom suite carrier validate --target . --item HARBOR-204 --json`, and `loom suite evidence validate --target . --item HARBOR-204 --json` passed locally. `pnpm smoke:runtime` is fixture-mode API evidence and is not live browser/site evidence.
 - Recovery Boundary: Harbor Runtime API local identity environment management only; no #208/#209/#210/#211/#212, no real browser launch, no real xiaohongshu/BOSS launch, no real login, no risk bypass guarantee, no Core/Lode/App changes, no issue closeout before merge.
