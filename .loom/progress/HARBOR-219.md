@@ -4,10 +4,10 @@
 
 - Item ID: HARBOR-219
 - Current Checkpoint: closed_out
-- Current Stop: HARBOR-219 closed out: PR #224 merged at 89ecf283f1a98779ad806a791d7b88a89b9ed2e0, issues #219-#223 closed with batch host closeout evidence, and terminal carrier metadata was written. Post-merge shadow refresh was not consumed because the legacy `.loom/bootstrap/manifest.json` is absent; fact-chain, verify, suite carrier, and suite evidence validation passed after the carrier sync.
-- Next Step: No further HARBOR-219 implementation work remains.
+- Current Stop: HARBOR-219 closed out through PR #224/#225, and PR #226 retires the stale current pointer to no_active_item so the next Work Item can be admitted cleanly.
+- Next Step: Merge PR #226, then start the HARBOR-204 correction batch from idle.
 - Blockers: None recorded.
-- Latest Validation Summary: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, HTTP readiness/provider readback, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-219 --json`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json` passed locally on 2026-07-08 UTC.
+- Latest Validation Summary: `git diff --check`, `jq empty .loom/bootstrap/init-result.json`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom pr metadata-readback 226 --target . --json`, `loom pr gate 226 --target . --json`, `loom pr metadata-readback 226 --target . --surface closeout --json`, and `loom pr gate 226 --target . --surface closeout --json` passed locally on 2026-07-08 UTC for PR #226 head 563b54adf45634381efe9e158b643844f6a5586c.
 - Recovery Boundary: Harbor Runtime API endpoint plumbing only; no real accounts, production pages, profile import, App/Core/Lode changes, merge, or issue closeout.
 - Current Lane: post-merge-closeout-run
 

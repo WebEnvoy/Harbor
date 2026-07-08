@@ -3,19 +3,19 @@
   "item_id": "HARBOR-219",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Closeout carrier review accepts PR #225 current-head carrier-only updates for HARBOR-219; this review covers .loom/progress/HARBOR-219.md and .loom/status/current.md only and does not replace the implementation review evidence for PR #224.",
+  "summary": "Retire carrier review accepts PR #226 current-pointer-only updates for HARBOR-219; this review covers .loom/bootstrap/init-result.json and .loom/status/current.md only and does not replace the implementation review evidence for PR #224 or closeout evidence for PR #225.",
   "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
-  "authored_at": "2026-07-08T08:38:00Z",
-  "reviewed_head": "4eb6a83f69ff5dbadea8a87e882d813c244cfd52",
-  "reviewed_validation_summary": "`pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, HTTP readiness/provider readback, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-219 --json`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json` passed locally on 2026-07-08 UTC.",
-  "reviewed_validation_summary_hash": "5d092c32ec2dc46b1ae0e5c492251ccf437fddefea831de70d6d15bc7e4751e6",
-  "validation_summary_source": "recovery.latest_validation_summary",
-  "validation_summary_locator": ".loom/progress/HARBOR-219.md",
+  "authored_at": "2026-07-08T11:10:00Z",
+  "reviewed_head": "563b54adf45634381efe9e158b643844f6a5586c",
+  "reviewed_validation_summary": "`git diff --check`, `jq empty .loom/bootstrap/init-result.json`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom pr metadata-readback 226 --target . --json`, `loom pr gate 226 --target . --json`, `loom pr metadata-readback 226 --target . --surface closeout --json`, and `loom pr gate 226 --target . --surface closeout --json` passed locally on 2026-07-08 UTC for PR #226 head 563b54adf45634381efe9e158b643844f6a5586c.",
+  "reviewed_validation_summary_hash": "b831f149a0831d7582f4195ffa6a5acc864c9032eb2dc25f53641ac0b9ac2cad",
+  "validation_summary_source": "local PR #226 retire validation",
+  "validation_summary_locator": ".loom/status/current.md",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
   "follow_ups": [
-    "Implementation PR #224 remains the product/runtime code evidence; PR #225 is carrier closeout only.",
+    "Implementation PR #224 remains the product/runtime code evidence; PR #225 remains the post-merge closeout carrier evidence; PR #226 only retires the current pointer to idle.",
     "No real browser profile, account, production page, submit, publish, send, hosted browser, marketplace, batch collection, or risk-control bypass action was performed."
   ],
   "consumed_inputs": {
@@ -24,21 +24,22 @@
     "status_surface": ".loom/status/current.md",
     "implementation_pr": "https://github.com/WebEnvoy/Harbor/pull/224",
     "closeout_pr": "https://github.com/WebEnvoy/Harbor/pull/225",
+    "retire_pr": "https://github.com/WebEnvoy/Harbor/pull/226",
     "carrier_only_paths": [
-      ".loom/progress/HARBOR-219.md",
+      ".loom/bootstrap/init-result.json",
       ".loom/status/current.md"
     ]
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "This closeout carrier-only PR records terminal HARBOR-219 closeout facts; it changes no product/runtime code and does not approve or replace PR #224 implementation behavior."
+    "reason": "This retire carrier-only PR returns the fact chain to no_active_item after HARBOR-219 closeout; it changes no product/runtime code and does not approve or replace PR #224 implementation behavior."
   },
   "implementation_review_disposition": {
     "status": "not_applicable",
-    "reason": "PR #225 is a post-merge carrier closeout PR. Product/runtime implementation behavior was delivered and reviewed in PR #224."
+    "reason": "PR #226 is a current-pointer retire PR. Product/runtime implementation behavior was delivered and reviewed in PR #224."
   },
   "carrier_only_closeout_review": {
     "status": "passed",
-    "reason": "Authored closeout review approved only terminal carrier metadata consumption; it does not approve product implementation behavior."
+    "reason": "Authored retire review approved only current-pointer idle metadata consumption; it does not approve product implementation behavior."
   }
 }
