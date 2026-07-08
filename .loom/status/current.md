@@ -2,34 +2,34 @@
 
 ## Derived Fact Chain View
 
-- Item ID: no_active_item
-- Goal: not_applicable
-- Scope: not_applicable
-- Execution Path: not_applicable
-- Workspace Entry: not_applicable
-- Recovery Entry: not_applicable
-- Review Entry: not_applicable
-- Validation Entry: not_applicable
-- Closing Condition: not_applicable
-- Current Checkpoint: not_applicable
-- Current Stop: not_applicable
-- Next Step: not_applicable
-- Blockers: not_applicable
-- Latest Validation Summary: not_applicable
-- Recovery Boundary: not_applicable
-- Current Lane: not_applicable
+- Item ID: HARBOR-219
+- Goal: Provide a local Harbor Runtime HTTP API readiness entry point that App and Core can consume before real browser/session work.
+- Scope: Covers Harbor #219/#220/#221/#222/#223 as one thin Runtime API adapter batch under parent Harbor #218.
+- Execution Path: work/harbor-219-runtime-api-readiness
+- Workspace Entry: .
+- Recovery Entry: .loom/progress/HARBOR-219.md
+- Review Entry: .loom/reviews/HARBOR-219.json
+- Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; HTTP readiness/provider readback; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-219 --json; loom suite carrier validate --target . --item HARBOR-219 --json
+- Closing Condition: PR created and pushed for Harbor #219 with PR body listing covered and non-covered issues; no issue closeout before merge.
+- Current Checkpoint: review
+- Current Stop: PR #224 is open for head bc6079e4030d9e9a8e9c8d5ef574d08709aec48d; hosted merge gate is waiting on active fact-chain readback and current-head review.
+- Next Step: Record current-head review for HARBOR-219, rerun fact-chain/verify/suite validation, push carrier repair, and rerun PR gate.
+- Blockers: Current-head review record pending.
+- Latest Validation Summary: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, HTTP readiness/provider readback, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-219 --json`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json` passed locally on 2026-07-08 UTC.
+- Recovery Boundary: Harbor Runtime API endpoint plumbing only; no real accounts, production pages, profile import, App/Core/Lode changes, merge, or issue closeout.
+- Current Lane: runtime API readiness
 
 ## Runtime Evidence
 
-- Run Entry: not_applicable
-- Logs Entry: not_applicable
-- Diagnostics Entry: not_applicable
+- Run Entry: .loom/specs/HARBOR-219/build-evidence.json
+- Logs Entry: .loom/progress/HARBOR-219.md
+- Diagnostics Entry: .loom/specs/HARBOR-219/consistency-analysis.md
 - Verification Entry: loom verify --target . --json
-- Lane Entry: no_active_item
+- Lane Entry: HARBOR-219
 
 ## Sources
 
-- Static Truth: not_applicable
-- Dynamic Truth: not_applicable
+- Static Truth: .loom/work-items/HARBOR-219.md
+- Dynamic Truth: .loom/progress/HARBOR-219.md
 - Locator Truth: .loom/bootstrap/init-result.json
 - Fact Chain CLI: loom fact-chain --target . --json

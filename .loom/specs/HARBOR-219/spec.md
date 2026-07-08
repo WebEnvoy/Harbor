@@ -1,5 +1,10 @@
 # Spec
 
+## Suite Decision
+
+- Suite path: full
+- Path decision: Harbor local Runtime API service entry point and App/Core-facing endpoint surface are touched.
+
 ## Scenarios
 
 1. S-001 App/Core starts or connects to a local Harbor Runtime API and calls `/readiness`.

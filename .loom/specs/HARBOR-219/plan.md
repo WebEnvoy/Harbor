@@ -1,5 +1,9 @@
 # Plan
 
+## Suite Decision
+
+- Suite path: full
+
 ## Phases
 
 1. P-001 Add a thin HTTP server module around existing `HarborRuntime`.

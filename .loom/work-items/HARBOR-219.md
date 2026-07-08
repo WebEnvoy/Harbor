@@ -6,7 +6,7 @@
 - Goal: Provide a local Harbor Runtime HTTP API readiness entry point that App and Core can consume before real browser/session work.
 - Scope: Covers Harbor #219/#220/#221/#222/#223 as one thin Runtime API adapter batch under parent Harbor #218.
 - Execution Path: work/harbor-219-runtime-api-readiness
-- Workspace Entry: /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-runtime-api-readiness
+- Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-219.md
 - Review Entry: .loom/reviews/HARBOR-219.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; HTTP readiness/provider readback; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-219 --json; loom suite carrier validate --target . --item HARBOR-219 --json
