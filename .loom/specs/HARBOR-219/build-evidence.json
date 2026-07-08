@@ -1,9 +1,9 @@
 {
   "schema_version": "loom-build-evidence/v1",
   "item_id": "HARBOR-219",
-  "generated_at": "2026-07-08T07:08:16Z",
-  "branch": "work/harbor-219-runtime-api-readiness",
-  "pre_commit_head": "a6b2a2020c16c6642ece8dcca5442ffa3b3450fc",
+  "generated_at": "2026-07-08T17:05:41Z",
+  "branch": "work/harbor-219-health-contract",
+  "pre_commit_head": "4d0e8e69ec947a2395082dcdb789daaa3caabff9",
   "delegations": [],
   "subagent_notes": [
     "App lane completed read-only analysis and confirmed Harbor long-running runtime API is a blocker for App runtime supervision.",
@@ -33,6 +33,41 @@
       "merge"
     ],
     "shared_carrier_policy": ".loom/status/current.md remains no_active_item because local fact-chain expects idle derived status; HARBOR-219 truth is item-specific carrier."
+  },
+  "ownership_contract": {
+    "task_goal": "Repair HARBOR-219 Loom build carrier readiness without product code changes.",
+    "context_locators": [
+      ".loom/status/current.md",
+      ".loom/specs/HARBOR-219/build-evidence.json",
+      ".loom/work-items/HARBOR-219.md",
+      ".loom/progress/HARBOR-219.md",
+      ".loom/specs/HARBOR-219/**"
+    ],
+    "read_scope": [
+      "HARBOR-219 Loom carriers",
+      "Loom build and fact-chain command output"
+    ],
+    "write_ownership": [
+      ".loom/work-items/HARBOR-219.md",
+      ".loom/progress/HARBOR-219.md",
+      ".loom/specs/HARBOR-219/**"
+    ],
+    "non_goals": [
+      "No product code changes",
+      "No GitHub operation, commit, push, merge, or closeout",
+      "No real browser, profile, account, or production page action",
+      "No App/Core/Lode changes"
+    ],
+    "validation_expectation": [
+      "loom build --target . --item HARBOR-219 --build-evidence .loom/specs/HARBOR-219/build-evidence.json --json",
+      "loom fact-chain --target . --json"
+    ],
+    "output_format": "Subagent report with changed files, command results, git status, and remaining blocker.",
+    "integration_target": [
+      ".loom/specs/HARBOR-219/build-evidence.json",
+      ".loom/work-items/HARBOR-219.md"
+    ],
+    "no_overlap": true
   },
   "validation": {
     "passed": [
