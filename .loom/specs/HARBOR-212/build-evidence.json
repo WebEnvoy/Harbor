@@ -1,0 +1,219 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "required_inputs": {
+    "target_repo": "WebEnvoy/Harbor",
+    "work_item": "HARBOR-212",
+    "branch": "work/harbor-212-screenshot-failure-refs",
+    "suite_path": "full",
+    "worktree": "."
+  },
+  "ownership_contract": {
+    "task_goal": "PR Ready implementation for Harbor #212 so failed live screenshot capture does not mint screenshot refs or screenshot evidence.",
+    "context_locators": [
+      "https://github.com/WebEnvoy/Harbor/issues/212",
+      "https://github.com/WebEnvoy/Harbor/issues/208",
+      "https://github.com/WebEnvoy/Harbor/issues/218",
+      ".loom/specs/HARBOR-212/spec.md",
+      ".loom/specs/HARBOR-212/plan.md",
+      ".loom/specs/HARBOR-212/evidence-map.md",
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/index.test.ts"
+    ],
+    "read_scope": [
+      "Harbor runtime-api source and tests",
+      "Harbor #212/#208/#218 GitHub issue metadata",
+      "HARBOR-212 item-specific Loom carriers"
+    ],
+    "write_ownership": [
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/index.test.ts",
+      ".loom/work-items/HARBOR-212.md",
+      ".loom/progress/HARBOR-212.md",
+      ".loom/specs/HARBOR-212/**"
+    ],
+    "non_goals": [
+      "No App/Core/Lode changes",
+      "No #209/#210/#211 implementation changes",
+      "No provider launch internals beyond the screenshot failure evidence guard",
+      "No real browser/profile/account/Cookie/production page actions",
+      "No raw screenshot bytes, DOM, HAR, tokens, cookies, or network body storage",
+      "No hosted browser, marketplace, bulk collection, risk-control bypass, merge, or issue closeout before merge"
+    ],
+    "validation_expectation": [
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm smoke:runtime",
+      "git diff --check",
+      "loom fact-chain --target . --json",
+      "loom verify --target . --json",
+      "loom suite validate --target . --item HARBOR-212 --json",
+      "loom suite carrier validate --target . --item HARBOR-212 --json",
+      "loom suite evidence validate --target . --item HARBOR-212 --json"
+    ],
+    "output_format": "Implementation PR with metadata covering Harbor #212 only and final main-controller closeout after merge.",
+    "integration_target": [
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/index.test.ts",
+      ".loom/work-items/HARBOR-212.md",
+      ".loom/progress/HARBOR-212.md",
+      ".loom/specs/HARBOR-212/**"
+    ]
+  },
+  "ownership_constraints": [
+    "Write ownership is limited to Harbor runtime-api index/test files and HARBOR-212 item-specific Loom carriers.",
+    "Forbidden writes include App, Lode, WebEnvoy/Core, shared current pointer, provider launch internals outside the guard, and GitHub issue closeout before merge.",
+    "No real account, browser profile, credential, cookie/token, production page, CAPTCHA/2FA bypass, merge, or external visible action."
+  ],
+  "ownership_constraints_detail": {
+    "write_ownership": [
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/index.test.ts",
+      ".loom/work-items/HARBOR-212.md",
+      ".loom/progress/HARBOR-212.md",
+      ".loom/specs/HARBOR-212/**"
+    ],
+    "forbidden_targets": [
+      "App/Core/Lode repositories",
+      "Harbor #209/#210/#211 implementation changes",
+      "provider launch internals outside the screenshot failure guard",
+      "user daily browser profile",
+      "raw cookies",
+      "raw tokens",
+      "raw DOM",
+      "raw HAR",
+      "network response bodies",
+      "GitHub issue closeout before merge",
+      "merge"
+    ],
+    "shared_carrier_policy": ".loom/status/current.md is serially controlled by the main controller for HARBOR-212 gate consumption; subagents and worker lanes do not edit it, and it must be retired after post-merge closeout."
+  },
+  "delegations": [
+    {
+      "id": "harbor-212-code-worker",
+      "lane_id": "harbor-212-code-worker",
+      "task_goal": "Patch live snapshot capture so screenshot capture failure does not mint screenshot refs/evidence.",
+      "context_locators": [
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/index.test.ts",
+        "https://github.com/WebEnvoy/Harbor/issues/212"
+      ],
+      "read_scope": [
+        "Harbor runtime-api source and tests",
+        "HARBOR-212 implementation contract"
+      ],
+      "write_ownership": [
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/index.test.ts"
+      ],
+      "non_goals": [
+        "No .loom writes",
+        "No PR body or GitHub writes",
+        "No package lock edits",
+        "No smoke:runtime:local",
+        "No real browser/profile/account/Cookie/production page actions"
+      ],
+      "validation_expectation": [
+        "git diff --check",
+        "pnpm typecheck",
+        "pnpm test"
+      ],
+      "output_format": "Summary with changed files, diff summary, validation results, risks, boundaries, and stale basis.",
+      "integration_target": [
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/index.test.ts",
+        ".loom/specs/HARBOR-212/build-evidence.json",
+        ".loom/progress/HARBOR-212.md",
+        ".loom/specs/HARBOR-212/evidence-map.md"
+      ],
+      "status": "integrated",
+      "summary": "Worker edited only packages/runtime-api/src/index.ts and packages/runtime-api/src/index.test.ts. Main controller read back the diff, installed worktree dependencies, reran validation, and integrated evidence into HARBOR-212 carriers."
+    }
+  ],
+  "delegation_evidence": {
+    "used_nested_subagents": true,
+    "unintegrated_subagent_output": false,
+    "integrated_lanes": [
+      "harbor-212-code-worker"
+    ],
+    "integration_summary": "Worker output was accepted after main-controller diff readback and validation. Worker did not write shared carriers or GitHub."
+  },
+  "integration_evidence": [
+    {
+      "locator": "packages/runtime-api/src/index.ts",
+      "summary": "`captureLiveSnapshot` now sets screenshot capture policy to deny when the session screenshot provider returns a structured error."
+    },
+    {
+      "locator": "packages/runtime-api/src/index.ts",
+      "summary": "The failed screenshot path still produces page/source trace/refmap refs from readable page facts."
+    },
+    {
+      "locator": "packages/runtime-api/src/index.test.ts",
+      "summary": "The failed screenshot path does not produce `screenshot_ref` or screenshot-type evidence."
+    },
+    {
+      "locator": "packages/runtime-api/src/index.test.ts",
+      "summary": "Regression coverage is in `captures live page refs without screenshot evidence when screenshot capture fails`."
+    }
+  ],
+  "ownership_conflicts": [],
+  "repeated_blocker_signal": null,
+  "suite_path_consumption": {
+    "suite_path": "full",
+    "required_artifacts": [
+      ".loom/specs/HARBOR-212/suite-index.md",
+      ".loom/specs/HARBOR-212/spec.md",
+      ".loom/specs/HARBOR-212/plan.md",
+      ".loom/specs/HARBOR-212/research.md",
+      ".loom/specs/HARBOR-212/contracts.md",
+      ".loom/specs/HARBOR-212/implementation-contract.md",
+      ".loom/specs/HARBOR-212/readiness-checklist.md",
+      ".loom/specs/HARBOR-212/execution-breakdown.md",
+      ".loom/specs/HARBOR-212/task-carrier.md",
+      ".loom/specs/HARBOR-212/evidence-map.md",
+      ".loom/specs/HARBOR-212/build-evidence.json",
+      ".loom/specs/HARBOR-212/consistency-analysis.md"
+    ],
+    "consumer_boundary": "Harbor #212 evidence semantics only; App/Core/Lode runtime consumption and live production page evidence remain separate issues.",
+    "recheck_condition": "Re-run full suite checks if evidence refs, screenshot capture, session readability, PR head, or issue scope changes."
+  },
+  "validation": {
+    "passed": [
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm smoke:runtime",
+      "git diff --check",
+      "loom fact-chain --target . --json",
+      "loom verify --target . --json",
+      "loom suite validate --target . --item HARBOR-212 --json",
+      "loom suite carrier validate --target . --item HARBOR-212 --json",
+      "loom suite evidence validate --target . --item HARBOR-212 --json"
+    ],
+    "to_refresh_after_commit": [
+      "head SHA",
+      "PR metadata readback",
+      "PR gate",
+      "hosted checks"
+    ]
+  },
+  "runtime_boundary": {
+    "real_browser": "not_used",
+    "production_pages": "not_used",
+    "profile": "not_used",
+    "forbidden_actions": [
+      "login",
+      "submit",
+      "publish",
+      "apply",
+      "greet",
+      "send_message",
+      "captcha_or_risk_bypass",
+      "raw_cookie_token_profile_dom_har_or_body_export"
+    ],
+    "raw_debug_endpoint": "not_exposed",
+    "raw_screenshot_bytes": "not_exposed"
+  },
+  "remaining_limitations": [
+    "This PR fixes screenshot failure evidence semantics; it does not complete App packaged runtime supervision, Core real task execution, or Lode registry consumption.",
+    "No real account, browser profile, production page, or external visible action is used by this validation plan."
+  ]
+}

@@ -1,16 +1,8 @@
-# Current Status
+# HARBOR-212 Progress
 
-## Derived Fact Chain View
+## Dynamic Facts
 
 - Item ID: HARBOR-212
-- Goal: Ensure live snapshot capture never mints screenshot refs or screenshot evidence when the underlying browser screenshot capture fails.
-- Scope: Covers Harbor #212 only as a narrow evidence-safety correction under parent Harbor #208/#218. Ownership is limited to `packages/runtime-api/src/index.ts`, `packages/runtime-api/src/index.test.ts`, and HARBOR-212 item-specific Loom carriers.
-- Execution Path: work/harbor-212-screenshot-failure-refs
-- Workspace Entry: .
-- Recovery Entry: .loom/progress/HARBOR-212.md
-- Review Entry: .loom/reviews/HARBOR-212.json
-- Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-212 --json; loom suite carrier validate --target . --item HARBOR-212 --json; loom suite evidence validate --target . --item HARBOR-212 --json
-- Closing Condition: PR created and pushed for Harbor #212 with PR body listing covered and non-covered issues, plus ownership boundaries and validation evidence; no issue closeout before merge.
 - Current Checkpoint: merge
 - Current Stop: Spec review and implementation review gates passed for PR #229; PR metadata is aligned to head f99e4bfac5c7e502e3ac5c14719df5390d10f8f1.
 - Next Step: Run PR merge gate, wait for hosted checks, then merge and perform post-merge closeout for Harbor #212.
@@ -19,17 +11,11 @@
 - Recovery Boundary: Harbor #212 evidence-safety correction only; no App/Core/Lode changes, no real browser launch, no production page access, no account/profile/Cookie access, no raw evidence export, and no submit/publish/send/write action.
 - Current Lane: harbor-212-screenshot-failure-refs
 
-## Runtime Evidence
+## Execution Ledger
 
-- Run Entry: .loom/specs/HARBOR-212/build-evidence.json
-- Logs Entry: .loom/progress/HARBOR-212.md
-- Diagnostics Entry: .loom/specs/HARBOR-212/evidence-map.md
-- Verification Entry: loom verify --target . --json
-- Lane Entry: HARBOR-212
-
-## Sources
-
-- Static Truth: .loom/work-items/HARBOR-212.md
-- Dynamic Truth: .loom/progress/HARBOR-212.md
-- Locator Truth: .loom/bootstrap/init-result.json
-- Fact Chain CLI: loom fact-chain --target . --json
+- Ledger Binding: recovery_entry
+- Plan Locator: .loom/specs/HARBOR-212/plan.md
+- Acceptance Locator: .loom/specs/HARBOR-212/spec.md
+- Validation Evidence Locator: .loom/specs/HARBOR-212/evidence-map.md
+- Handoff Notes Locator: .loom/specs/HARBOR-212/task-carrier.md
+- Evidence Freshness: current

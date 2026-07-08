@@ -354,6 +354,7 @@ export class HarborRuntime {
     if (!record) return this.pageScenes.capture(null, input);
     const screenshot = await record.captureScreenshot?.();
     const screenshot_artifact = screenshot && !("code" in screenshot) ? screenshotArtifact(screenshot) : undefined;
+    const evidence_policy = screenshot && "code" in screenshot ? { ...input.evidence_policy, screenshot: "deny" as const } : input.evidence_policy;
     const result = this.pageScenes.capture(record.facts, {
       title: input.title ?? record.facts.current_page.title ?? "Untitled page",
       url: input.url ?? record.facts.current_page.current_url ?? record.facts.current_page.requested_url,
@@ -362,7 +363,7 @@ export class HarborRuntime {
       source_locator: input.source_locator ?? `runtime-session://${runtime_session_ref}/current-page`,
       elements: input.elements,
       screenshot_artifact,
-      evidence_policy: input.evidence_policy
+      evidence_policy
     });
     if (result.status === "captured") {
       this.runtimeSessions.markSnapshotCaptured(runtime_session_ref, result.core_scene_ref.captured_at, result.evidence_refs);

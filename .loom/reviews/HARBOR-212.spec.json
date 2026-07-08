@@ -1,0 +1,40 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-212",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "Spec review accepts the bounded HARBOR-212 screenshot failure evidence semantics correction.",
+  "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
+  "authored_at": "2026-07-08T13:43:00Z",
+  "reviewed_head": "b053c3006752205b0548b2947b7f4e6bcb489be3",
+  "reviewed_validation_summary": "2026-07-08T13:41Z UTC carrier refresh passed locally: `jq empty .loom/specs/HARBOR-212/build-evidence.json .loom/bootstrap/init-result.json`, `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-212 --json`, `loom suite carrier validate --target . --item HARBOR-212 --json`, and `loom suite evidence validate --target . --item HARBOR-212 --json`. The underlying code validation remained current from 2026-07-08T13:15Z UTC: `pnpm typecheck`, `pnpm test` (30 tests), `pnpm smoke:runtime` (fixture mode only), `git diff --check`, `loom build --target . --item HARBOR-212 --build-evidence .loom/specs/HARBOR-212/build-evidence.json --json`, `loom verify --target . --json`, and suite validate/carrier/evidence checks passed locally. `tools/skills_surface.py check`, `tools/loom_check.py --profile source --source-surface contract-only`, `tools/check_release_surface.py`, `tools/version_surface_check.py`, and `tools/check_npm_package.py` were executed against the installed global Loom package because Harbor has no repo-local `tools/` directory; they failed on installed Loom source/release/parity markers unrelated to HARBOR-212 and are classified as external Loom tool surface issues outside this PR write scope. `pnpm smoke:runtime:local` was not run because it launches a real local browser and can visit production pages.",
+  "reviewed_validation_summary_hash": "bb35b71e297d23691a40ec64d82f2bc25164230b0a8f9c0ecd89c3ac78272a24",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-212.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "This spec approval covers Harbor #212 screenshot failure evidence semantics only; #209/#210/#211/#208/#218 closeout remains separate.",
+    "No real browser profile, account, Cookie, production page, submit, publish, send, hosted browser, marketplace, batch collection, or risk-control bypass action was performed."
+  ],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-212.md",
+    "recovery_entry": ".loom/progress/HARBOR-212.md",
+    "spec": ".loom/specs/HARBOR-212/spec.md",
+    "plan": ".loom/specs/HARBOR-212/plan.md",
+    "implementation_contract": ".loom/specs/HARBOR-212/implementation-contract.md",
+    "evidence_map": ".loom/specs/HARBOR-212/evidence-map.md",
+    "build_evidence": ".loom/specs/HARBOR-212/build-evidence.json",
+    "pull_request": "https://github.com/WebEnvoy/Harbor/pull/229",
+    "reviewed_diff": "git diff origin/main...b053c3006752205b0548b2947b7f4e6bcb489be3"
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "The spec is constrained to preventing fabricated screenshot refs/evidence when live screenshot capture returns a structured failure while keeping page/source/refmap refs available from readable page facts."
+  },
+  "implementation_review_disposition": {
+    "status": "passed",
+    "reason": "The implementation contract excludes App/Core/Lode changes, #209/#210/#211 changes, real browser/profile/account/Cookie/production page actions, raw evidence export, and write actions."
+  }
+}
