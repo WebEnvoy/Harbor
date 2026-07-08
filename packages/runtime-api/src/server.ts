@@ -1,5 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { HarborRuntime, type ManagedLocalIdentityEnvironmentInput, type OpenIdentityEnvironmentSessionInput, type RuntimeSessionControlInput } from "./index.js";
+import {
+  HarborRuntime,
+  type LocalIdentityEnvironmentStateUpdate,
+  type ManagedLocalIdentityEnvironmentInput,
+  type OpenIdentityEnvironmentSessionInput,
+  type RuntimeSessionControlInput
+} from "./index.js";
 
 export const HARBOR_RUNTIME_API_READINESS_SCHEMA = "harbor-runtime-api-readiness/v0";
 
@@ -67,6 +73,7 @@ async function route(runtime: HarborRuntime, request: IncomingMessage, response:
         "/readiness",
         "/runtime/browser-providers",
         "/runtime/identity-environments",
+        "/runtime/identity-environments/{identity_environment_ref}",
         "/runtime/identity-environment-sessions",
         "/runtime/sessions/{runtime_session_ref}",
         "/runtime/evidence/{evidence_ref}"
@@ -102,6 +109,11 @@ async function route(runtime: HarborRuntime, request: IncomingMessage, response:
     return;
   }
 
+  if (parts[0] === "runtime" && parts[1] === "identity-environments" && parts[2]) {
+    await routeIdentityEnvironment(runtime, parts[2], method, request, response);
+    return;
+  }
+
   if (method === "POST" && url.pathname === "/runtime/identity-environment-sessions") {
     const body = await readJson<OpenIdentityEnvironmentSessionInput & { identity_environment_ref?: string }>(request);
     if (body.identity_environment_ref) {
@@ -126,6 +138,32 @@ async function route(runtime: HarborRuntime, request: IncomingMessage, response:
   }
 
   writeJson(response, 404, { error: "not_found", path: url.pathname });
+}
+
+async function routeIdentityEnvironment(
+  runtime: HarborRuntime,
+  identityEnvironmentRef: string,
+  method: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  if (method === "GET") {
+    const record = runtime.getManagedLocalIdentityEnvironment(identityEnvironmentRef);
+    writeJson(response, record ? 200 : 404, record ?? identityEnvironmentMissing(identityEnvironmentRef));
+    return;
+  }
+  if (method === "PATCH") {
+    const body = await readJson<LocalIdentityEnvironmentStateUpdate>(request);
+    const record = runtime.updateLocalIdentityEnvironment(identityEnvironmentRef, body);
+    writeJson(response, record ? 200 : 404, record ?? identityEnvironmentMissing(identityEnvironmentRef));
+    return;
+  }
+  if (method === "DELETE") {
+    const record = runtime.deleteLocalIdentityEnvironment(identityEnvironmentRef);
+    writeJson(response, record ? 200 : 404, record ?? identityEnvironmentMissing(identityEnvironmentRef));
+    return;
+  }
+  writeJson(response, 405, { error: "method_not_allowed", method });
 }
 
 async function routeSession(
@@ -178,6 +216,19 @@ function writeJson(response: ServerResponse, statusCode: number, body: unknown):
     "cache-control": "no-store"
   });
   response.end(JSON.stringify(body));
+}
+
+function identityEnvironmentMissing(identity_environment_ref: string): object {
+  return {
+    status: "unavailable",
+    failure_class: "identity_environment_missing",
+    identity_environment_ref,
+    retryable: true,
+    public_boundary: {
+      output: "status_and_redacted_refs_only",
+      raw_material: "not_exposed"
+    }
+  };
 }
 
 class BadRequest extends Error {}
