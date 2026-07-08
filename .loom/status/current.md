@@ -2,34 +2,34 @@
 
 ## Derived Fact Chain View
 
-- Item ID: no_active_item
-- Goal: not_applicable
-- Scope: not_applicable
-- Execution Path: not_applicable
-- Workspace Entry: not_applicable
-- Recovery Entry: not_applicable
-- Review Entry: not_applicable
-- Validation Entry: not_applicable
-- Closing Condition: not_applicable
-- Current Checkpoint: not_applicable
-- Current Stop: not_applicable
-- Next Step: not_applicable
-- Blockers: not_applicable
-- Latest Validation Summary: not_applicable
-- Recovery Boundary: not_applicable
-- Current Lane: not_applicable
+- Item ID: HARBOR-212
+- Goal: Ensure live snapshot capture never mints screenshot refs or screenshot evidence when the underlying browser screenshot capture fails.
+- Scope: Covers Harbor #212 only as a narrow evidence-safety correction under parent Harbor #208/#218. Ownership is limited to `packages/runtime-api/src/index.ts`, `packages/runtime-api/src/index.test.ts`, and HARBOR-212 item-specific Loom carriers. Excludes #209/#210/#211 implementation changes, App/Core/Lode changes, real browser launch, production page actions, real account/profile/Cookie access, raw evidence export, and issue closeout before merge.
+- Execution Path: work/harbor-212-screenshot-failure-refs
+- Workspace Entry: .
+- Recovery Entry: .loom/progress/HARBOR-212.md
+- Review Entry: .loom/reviews/HARBOR-212.json
+- Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-212 --json; loom suite carrier validate --target . --item HARBOR-212 --json; loom suite evidence validate --target . --item HARBOR-212 --json
+- Closing Condition: Implementation PR merged, Harbor #212 receives post-merge closeout evidence with explicit non-live boundary, and current pointer returns to no_active_item.
+- Current Checkpoint: build
+- Current Stop: Code/test patch and HARBOR-212 carriers are integrated locally.
+- Next Step: Re-run build readiness, then push and open PR for Harbor #212.
+- Blockers: None recorded.
+- Latest Validation Summary: 2026-07-08T13:15Z UTC `pnpm typecheck`, `pnpm test` (30 tests), `pnpm smoke:runtime` (fixture mode only), `git diff --check`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom suite validate --target . --item HARBOR-212 --json`, `loom suite carrier validate --target . --item HARBOR-212 --json`, and `loom suite evidence validate --target . --item HARBOR-212 --json` passed locally. `pnpm smoke:runtime:local` was not run because it launches a real local browser and can visit production pages.
+- Recovery Boundary: Harbor #212 evidence-safety correction only; no App/Core/Lode changes, no real browser launch, no production page access, no account/profile/Cookie access, no raw evidence export, and no submit/publish/send/write action.
+- Current Lane: harbor-212-screenshot-failure-refs
 
 ## Runtime Evidence
 
-- Run Entry: not_applicable
-- Logs Entry: not_applicable
-- Diagnostics Entry: not_applicable
+- Run Entry: .loom/specs/HARBOR-212/build-evidence.json
+- Logs Entry: .loom/progress/HARBOR-212.md
+- Diagnostics Entry: .loom/specs/HARBOR-212/evidence-map.md
 - Verification Entry: loom verify --target . --json
-- Lane Entry: no_active_item
+- Lane Entry: HARBOR-212
 
 ## Sources
 
-- Static Truth: not_applicable
-- Dynamic Truth: not_applicable
+- Static Truth: .loom/work-items/HARBOR-212.md
+- Dynamic Truth: .loom/progress/HARBOR-212.md
 - Locator Truth: .loom/bootstrap/init-result.json
 - Fact Chain CLI: loom fact-chain --target . --json
