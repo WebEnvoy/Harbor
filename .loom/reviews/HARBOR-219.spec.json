@@ -3,27 +3,52 @@
   "item_id": "HARBOR-219",
   "decision": "allow",
   "kind": "spec_review",
-  "summary": "Spec review remains accepted for the bounded Harbor Runtime API adapter slice; PR #226 only retires the post-closeout current pointer.",
+  "summary": "Spec review allows HARBOR-219 at current corrective head: bounded Harbor Runtime API readiness compatibility exposes /health, /ready, /readiness, and /runtime/health for App/Core admission, keeps raw credentials/browser materials out of scope, and excludes real account/profile/Cookie/production page actions, submit/publish/send, hosted browser, marketplace, batch collection, and risk-control bypass.",
   "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
-  "authored_at": "2026-07-08T11:10:00Z",
-  "reviewed_head": "563b54adf45634381efe9e158b643844f6a5586c",
-  "reviewed_validation_summary": "`git diff --check`, `jq empty .loom/bootstrap/init-result.json`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom pr metadata-readback 226 --target . --json`, `loom pr gate 226 --target . --json`, `loom pr metadata-readback 226 --target . --surface closeout --json`, and `loom pr gate 226 --target . --surface closeout --json` passed locally on 2026-07-08 UTC for PR #226 head 563b54adf45634381efe9e158b643844f6a5586c.",
-  "reviewed_validation_summary_hash": "b831f149a0831d7582f4195ffa6a5acc864c9032eb2dc25f53641ac0b9ac2cad",
-  "validation_summary_source": "local PR #226 retire validation",
-  "validation_summary_locator": ".loom/status/current.md",
+  "authored_at": "2026-07-08T18:15:27Z",
+  "reviewed_head": "28ae3794b03880074a2fc2ae5e8d2d4560ee94b8",
+  "reviewed_validation_summary": "2026-07-08T17:21Z UTC main-controller validation passed: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime:local`; `git diff --check`; `loom fact-chain --target . --json`; `loom build --target . --item HARBOR-219 --build-evidence .loom/specs/HARBOR-219/build-evidence.json --json`. Harbor smoke used local/dedicated browser facts and `about:blank`; it did not use real accounts, Cookies, production pages, submit/publish/send, or external visible actions. Deterministic review-readiness evidence was run and classified as repo-local tool surface absent, not product failure: `tools/skills_surface.py check` exit 127; `tools/loom_check.py --profile source --source-surface contract-only` exit 127; `tools/check_release_surface.py` exit 127; `tools/version_surface_check.py` exit 127; `tools/check_npm_package.py` exit 127.",
+  "reviewed_validation_summary_hash": "7220392487344dbcb7eb6046fd425a3b0dad2c15f7acd3daa9452b93b879f6e0",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-219.md",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
-  "follow_ups": [
-    "Core and App must still consume this API through their own Work Items before any product milestone closeout.",
-    "PR #226 does not change the HARBOR-219 product/runtime spec; it only retires the current pointer after closeout."
-  ],
-  "semantic_review_disposition": {
-    "status": "passed",
-    "reason": "The spec is constrained to a local Harbor Runtime HTTP adapter over existing runtime capabilities, with readiness, provider, identity, session, snapshot, and refs-only evidence endpoints."
-  },
-  "implementation_review_disposition": {
-    "status": "passed",
-    "reason": "The implementation contract excludes hosted browser, real account/profile actions, production page automation, raw credentials, raw browser material, write actions, Core/Lode/App changes, merge, and issue closeout."
+  "follow_ups": [],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-219.md",
+    "recovery_entry": ".loom/progress/HARBOR-219.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "budget_risk": {
+      "schema_version": "loom-execution-budget-risk/v1",
+      "status": "not_applicable",
+      "enforcement": "advisory",
+      "highest_risk": "none",
+      "risk_dimensions": [],
+      "summary": "execution budget is not_applicable; budget risk remains advisory and non-blocking",
+      "budget_summary": "execution budget is not collected for this invocation.",
+      "adapter_evidence_locator": "",
+      "provenance": {
+        "source": "github_host"
+      }
+    },
+    "engine_adapter": null,
+    "engine_evidence": null,
+    "normalized_findings": null,
+    "suite_validation": "suite validate",
+    "suite_validator": "loom",
+    "suite_validator_mode": "global-cli",
+    "suite_spec": ".loom/specs/HARBOR-219/spec.md",
+    "suite_plan": ".loom/specs/HARBOR-219/plan.md",
+    "suite_evidence_map": ".loom/specs/HARBOR-219/evidence-map.md",
+    "suite_consistency_analysis": ".loom/specs/HARBOR-219/consistency-analysis.md",
+    "suite_task_carriers": [
+      ".loom/specs/HARBOR-219/task-carrier.md"
+    ],
+    "suite_consumed_contracts": [
+      "docs/methodology/harness/full-spec-suite-cli-surface.md",
+      "docs/methodology/templates/spec-suite.md"
+    ]
   }
 }
