@@ -4,8 +4,8 @@
 
 - Item ID: HARBOR-219
 - Goal: Provide a local Harbor Runtime HTTP API readiness entry point that App and Core can consume before real browser/session work.
-- Scope: Covers Harbor #219/#220/#221/#222/#223 as one thin Runtime API adapter batch under parent Harbor #218.
-- Execution Path: work/harbor-219-runtime-api-readiness
+- Scope: Covers Harbor #219/#220/#221/#222/#223 as one thin Runtime API adapter batch under parent Harbor #218, with ownership constrained to Harbor Runtime API health/readiness files and HARBOR-219 carriers.
+- Execution Path: work/harbor-219-health-contract
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-219.md
 - Review Entry: .loom/reviews/HARBOR-219.json
@@ -29,6 +29,11 @@
 - No real account, daily browser profile, Cookie, token, production page action, submit, publish, message send, risk-control bypass, hosted browser, marketplace, or bulk collection.
 - Runtime API returns status/facts/refs only and does not expose raw CDP endpoints, raw screenshots, profile storage, credential material, cookies, tokens, DOM, HAR, or network bodies.
 
+## Ownership Constraints
+
+- Writes are limited to Harbor Runtime API health/readiness adapter files, focused tests, and HARBOR-219 item-specific Loom carriers, including the active status pointer and current-head review record needed for merge-ready consumption.
+- This worktree does not modify App, Core, Lode, closeout records, real browser profile data, cookies, tokens, raw DOM, raw HAR, network response bodies, or production page evidence.
+
 ## Associated Artifacts
 
 - packages/runtime-api/src/server.ts
@@ -36,4 +41,7 @@
 - packages/runtime-api/src/runtime-server.ts
 - packages/runtime-api/src/index.ts
 - package.json
+- .loom/specs/HARBOR-219/build-evidence.json
 - .loom/specs/HARBOR-219/**
+- .loom/status/current.md
+- .loom/reviews/HARBOR-219.json

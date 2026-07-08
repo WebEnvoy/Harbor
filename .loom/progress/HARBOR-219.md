@@ -3,13 +3,13 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-219
-- Current Checkpoint: closed_out
-- Current Stop: HARBOR-219 closed out through PR #224/#225, and PR #226 retires the stale current pointer to no_active_item so the next Work Item can be admitted cleanly.
-- Next Step: Merge PR #226, then start the HARBOR-204 correction batch from idle.
-- Blockers: None recorded.
-- Latest Validation Summary: `git diff --check`, `jq empty .loom/bootstrap/init-result.json`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom pr metadata-readback 226 --target . --json`, `loom pr gate 226 --target . --json`, `loom pr metadata-readback 226 --target . --surface closeout --json`, and `loom pr gate 226 --target . --surface closeout --json` passed locally on 2026-07-08 UTC for PR #226 head 563b54adf45634381efe9e158b643844f6a5586c.
-- Recovery Boundary: Harbor Runtime API endpoint plumbing only; no real accounts, production pages, profile import, App/Core/Lode changes, merge, or issue closeout.
-- Current Lane: post-merge-closeout-run
+- Current Checkpoint: merge
+- Current Stop: Current-head review and PR metadata are recorded; ready to run PR gate and merge-ready for Harbor #219 compatibility PR.
+- Next Step: Run PR gate and merge-ready, then merge Harbor #231 before Core/App E2E consumption.
+- Blockers: None
+- Latest Validation Summary: 2026-07-08T17:21Z UTC main-controller validation passed: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime:local`; `git diff --check`; `loom fact-chain --target . --json`; `loom build --target . --item HARBOR-219 --build-evidence .loom/specs/HARBOR-219/build-evidence.json --json`. Harbor smoke used local/dedicated browser facts and `about:blank`; it did not use real accounts, Cookies, production pages, submit/publish/send, or external visible actions. Deterministic review-readiness evidence was run and classified as repo-local tool surface absent, not product failure: `tools/skills_surface.py check` exit 127; `tools/loom_check.py --profile source --source-surface contract-only` exit 127; `tools/check_release_surface.py` exit 127; `tools/version_surface_check.py` exit 127; `tools/check_npm_package.py` exit 127.
+- Recovery Boundary: Revert branch `work/harbor-219-health-contract`; no App/Core/Lode repository changes, real account/profile/Cookie/production page action, submit, publish, send, hosted browser, marketplace, bulk collection, or risk-bypass claim occurred.
+- Current Lane: Harbor runtime API health/readiness compatibility for App #265.
 
 ## Execution Ledger
 
@@ -20,12 +20,10 @@
 - Handoff Notes Locator: .loom/specs/HARBOR-219/task-carrier.md
 - Evidence Freshness: current
 
-## Terminal Closeout Metadata
+## Runtime Evidence
 
-- Terminal State: closed_out
-- Issue: 219
-- PR: 224
-- Merge Commit: 89ecf283f1a98779ad806a791d7b88a89b9ed2e0
-- Target Branch: main
-- Closed At: 2026-07-08T07:59:31Z
-- Evidence Locator: https://github.com/WebEnvoy/Harbor/issues/219;https://github.com/WebEnvoy/Harbor/pull/224
+- Run Entry: .loom/specs/HARBOR-219/build-evidence.json
+- Logs Entry: .loom/progress/HARBOR-219.md
+- Diagnostics Entry: .loom/specs/HARBOR-219/consistency-analysis.md
+- Verification Entry: loom verify --target . --json
+- Lane Entry: HARBOR-219

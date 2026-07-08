@@ -63,29 +63,8 @@ async function route(runtime: HarborRuntime, request: IncomingMessage, response:
   const url = new URL(request.url ?? "/", "http://harbor.local");
   const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
 
-  if (method === "GET" && url.pathname === "/readiness") {
-    writeJson(response, 200, {
-      schema_version: HARBOR_RUNTIME_API_READINESS_SCHEMA,
-      status: "ready",
-      service: "harbor-runtime-api",
-      generated_at: new Date().toISOString(),
-      endpoints: [
-        "/readiness",
-        "/runtime/browser-providers",
-        "/runtime/identity-environments",
-        "/runtime/identity-environments/{identity_environment_ref}",
-        "/runtime/identity-environment-sessions",
-        "/runtime/sessions/{runtime_session_ref}",
-        "/runtime/evidence/{evidence_ref}"
-      ],
-      safety_boundary: {
-        raw_credentials: "not_exposed",
-        raw_profile_storage: "not_exposed",
-        raw_cdp_endpoint: "not_exposed",
-        hosted_browser: "not_provided",
-        external_write_actions: "not_performed"
-      }
-    });
+  if (method === "GET" && ["/health", "/ready", "/readiness", "/runtime/health"].includes(url.pathname)) {
+    writeJson(response, 200, readinessBody());
     return;
   }
 
@@ -138,6 +117,34 @@ async function route(runtime: HarborRuntime, request: IncomingMessage, response:
   }
 
   writeJson(response, 404, { error: "not_found", path: url.pathname });
+}
+
+function readinessBody(): object {
+  return {
+    schema_version: HARBOR_RUNTIME_API_READINESS_SCHEMA,
+    status: "ready",
+    service: "harbor-runtime-api",
+    generated_at: new Date().toISOString(),
+    endpoints: [
+      "/health",
+      "/ready",
+      "/readiness",
+      "/runtime/health",
+      "/runtime/browser-providers",
+      "/runtime/identity-environments",
+      "/runtime/identity-environments/{identity_environment_ref}",
+      "/runtime/identity-environment-sessions",
+      "/runtime/sessions/{runtime_session_ref}",
+      "/runtime/evidence/{evidence_ref}"
+    ],
+    safety_boundary: {
+      raw_credentials: "not_exposed",
+      raw_profile_storage: "not_exposed",
+      raw_cdp_endpoint: "not_exposed",
+      hosted_browser: "not_provided",
+      external_write_actions: "not_performed"
+    }
+  };
 }
 
 async function routeIdentityEnvironment(

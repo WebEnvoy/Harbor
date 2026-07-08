@@ -10,9 +10,11 @@ test("serves readiness and provider facts as JSON", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
-    const readiness = await getJson(`${running.url}/readiness`);
-    assert.equal(readiness.status, "ready");
-    assert.equal(readiness.safety_boundary.raw_credentials, "not_exposed");
+    for (const path of ["/health", "/ready", "/readiness", "/runtime/health"]) {
+      const readiness = await getJson(`${running.url}${path}`);
+      assert.equal(readiness.status, "ready");
+      assert.equal(readiness.safety_boundary.raw_credentials, "not_exposed");
+    }
 
     const providers = await getJson(`${running.url}/runtime/browser-providers`);
     assert.equal(providers.schema_version, "harbor-browser-provider-status/v0");
