@@ -40,3 +40,5 @@
 - .loom/specs/HARBOR-204/evidence-map.md
 - .loom/specs/HARBOR-204/task-carrier.md
 - .loom/specs/HARBOR-204/build-evidence.json
+- .loom/reviews/HARBOR-204.spec.json
+- .loom/reviews/HARBOR-204.json
