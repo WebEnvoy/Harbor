@@ -688,6 +688,51 @@ test("captures live page screenshot refs and artifact facts without raw screensh
   assert.equal(publicJson.includes("token"), false);
 });
 
+test("captures live page refs without screenshot evidence when screenshot capture fails", async () => {
+  const fixtureLauncher = createFixtureLauncher("ready");
+  const runtime = new HarborRuntime(async (input) => {
+    const launch = await fixtureLauncher(input);
+    if (launch.status !== "ready") return launch;
+    return {
+      ...launch,
+      captureScreenshot: async () => ({
+        code: "cdp_unavailable" as const,
+        message: "Fixture screenshot capture failed.",
+        retryable: true
+      })
+    };
+  });
+  const session = await runtime.openIdentityEnvironmentSession({
+    identity_environment: {
+      site: {
+        site_id: "xiaohongshu",
+        origin: "https://www.xiaohongshu.com",
+        display_name: "小红书"
+      },
+      login_state: "logged_in",
+      storage_state: "present"
+    },
+    url: DEFAULT_IDENTITY_SITE_URLS.xiaohongshu,
+    control_owner: "agent"
+  });
+  assert.equal("status" in session, false);
+  if ("status" in session) throw new Error("identity environment session should open");
+
+  const capture = await runtime.captureLiveSnapshot(session.runtime_session_ref, {
+    elements: [{ label: "Default page", role: "document" }]
+  });
+  assert.equal(capture.status, "captured");
+  if (capture.status !== "captured") throw new Error("live capture should still be available");
+  assert.equal(capture.core_scene_ref.screenshot_ref, undefined);
+  assert.match(capture.core_scene_ref.source_trace_ref, /^source_trace_/);
+  assert.match(capture.core_scene_ref.page_ref, /^page_/);
+  assert.match(capture.core_scene_ref.frame_ref, /^frame_/);
+  assert.match(capture.refmap_ref ?? "", /^refmap_/);
+  assert.equal(capture.evidence_refs.length, 3);
+  assert.equal(capture.evidence_refs.map((ref) => runtime.getEvidence(ref)).some((record) => !("status" in record) && record.evidence_type === "screenshot"), false);
+  assert.equal(capture.evidence_refs.map((ref) => runtime.getEvidence(ref)).some((record) => !("status" in record) && record.evidence_type === "source_trace"), true);
+});
+
 test("returns structured unavailable states for denied, missing, and stale refs", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const session = await runtime.createSession();
