@@ -3,43 +3,58 @@
   "item_id": "HARBOR-219",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Retire carrier review accepts PR #226 current-pointer-only updates for HARBOR-219; this review covers .loom/bootstrap/init-result.json and .loom/status/current.md only and does not replace the implementation review evidence for PR #224 or closeout evidence for PR #225.",
+  "summary": "Code review allows HARBOR-219 at current head: Harbor runtime API exposes the same local readiness contract through /health, /ready, /readiness, and /runtime/health for App/Core admission compatibility. Scope is limited to readiness/provider contract compatibility and Loom carriers; it does not claim App packaged E2E, real site execution, account/profile/Cookie access, submit/publish/send, hosted browser, marketplace, batch collection, or risk-control bypass.",
   "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
-  "authored_at": "2026-07-08T11:10:00Z",
-  "reviewed_head": "563b54adf45634381efe9e158b643844f6a5586c",
-  "reviewed_validation_summary": "`git diff --check`, `jq empty .loom/bootstrap/init-result.json`, `loom fact-chain --target . --json`, `loom verify --target . --json`, `loom pr metadata-readback 226 --target . --json`, `loom pr gate 226 --target . --json`, `loom pr metadata-readback 226 --target . --surface closeout --json`, and `loom pr gate 226 --target . --surface closeout --json` passed locally on 2026-07-08 UTC for PR #226 head 563b54adf45634381efe9e158b643844f6a5586c.",
-  "reviewed_validation_summary_hash": "b831f149a0831d7582f4195ffa6a5acc864c9032eb2dc25f53641ac0b9ac2cad",
-  "validation_summary_source": "local PR #226 retire validation",
-  "validation_summary_locator": ".loom/status/current.md",
+  "authored_at": "2026-07-08T17:43:35Z",
+  "reviewed_head": "9fd4056cc0e6566655cac9cf9bb134f8b2f3eff2",
+  "reviewed_validation_summary": "2026-07-08T17:21Z UTC main-controller validation passed: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime:local`; `git diff --check`; `loom fact-chain --target . --json`; `loom build --target . --item HARBOR-219 --build-evidence .loom/specs/HARBOR-219/build-evidence.json --json`. Harbor smoke used local/dedicated browser facts and `about:blank`; it did not use real accounts, Cookies, production pages, submit/publish/send, or external visible actions. Deterministic review-readiness evidence was run and classified as repo-local tool surface absent, not product failure: `tools/skills_surface.py check` exit 127; `tools/loom_check.py --profile source --source-surface contract-only` exit 127; `tools/check_release_surface.py` exit 127; `tools/version_surface_check.py` exit 127; `tools/check_npm_package.py` exit 127.",
+  "reviewed_validation_summary_hash": "7220392487344dbcb7eb6046fd425a3b0dad2c15f7acd3daa9452b93b879f6e0",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-219.md",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
-  "follow_ups": [
-    "Implementation PR #224 remains the product/runtime code evidence; PR #225 remains the post-merge closeout carrier evidence; PR #226 only retires the current pointer to idle.",
-    "No real browser profile, account, production page, submit, publish, send, hosted browser, marketplace, batch collection, or risk-control bypass action was performed."
-  ],
+  "follow_ups": [],
   "consumed_inputs": {
     "work_item": ".loom/work-items/HARBOR-219.md",
     "recovery_entry": ".loom/progress/HARBOR-219.md",
     "status_surface": ".loom/status/current.md",
-    "implementation_pr": "https://github.com/WebEnvoy/Harbor/pull/224",
-    "closeout_pr": "https://github.com/WebEnvoy/Harbor/pull/225",
-    "retire_pr": "https://github.com/WebEnvoy/Harbor/pull/226",
-    "carrier_only_paths": [
-      ".loom/bootstrap/init-result.json",
-      ".loom/status/current.md"
+    "build_checkpoint": "pass",
+    "budget_risk": {
+      "schema_version": "loom-execution-budget-risk/v1",
+      "status": "not_applicable",
+      "enforcement": "advisory",
+      "highest_risk": "none",
+      "risk_dimensions": [],
+      "summary": "execution budget is not_applicable; budget risk remains advisory and non-blocking",
+      "budget_summary": "execution budget is not collected for this invocation.",
+      "adapter_evidence_locator": "",
+      "provenance": {
+        "source": "github_host"
+      }
+    },
+    "engine_adapter": null,
+    "engine_evidence": null,
+    "normalized_findings": null,
+    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-health-contract --item HARBOR-219 --json",
+    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-health-contract --item HARBOR-219 --json",
+    "suite_evidence_map": ".loom/specs/HARBOR-219/evidence-map.md",
+    "suite_consistency_analysis": null,
+    "suite_task_carriers": [
+      ".loom/specs/HARBOR-219/task-carrier.md"
+    ],
+    "suite_evidence_consumed_contracts": [
+      "docs/methodology/harness/full-spec-suite-cli-surface.md",
+      "docs/methodology/templates/evidence-map.md"
+    ],
+    "suite_carrier_consumed_contracts": [
+      "docs/methodology/harness/task-carrier-contract.md",
+      "docs/methodology/templates/execution-breakdown.md",
+      "docs/methodology/harness/full-spec-suite-cli-surface.md"
     ]
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "This retire carrier-only PR returns the fact chain to no_active_item after HARBOR-219 closeout; it changes no product/runtime code and does not approve or replace PR #224 implementation behavior."
-  },
-  "implementation_review_disposition": {
-    "status": "not_applicable",
-    "reason": "PR #226 is a current-pointer retire PR. Product/runtime implementation behavior was delivered and reviewed in PR #224."
-  },
-  "carrier_only_closeout_review": {
-    "status": "passed",
-    "reason": "Authored retire review approved only current-pointer idle metadata consumption; it does not approve product implementation behavior."
+    "reason": "Authored implementation review approved the current head for merge checkpoint consumption."
   }
 }

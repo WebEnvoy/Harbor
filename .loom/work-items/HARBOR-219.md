@@ -31,8 +31,8 @@
 
 ## Ownership Constraints
 
-- Writes are limited to Harbor Runtime API health/readiness adapter files, focused tests, and HARBOR-219 item-specific carrier.
-- This worktree does not modify App, Core, Lode, `.loom/status/current.md`, PR body, closeout records, real browser profile data, cookies, tokens, raw DOM, raw HAR, network response bodies, or production page evidence.
+- Writes are limited to Harbor Runtime API health/readiness adapter files, focused tests, and HARBOR-219 item-specific Loom carriers, including the active status pointer and current-head review record needed for merge-ready consumption.
+- This worktree does not modify App, Core, Lode, closeout records, real browser profile data, cookies, tokens, raw DOM, raw HAR, network response bodies, or production page evidence.
 
 ## Associated Artifacts
 
@@ -43,3 +43,5 @@
 - package.json
 - .loom/specs/HARBOR-219/build-evidence.json
 - .loom/specs/HARBOR-219/**
+- .loom/status/current.md
+- .loom/reviews/HARBOR-219.json
