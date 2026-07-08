@@ -85,7 +85,7 @@
       "GitHub issue closeout before merge",
       "merge"
     ],
-    "shared_carrier_policy": ".loom/status/current.md remains no_active_item because this is an item-specific carrier PR."
+    "shared_carrier_policy": ".loom/status/current.md is serially controlled by the main controller for HARBOR-212 gate consumption; subagents and worker lanes do not edit it, and it must be retired after post-merge closeout."
   },
   "delegations": [
     {

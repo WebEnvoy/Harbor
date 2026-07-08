@@ -4,7 +4,8 @@
 
 - Main controller owns `.loom/work-items/HARBOR-212.md`, `.loom/progress/HARBOR-212.md`, `.loom/specs/HARBOR-212/**`, PR metadata, GitHub closeout, review, merge, and issue state.
 - Worker may edit only `packages/runtime-api/src/index.ts` and `packages/runtime-api/src/index.test.ts`.
-- No lane may edit shared `.loom/status/current.md` for this PR.
+- Subagents and worker lanes may not edit shared `.loom/status/current.md`.
+- The main controller may serially activate and later retire `.loom/status/current.md` for HARBOR-212 gate consumption.
 
 ## Forbidden Targets
 
