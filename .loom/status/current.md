@@ -6,7 +6,7 @@
 - Goal: Add Harbor Runtime API projections for site-level resource facts and write-precheck facts so Core can satisfy Lode Xiaohongshu/BOSS resource requirements without receiving raw browser material.
 - Scope: Covers Harbor #234 under parent Harbor #218. Ownership is limited to Harbor runtime API facts projection code, focused tests, and HARBOR-234 item-specific Loom carriers. The implementation may expose session-scoped facts endpoints and write-precheck facts endpoints that return public/redacted status, refs, failure classes, and guard state only.
 - Execution Path: work/harbor-234-site-runtime-facts
-- Workspace Entry: /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-234-site-runtime-facts
+- Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-234.md
 - Review Entry: .loom/reviews/HARBOR-234.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-234 --json; loom suite carrier validate --target . --item HARBOR-234 --json
