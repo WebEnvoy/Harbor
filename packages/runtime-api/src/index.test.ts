@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,7 +10,10 @@ import {
   DEFAULT_IDENTITY_SITE_URLS,
   detectBrowserProviders,
   diagnoseBrowserProviderFailure,
-  HarborRuntime
+  HarborRuntime,
+  launchLocalDedicatedProvider,
+  type LocalProviderLauncher,
+  type LocalProviderLaunchInput
 } from "./index.js";
 
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -25,6 +29,96 @@ function providerFixture(paths: Record<string, { executable?: boolean; text?: st
     is_executable: (path: string) => paths[path]?.executable ?? false,
     read_text: (path: string) => paths[path]?.text ?? null
   };
+}
+
+function capturingLauncher(launches: LocalProviderLaunchInput[]): LocalProviderLauncher {
+  return async (input) => {
+    launches.push({ ...input });
+    return {
+      status: "ready",
+      cdp_ref: "cdp_test",
+      viewer_entry: input.headless
+        ? {
+            availability: "unsupported",
+            access_mode: "none",
+            transport: "not_applicable",
+            input_capabilities: [],
+            unavailable_reason: "unsupported"
+          }
+        : {
+            availability: "available",
+            access_mode: "interactive",
+            transport: "local_window",
+            input_capabilities: ["keyboard_mouse"]
+          },
+      page: {
+        current_url: input.url,
+        title: "Captured launcher page",
+        status: "ready",
+        facts: [{ key: "page.status", source: "observed", value: "ready" }]
+      },
+      facts: [{ key: "profile.storage_ref.received", source: "configured", value: input.profile_storage_ref ? "present" : "missing" }],
+      openUrl: async (url) => ({
+        current_url: url,
+        title: "Captured launcher page",
+        status: "ready",
+        facts: [{ key: "page.status", source: "observed", value: "ready" }]
+      }),
+      captureScreenshot: async () => ({
+        screenshot_ref: "screenshot_test",
+        mime_type: "image/png",
+        byte_length: 1,
+        sha256: "00",
+        captured_at: new Date().toISOString(),
+        facts: []
+      }),
+      close: async () => {}
+    };
+  };
+}
+
+function writeFakeBrowserExecutable(dir: string): string {
+  const browserPath = join(dir, "fake-browser.mjs");
+  writeFileSync(browserPath, `#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { join } from "node:path";
+
+const userDataArg = process.argv.find((arg) => arg.startsWith("--user-data-dir="));
+const profileDir = userDataArg?.slice("--user-data-dir=".length);
+const requestedUrl = process.argv.findLast((arg) => !arg.startsWith("--")) ?? "about:blank";
+if (!profileDir) process.exit(2);
+mkdirSync(profileDir, { recursive: true });
+if (process.env.HARBOR_FAKE_BROWSER_MARKER) writeFileSync(process.env.HARBOR_FAKE_BROWSER_MARKER, profileDir);
+const server = createServer((request, response) => {
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  response.setHeader("content-type", "application/json");
+  if (url.pathname === "/json/version") {
+    response.end(JSON.stringify({ Browser: "FakeBrowser/1.0", "Protocol-Version": "1.3" }));
+    return;
+  }
+  if (url.pathname === "/json/list") {
+    response.end(JSON.stringify([{ type: "page", url: requestedUrl, title: "Fake page" }]));
+    return;
+  }
+  if (url.pathname === "/json/new") {
+    response.end(JSON.stringify({ type: "page", url: decodeURIComponent(url.search.slice(1)), title: "Fake page" }));
+    return;
+  }
+  response.statusCode = 404;
+  response.end(JSON.stringify({ error: "not_found" }));
+});
+server.listen(0, "127.0.0.1", () => {
+  const address = server.address();
+  if (!address || typeof address === "string") process.exit(3);
+  writeFileSync(join(profileDir, "DevToolsActivePort"), String(address.port) + "\\n/devtools/browser/fake\\n");
+});
+process.on("SIGTERM", () => server.close(() => process.exit(0)));
+process.on("SIGINT", () => server.close(() => process.exit(0)));
+setInterval(() => {}, 10000);
+`);
+  chmodSync(browserPath, 0o700);
+  return browserPath;
 }
 
 test("creates, reads, and closes a runtime session", async () => {
@@ -177,6 +271,7 @@ test("returns local identity environment facts without protected material", () =
   assert.equal(facts.login_state.manual_authentication_state, "required");
   assert.deepEqual(facts.login_state.human_verification, ["qr_scan", "two_factor", "captcha", "login_expired"]);
   assert.equal(facts.browser_storage.cookies_session_state, "present");
+  assert.equal(facts.browser_storage.profile_storage_ref.startsWith("profile_storage_ref_"), true);
   assert.equal(facts.browser_storage.cleanup_rule, "delete_profile_storage_and_refs");
   assert.equal(facts.environment.proxy.state, "configured");
   assert.equal(facts.environment.region, "JP");
@@ -202,6 +297,7 @@ test("returns local identity environment facts without protected material", () =
   assert.equal(publicJson.includes("session-token-value"), false);
   assert.equal(publicJson.includes("cookie-value"), false);
   assert.equal(publicJson.includes("storage-value"), false);
+  assert.equal(publicJson.includes("profile-storage_xhs-alice"), false);
   assert.equal(publicJson.includes("proxy-password"), false);
 });
 
@@ -313,7 +409,17 @@ test("manages local xhs and boss identity environments with redacted public outp
 
     const publicJson = JSON.stringify(runtime.listLocalIdentityEnvironments());
     const persistedJson = readFileSync(persistence_path, "utf8");
-    for (const material of ["plain-secret-value", "cookie-value", "session-token-value", "storage-value", "keychain://harbor/xhs-managed"]) {
+    for (const material of [
+      "plain-secret-value",
+      "cookie-value",
+      "session-token-value",
+      "storage-value",
+      "keychain://harbor/xhs-managed",
+      "profile-storage_xhs-managed",
+      "profile-storage_boss-managed",
+      "browser-storage_xhs-managed",
+      "browser-storage_boss-managed"
+    ]) {
       assert.equal(publicJson.includes(material), false);
     }
     for (const material of ["plain-secret-value", "cookie-value", "session-token-value", "storage-value"]) {
@@ -322,6 +428,126 @@ test("manages local xhs and boss identity environments with redacted public outp
     assert.equal(publicJson.includes("cookie_value"), true);
     assert.equal(publicJson.includes("raw_profile_data"), true);
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("opens managed user sessions with persistent profile storage refs and visible viewer facts", async () => {
+  const launches: LocalProviderLaunchInput[] = [];
+  const runtime = new HarborRuntime(capturingLauncher(launches));
+  runtime.createLocalIdentityEnvironment({
+    ...providerFixture({ [chromePath]: { executable: true } }),
+    identity_environment_ref: "identity-env_xhs-persistent",
+    execution_identity_ref: "execution-identity_xhs-persistent",
+    profile_ref: "profile_xhs-persistent",
+    profile_storage_ref: "profile-storage_xhs-persistent",
+    site: {
+      site_id: "xiaohongshu",
+      origin: "https://www.xiaohongshu.com",
+      display_name: "小红书",
+      account_ref: "account_xhs-persistent"
+    },
+    login_state: "logged_in",
+    storage_state: "present"
+  });
+
+  const session = await runtime.openManagedIdentityEnvironmentSession({
+    identity_environment_ref: "identity-env_xhs-persistent",
+    url: "https://www.xiaohongshu.com/explore",
+    control_owner: "user"
+  });
+
+  assert.equal("status" in session, false);
+  if ("status" in session) throw new Error("managed user session should open");
+  assert.equal(launches.length, 1);
+  assert.equal(launches[0]?.profile_storage_ref, "profile-storage_xhs-persistent");
+  assert.equal(launches[0]?.headless, false);
+  assert.equal(session.identity_environment_ref, "identity-env_xhs-persistent");
+  assert.equal(session.profile_ref, "profile_xhs-persistent");
+  assert.equal(session.control_owner, "user");
+  assert.equal(session.availability.viewer, "available");
+  assert.equal(session.viewer_entry?.transport, "local_window");
+
+  const publicJson = JSON.stringify(session);
+  assert.equal(publicJson.includes("profile-storage_xhs-persistent"), false);
+  assert.equal(publicJson.includes("raw_profile_data"), false);
+  assert.equal(publicJson.includes("webSocketDebuggerUrl"), false);
+});
+
+test("local provider maps profile storage refs to stable private directories without exposing the ref", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "harbor-profile-storage-root-"));
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = dir;
+  try {
+    const profileStorageRef = "profile-storage_local-provider-test";
+    const storageId = createHash("sha256").update(profileStorageRef).digest("hex").slice(0, 32);
+    const storagePath = join(dir, storageId);
+    mkdirSync(storagePath, { recursive: true, mode: 0o777 });
+    chmodSync(storagePath, 0o777);
+    const result = await launchLocalDedicatedProvider({
+      browser_path: process.execPath,
+      headless: true,
+      timeout_ms: 25,
+      url: "about:blank",
+      profile_ref: "profile_local-provider-test",
+      profile_storage_ref: profileStorageRef,
+      provider_ref: "provider_local-provider-test"
+    });
+    assert.equal(existsSync(storagePath), true);
+    assert.equal(statSync(storagePath).mode & 0o777, 0o700);
+    assert.equal(JSON.stringify(result).includes(profileStorageRef), false);
+    assert.equal(result.facts.some((fact) => fact.key === "profile.storage_scope" && fact.value === "persistent_ref"), true);
+  } finally {
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("local provider preserves persistent profile dirs and removes ephemeral dirs after successful close", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "harbor-fake-browser-"));
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  const previousMarker = process.env.HARBOR_FAKE_BROWSER_MARKER;
+  const browserPath = writeFakeBrowserExecutable(dir);
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
+  try {
+    const persistentMarker = join(dir, "persistent-profile.txt");
+    process.env.HARBOR_FAKE_BROWSER_MARKER = persistentMarker;
+    const persistent = await launchLocalDedicatedProvider({
+      browser_path: browserPath,
+      headless: true,
+      timeout_ms: 1000,
+      url: "about:blank",
+      profile_ref: "profile_persistent-close-test",
+      profile_storage_ref: "profile-storage_persistent-close-test",
+      provider_ref: "provider_fake"
+    });
+    assert.equal(persistent.status, "ready");
+    if (persistent.status !== "ready") throw new Error("persistent fake browser should be ready");
+    const persistentDir = readFileSync(persistentMarker, "utf8");
+    await persistent.close();
+    assert.equal(existsSync(persistentDir), true);
+
+    const ephemeralMarker = join(dir, "ephemeral-profile.txt");
+    process.env.HARBOR_FAKE_BROWSER_MARKER = ephemeralMarker;
+    const ephemeral = await launchLocalDedicatedProvider({
+      browser_path: browserPath,
+      headless: true,
+      timeout_ms: 1000,
+      url: "about:blank",
+      profile_ref: "profile_ephemeral-close-test",
+      provider_ref: "provider_fake"
+    });
+    assert.equal(ephemeral.status, "ready");
+    if (ephemeral.status !== "ready") throw new Error("ephemeral fake browser should be ready");
+    const ephemeralDir = readFileSync(ephemeralMarker, "utf8");
+    await ephemeral.close();
+    assert.equal(existsSync(ephemeralDir), false);
+  } finally {
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    if (previousMarker === undefined) delete process.env.HARBOR_FAKE_BROWSER_MARKER;
+    else process.env.HARBOR_FAKE_BROWSER_MARKER = previousMarker;
     rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   bindIdentityEnvironmentDefaultProvider,
@@ -31,10 +31,10 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     const diagnostic = providerBinding?.diagnostics[0] ?? diagnoseBrowserProviderFailure({ provider_id: "cloakbrowser", failure_class: "not_installed" });
     return unavailable("provider_unavailable", diagnostic.app_summary, providerBindingFacts(providerBinding));
   }
-  const profileDir = await mkdtemp(join(tmpdir(), "harbor-profile-"));
+  const profileStorage = await prepareProfileStorage(input.profile_storage_ref);
   const args = [
     "--remote-debugging-port=0",
-    `--user-data-dir=${profileDir}`,
+    `--user-data-dir=${profileStorage.profileDir}`,
     "--no-default-browser-check",
     "--no-first-run",
     ...(input.headless ? ["--headless=new"] : []),
@@ -42,7 +42,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
   ];
   const child = spawn(browserPath, args, { stdio: "ignore" });
   try {
-    const port = await waitForDevtoolsPort(profileDir, input.timeout_ms);
+    const port = await waitForDevtoolsPort(profileStorage.profileDir, input.timeout_ms);
     const version = await fetchVersion(port);
     const page = await readPageFacts(port, input.url);
     let currentUrl = page.current_url ?? input.url;
@@ -54,6 +54,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
       page,
       facts: [
         ...providerBindingFacts(providerBinding),
+        ...profileStorage.facts,
         { key: "browser.launch", source: "observed", value: "ready", evidence_ref },
         { key: "cdp.version", source: "validation_evidence", value: `${version.Browser} ${version["Protocol-Version"]}`, evidence_ref },
         ...page.facts
@@ -64,17 +65,17 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         return nextPage;
       },
       captureScreenshot: () => captureProviderScreenshot(port, currentUrl),
-      close: () => closeBrowser(child, profileDir)
+      close: () => closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent)
     };
   } catch (error) {
-    await closeBrowser(child, profileDir);
+    await closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent);
     const diagnostic = diagnoseBrowserProviderFailure({
       provider_id: providerBinding?.selected_provider_id ?? "cloakbrowser",
       failure_class: classifyLaunchFailure(error),
       path: browserPath,
       message: error instanceof Error ? error.message : "Browser launch failed."
     });
-    return unavailable("launch_failed", diagnostic.app_summary, providerBindingFacts(providerBinding));
+    return unavailable("launch_failed", diagnostic.app_summary, [...providerBindingFacts(providerBinding), ...profileStorage.facts]);
   }
 }
 
@@ -161,6 +162,34 @@ function viewerEntry(headless: boolean): Exclude<LocalProviderLaunchResult, { st
     access_mode: "interactive",
     transport: "local_window",
     input_capabilities: ["keyboard_mouse"]
+  };
+}
+
+async function prepareProfileStorage(profileStorageRef: string | undefined): Promise<{
+  profileDir: string;
+  persistent: boolean;
+  facts: RuntimeFact[];
+}> {
+  if (!profileStorageRef) {
+    return {
+      profileDir: await mkdtemp(join(tmpdir(), "harbor-profile-")),
+      persistent: false,
+      facts: [{ key: "profile.storage_scope", source: "configured", value: "ephemeral" }]
+    };
+  }
+
+  const storageRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT || join(homedir(), ".webenvoy", "harbor", "profiles");
+  const storageId = createHash("sha256").update(profileStorageRef).digest("hex").slice(0, 32);
+  const profileDir = join(storageRoot, storageId);
+  await mkdir(profileDir, { recursive: true, mode: 0o700 });
+  await chmod(profileDir, 0o700);
+  return {
+    profileDir,
+    persistent: true,
+    facts: [
+      { key: "profile.storage_scope", source: "configured", value: "persistent_ref" },
+      { key: "profile.storage_ref.bound", source: "configured", value: "redacted_ref" }
+    ]
   };
 }
 
@@ -345,12 +374,12 @@ function unavailablePageFacts(code: RuntimeErrorCode, requested_url: string, cau
   };
 }
 
-async function closeBrowser(child: ChildProcess, profileDir: string): Promise<void> {
+async function closeBrowser(child: ChildProcess, profileDir: string, removeProfileDir: boolean): Promise<void> {
   if (!hasExited(child)) child.kill("SIGTERM");
   await waitForExit(child, 1000);
   if (!hasExited(child)) child.kill("SIGKILL");
   await waitForExit(child, 500);
-  await rm(profileDir, { force: true, maxRetries: 10, recursive: true, retryDelay: 100 });
+  if (removeProfileDir) await rm(profileDir, { force: true, maxRetries: 10, recursive: true, retryDelay: 100 });
 }
 
 async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<void> {

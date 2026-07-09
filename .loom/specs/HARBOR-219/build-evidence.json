@@ -1,74 +1,104 @@
 {
   "schema_version": "loom-build-evidence/v1",
   "item_id": "HARBOR-219",
-  "generated_at": "2026-07-09T13:58:38Z",
-  "branch": "work/harbor-234-runtime-admission-smoke",
-  "pre_commit_head": "305d5dca784bd897fbdca1c4f15026036f0d6e84",
-  "delegations": [],
-  "subagent_notes": [
-    "App lane completed read-only analysis and confirmed Harbor long-running runtime API is a blocker for App runtime supervision.",
-    "Core lane failed with 504 before delivering output; no Core output consumed.",
-    "Lode lane failed with 502 before delivering output; no Lode output consumed."
+  "generated_at": "2026-07-09T18:29:00Z",
+  "branch": "work/harbor-219-persistent-profile-session",
+  "pre_commit_head": "635a64fe24f92b92c28e1136918332a0aad6941c",
+  "delegations": [
+    {
+      "agent": "019f481c-1df4-7c51-81db-1a09ac5616f3",
+      "scope": "read-only Harbor #219 diff and evidence review",
+      "result": "reported stale carriers and raw profile_storage_ref exposure in direct/public identity facts; product finding was remediated before this evidence refresh"
+    }
   ],
   "ownership_constraints": {
     "write_ownership": [
-      "packages/runtime-api/src/runtime-server.ts",
-      "packages/runtime-api/src/server-smoke.ts",
-      "package.json",
-      ".loom/bootstrap/init-result.json",
+      "packages/runtime-api/src/runtime-session-types.ts",
+      "packages/runtime-api/src/runtime-session.ts",
+      "packages/runtime-api/src/local-provider-launcher.ts",
+      "packages/runtime-api/src/identity-environment.ts",
+      "packages/runtime-api/src/identity-environment-manager.ts",
+      "packages/runtime-api/src/index.test.ts",
       ".loom/status/current.md",
       ".loom/work-items/HARBOR-219.md",
       ".loom/progress/HARBOR-219.md",
+      ".loom/reviews/HARBOR-219.json",
+      ".loom/reviews/HARBOR-219.spec.json",
       ".loom/specs/HARBOR-219/**"
     ],
     "forbidden_targets": [
       "App/Core/Lode repositories",
-      "provider launch internals",
+      "site task logic",
+      "real account state",
       "user daily browser profile",
       "raw cookies",
       "raw tokens",
       "raw DOM",
       "raw HAR",
       "network response bodies",
+      "production page evidence",
       "GitHub issue closeout",
       "merge"
     ],
     "shared_carrier_policy": ".loom/status/current.md is intentionally active for HARBOR-219 in this formal worktree so fact-chain, current-head review, and merge-ready can consume the same item. Closeout/retire is out of scope until after merge."
   },
   "ownership_contract": {
-    "task_goal": "Repair HARBOR-219 runtime admission startup/smoke compatibility and keep its Loom carriers aligned with the active worktree.",
+    "task_goal": "Repair HARBOR-219 managed identity session behavior so App/Core can use Harbor owner API refs for persistent local browser profiles without exposing raw profile paths or sensitive browser material.",
     "context_locators": [
       ".loom/status/current.md",
-      ".loom/specs/HARBOR-219/build-evidence.json",
       ".loom/work-items/HARBOR-219.md",
       ".loom/progress/HARBOR-219.md",
+      ".loom/reviews/HARBOR-219.json",
       ".loom/specs/HARBOR-219/**",
-      ".loom/status/current.md",
-      ".loom/reviews/HARBOR-219.json"
+      "packages/runtime-api/src/runtime-session.ts",
+      "packages/runtime-api/src/local-provider-launcher.ts",
+      "packages/runtime-api/src/identity-environment.ts",
+      "packages/runtime-api/src/identity-environment-manager.ts",
+      "packages/runtime-api/src/index.test.ts"
     ],
     "read_scope": [
       "HARBOR-219 Loom carriers",
-      "Loom build and fact-chain command output"
+      "Runtime API managed identity/session code",
+      "Local provider profile storage code",
+      "Identity public projection/redaction code",
+      "Runtime API tests and smoke output"
     ],
     "write_ownership": [
+      "packages/runtime-api/src/runtime-session-types.ts",
+      "packages/runtime-api/src/runtime-session.ts",
+      "packages/runtime-api/src/local-provider-launcher.ts",
+      "packages/runtime-api/src/identity-environment.ts",
+      "packages/runtime-api/src/identity-environment-manager.ts",
+      "packages/runtime-api/src/index.test.ts",
       ".loom/work-items/HARBOR-219.md",
       ".loom/progress/HARBOR-219.md",
+      ".loom/status/current.md",
+      ".loom/reviews/HARBOR-219.json",
+      ".loom/reviews/HARBOR-219.spec.json",
       ".loom/specs/HARBOR-219/**"
     ],
     "non_goals": [
-      "No product code changes outside Harbor Runtime API admission startup/smoke compatibility",
-      "No PR creation, merge, issue closeout, or GitHub issue state mutation",
-      "No real browser, profile, account, or production page action",
-      "No App/Core/Lode changes"
+      "No real browser launch, user profile, account, Cookie, or production page action",
+      "No App/Core/Lode code changes",
+      "No site task logic or runtime runner change",
+      "No PR merge, issue closeout, or live E2E completion claim"
     ],
     "validation_expectation": [
-      "loom build --target . --item HARBOR-219 --build-evidence .loom/specs/HARBOR-219/build-evidence.json --json",
-      "loom fact-chain --target . --json"
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm smoke:runtime:api",
+      "detection-only provider readback",
+      "cross-repo App packaged runtime and readonly smoke using this Harbor worktree",
+      "git diff --check",
+      "loom fact-chain --target . --json",
+      "loom suite carrier/evidence validate --target . --item HARBOR-219 --json"
     ],
-    "output_format": "Subagent report with changed files, command results, git status, and remaining blocker.",
+    "output_format": "PR-ready evidence with changed files, validation commands, boundary statement, git status, and remaining live E2E blocker.",
     "integration_target": [
       ".loom/specs/HARBOR-219/build-evidence.json",
-      ".loom/work-items/HARBOR-219.md"
+      ".loom/progress/HARBOR-219.md",
+      ".loom/reviews/HARBOR-219.json",
+      "PR body"
     ],
     "no_overlap": true
   },
@@ -76,26 +106,27 @@
     "passed": [
       "pnpm typecheck",
       "pnpm test",
-      "pnpm smoke:runtime",
       "pnpm smoke:runtime:api",
-      "HTTP readiness/provider readback",
+      "detection-only provider readback command for detectBrowserProviders()",
+      "WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session npm run smoke:packaged:runtime",
+      "WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session npm run smoke:packaged:readonly",
       "git diff --check",
-      "jq empty .loom/bootstrap/init-result.json .loom/specs/HARBOR-219/build-evidence.json .loom/reviews/HARBOR-219.json",
+      "jq empty .loom/reviews/HARBOR-219.json .loom/reviews/HARBOR-219.spec.json .loom/specs/HARBOR-219/build-evidence.json",
       "loom fact-chain --target . --json",
-      "loom verify --target . --json",
-      "loom suite validate --target . --item HARBOR-219 --json",
       "loom suite carrier validate --target . --item HARBOR-219 --json",
       "loom suite evidence validate --target . --item HARBOR-219 --json"
     ],
+    "known_pre_commit_status": "loom status blocks on pre-commit purity until this scoped diff is committed; no product-scope blocker remains in local contract evidence",
     "to_refresh_after_commit": [
       "head SHA",
-      "suite evidence freshness context",
-      "PR metadata readback"
+      "PR metadata readback",
+      "hosted loom-pr-merge-gate"
     ]
   },
   "runtime_boundary": {
     "provider_detection": "local filesystem/process readiness facts only",
-    "profile": "none opened by HTTP readback",
+    "profile": "fake-browser/captured-launcher/fixture-only during tests; no real profile opened",
+    "public_identity_ref_boundary": "direct/public identity facts redact raw profile_storage_ref; managed session launch uses internal protected material only",
     "forbidden_actions": [
       "login",
       "submit",
@@ -109,38 +140,24 @@
     "raw_debug_endpoint": "not_exposed",
     "raw_screenshot_bytes": "not_exposed"
   },
-  "http_readback": {
-    "readiness": {
-      "schema_version": "harbor-runtime-api-readiness/v0",
-      "status": "ready",
-      "service": "harbor-runtime-api",
-      "raw_credentials": "not_exposed",
-      "hosted_browser": "not_provided",
-      "external_write_actions": "not_performed"
+  "provider_readback": {
+    "cloakbrowser": {
+      "install_status": "missing",
+      "launchability": "not_checked"
     },
-    "providers": [
-      {
-        "provider_id": "cloakbrowser",
-        "install_status": "missing",
-        "launchability": "not_checked",
-        "path": "/Users/claw/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium",
-        "version_status": "unknown"
-      },
-      {
-        "provider_id": "chrome_official",
-        "install_status": "installed",
-        "launchability": "launchable",
-        "path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        "version_status": "known"
-      }
-    ],
+    "chrome_official": {
+      "install_status": "installed",
+      "launchability": "launchable",
+      "version": "149.0.7827.201",
+      "path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    },
     "excluded_providers": [
       "chromium",
       "donut_browser"
     ]
   },
   "remaining_limitations": [
-    "This PR repairs Harbor runtime API startup/smoke admission; it does not complete App packaged runtime supervision, Core real task execution, or Lode registry consumption.",
+    "This PR repairs Harbor local managed identity/profile/session contract; it does not complete App packaged live E2E, Core real task execution, or Lode capability truth.",
     "CloakBrowser is not installed on this workstation; provider detection reports missing rather than launchable.",
     "No real account, browser profile, production page, or external visible action was used."
   ]

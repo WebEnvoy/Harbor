@@ -3,12 +3,12 @@
   "item_id": "HARBOR-219",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Code review allows PR #238 for HARBOR-219 at current scope. The change marks site facts available only when runtime facts identify FixtureBrowser so local packaged App/Core smoke can exercise owner-shaped refs. This is fixture-only contract evidence and does not claim live provider/session/site execution.",
+  "summary": "Code review allows HARBOR-219 at current pre-commit scope. The change passes managed identity profile_storage_ref to the local provider as internal protected material, defaults user-owned sessions to visible local windows, preserves persistent profile dirs while cleaning ephemeral dirs, tightens persistent dir permissions, and redacts raw profile storage refs from direct/public identity facts. This is local contract evidence and does not claim live provider/session/site execution.",
   "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
-  "authored_at": "2026-07-09T17:24:00Z",
-  "reviewed_head": "8efd348d4999a67e9c4c72a9bf53533954644455",
-  "reviewed_validation_summary": "2026-07-09T17:18Z UTC local validation passed for PR #238 branch `work/harbor-218-fixture-site-facts` at head `8efd348d4999a67e9c4c72a9bf53533954644455`: `pnpm install --frozen-lockfile` was required because this worktree had no `node_modules`, then `pnpm test` and `git diff --check` passed. Cross-repo App smoke also passed from the App worktree with `WEBENVOY_CORE_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/WebEnvoy.worktrees/core-244-harbor-site-facts-run WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-218-fixture-site-facts npm run smoke:packaged:readonly`. Scope: Harbor marks site facts available only when runtime facts identify `FixtureBrowser`, so this supports local packaged contract smoke only; no real Xiaohongshu/BOSS account, browser profile, Cookie, production page action, submit, publish, send, hosted browser, marketplace, bulk collection, full account cloud hosting, or risk-control bypass occurred.",
-  "reviewed_validation_summary_hash": "765e2a56b338188c6c679325b8043813bb6f1fb277c626a9049788df70f7dbf1",
+  "authored_at": "2026-07-09T18:29:00Z",
+  "reviewed_head": "635a64fe24f92b92c28e1136918332a0aad6941c",
+  "reviewed_validation_summary": "2026-07-09T18:29Z UTC local validation passed on branch `work/harbor-219-persistent-profile-session` before commit: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime:api`, detection-only provider readback with `node --input-type=module -e \"import('./dist/packages/runtime-api/src/index.js').then(({detectBrowserProviders})=>console.log(JSON.stringify(detectBrowserProviders(),null,2)))\"`, cross-repo App `WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session npm run smoke:packaged:runtime`, cross-repo App `WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session npm run smoke:packaged:readonly`, `git diff --check`, `jq empty` for HARBOR-219 review/build evidence JSON, `loom fact-chain --target . --json`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json`. Evidence boundary: Harbor tests use captured launcher, fixture launcher, or fake browser process only; direct/public identity facts redact raw profile storage refs while managed session launch still receives the internal protected ref; provider detection reports CloakBrowser missing and official Chrome installed/launchable without launching a real browser. No real Xiaohongshu/BOSS account, browser profile, Cookie, production page action, submit, publish, send, hosted browser, marketplace, bulk collection, full account cloud hosting, or risk-control bypass occurred.",
+  "reviewed_validation_summary_hash": "8bf67880f368185b6137bbaf0ab8a46e8a5470ff3f9e4d7fbcc8b3ba7e6abcf9",
   "validation_summary_source": "recovery.latest_validation_summary",
   "validation_summary_locator": ".loom/progress/HARBOR-219.md",
   "fallback_to": null,
@@ -36,8 +36,8 @@
     "engine_adapter": null,
     "engine_evidence": null,
     "normalized_findings": null,
-    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-218-fixture-site-facts --item HARBOR-219 --json",
-    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-218-fixture-site-facts --item HARBOR-219 --json",
+    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session --item HARBOR-219 --json",
+    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session --item HARBOR-219 --json",
     "suite_evidence_map": ".loom/specs/HARBOR-219/evidence-map.md",
     "suite_consistency_analysis": null,
     "suite_task_carriers": [
@@ -55,6 +55,6 @@
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "The current head only adds FixtureBrowser site-fact availability for local packaged contract smoke; no raw credential/profile/evidence material or live site action is introduced."
+    "reason": "Authored implementation review approved the current pre-commit head for PR creation; final merge consumption still requires committed head readback and hosted gate."
   }
 }
