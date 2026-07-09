@@ -3,12 +3,12 @@
   "item_id": "HARBOR-219",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Carrier-only review allows HARBOR-219 current pointer retire after PR #231/#232 merged. This review covers Loom carrier synchronization only and does not claim App/Core packaged E2E or live site execution.",
+  "summary": "Current-head code review allows Harbor #219 runtime API admission smoke PR. The implementation keeps the server source-start path buildable, adds a fixture-only runtime API smoke for readiness/provider/identity/session/evidence/write-precheck refs, and preserves safety boundaries. This review does not claim App/Core packaged E2E or live Xiaohongshu/BOSS execution.",
   "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
-  "authored_at": "2026-07-09T04:06:22Z",
-  "reviewed_head": "057b73fa87c3d16623abfa97f62d97fa01b633d3",
-  "reviewed_validation_summary": "2026-07-09T03:13Z UTC post-merge carrier retire sync: PR #231 head `2cc221fffac82941628b77f9e92e1b7088229818` merged as `ad9e18152149f6e86ce2e1d6fcfc098ad53a3254`; PR #232 head `8bff6a90ba496cdc533e343f337aa66034b598bd` merged as `fc311195d1f5ab0e8dc40d83e79e785e23737633`. Pre-merge validation passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime:local`, and `git diff --check`; the smoke used local provider facts and `about:blank` only. PR #232 additionally verified a refs-only `identity_environment_required` failure with `public_boundary.raw_material=not_exposed`. This carrier retire does not claim App/Core packaged E2E or live site execution.",
-  "reviewed_validation_summary_hash": "ebd369d2adb9a358dc3da6025460de5646aebfde2120970c573b75ffd1998531",
+  "authored_at": "2026-07-09T14:14:46Z",
+  "reviewed_head": "b3f55780efdd632466a8ca5cc02741223b2c15e6",
+  "reviewed_validation_summary": "2026-07-09T14:14Z UTC Harbor #219 current-head review validation passed at head b3f55780efdd632466a8ca5cc02741223b2c15e6. `pnpm typecheck`, `pnpm smoke:runtime:api`, `git diff --check`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json` passed in the formal worktree. Subagent PR-prep validation also passed `jq empty`, `loom fact-chain --target . --item HARBOR-219 --json`, and `loom verify --target . --json`; earlier same-product-head validation passed `pnpm test`, `pnpm smoke:runtime`, and `pnpm smoke:runtime:api`. Runtime API smoke used fixture provider only and reported real_account=not_used, real_browser_profile=not_used, production_page=not_opened, external_write_actions=not_performed.",
+  "reviewed_validation_summary_hash": "66b0309dcabb5d2cd3da9821501d55a13d191ea875f252ad61da0fa8dec3ed9d",
   "validation_summary_source": "recovery.latest_validation_summary",
   "validation_summary_locator": ".loom/progress/HARBOR-219.md",
   "fallback_to": null,
@@ -36,8 +36,8 @@
     "engine_adapter": null,
     "engine_evidence": null,
     "normalized_findings": null,
-    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-session-failures --item HARBOR-219 --json",
-    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-session-failures --item HARBOR-219 --json",
+    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-234-runtime-admission-smoke --item HARBOR-219 --json",
+    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-234-runtime-admission-smoke --item HARBOR-219 --json",
     "suite_evidence_map": ".loom/specs/HARBOR-219/evidence-map.md",
     "suite_consistency_analysis": null,
     "suite_task_carriers": [
@@ -55,6 +55,6 @@
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Authored carrier-only review approved the current pointer retire head for merge checkpoint consumption."
+    "reason": "The current head only adds source-start/runtime API smoke compatibility and fixture-only contract coverage; no raw credential/profile/evidence material or live site action is introduced."
   }
 }
