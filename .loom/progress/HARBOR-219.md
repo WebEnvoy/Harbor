@@ -3,13 +3,13 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-219
-- Current Checkpoint: merge
-- Current Stop: PR #231 and PR #232 merged to `main`, covering HARBOR-219 readiness endpoint compatibility and structured missing identity input failures. Harbor #219 remains open until App/Core packaged consumer E2E proves provider/session/evidence consumption.
-- Next Step: Continue the next Harbor/App/Core consumer E2E batch from `no_active_item`; do not treat #231/#232 as full Harbor #218/#219 closeout.
+- Current Checkpoint: implementation_validated
+- Current Stop: Branch `work/harbor-234-runtime-admission-smoke` implements the HARBOR-219 runtime admission repair and has carrier-only PR-prep validation refreshed for the current worktree. Product code remains at implementation head `305d5dca784bd897fbdca1c4f15026036f0d6e84`; this refresh only updates Loom carrier/progress/spec/status metadata.
+- Next Step: Main controller can create/update a PR for Harbor #219 after reading back the pushed branch head and refreshing current-head review/PR metadata. Do not close Harbor #219 in this worker batch and do not treat fixture smoke as live App/Core E2E evidence.
 - Blockers: None
-- Latest Validation Summary: 2026-07-09T03:13Z UTC post-merge carrier retire sync: PR #231 head `2cc221fffac82941628b77f9e92e1b7088229818` merged as `ad9e18152149f6e86ce2e1d6fcfc098ad53a3254`; PR #232 head `8bff6a90ba496cdc533e343f337aa66034b598bd` merged as `fc311195d1f5ab0e8dc40d83e79e785e23737633`. Pre-merge validation passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime:local`, and `git diff --check`; the smoke used local provider facts and `about:blank` only. PR #232 additionally verified a refs-only `identity_environment_required` failure with `public_boundary.raw_material=not_exposed`. This carrier retire does not claim App/Core packaged E2E or live site execution.
-- Recovery Boundary: Revert this carrier-retire branch; no App/Core/Lode code changes, real account/profile/Cookie/production page action, submit, publish, send, hosted browser, marketplace, bulk collection, or risk-bypass claim occurred.
-- Current Lane: Harbor runtime API health/readiness compatibility for App #265.
+- Latest Validation Summary: 2026-07-09T14:14Z UTC Harbor #219 current-head review validation passed at head b3f55780efdd632466a8ca5cc02741223b2c15e6. `pnpm typecheck`, `pnpm smoke:runtime:api`, `git diff --check`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json` passed in the formal worktree. Subagent PR-prep validation also passed `jq empty`, `loom fact-chain --target . --item HARBOR-219 --json`, and `loom verify --target . --json`; earlier same-product-head validation passed `pnpm test`, `pnpm smoke:runtime`, and `pnpm smoke:runtime:api`. Runtime API smoke used fixture provider only and reported real_account=not_used, real_browser_profile=not_used, production_page=not_opened, external_write_actions=not_performed.
+- Recovery Boundary: Revert this branch or carrier refresh; no App/Core/Lode code changes, real account/profile/Cookie/production page action, submit, publish, send, hosted browser, marketplace, bulk collection, or risk-bypass claim occurred.
+- Current Lane: Harbor runtime API admission smoke for App/Core packaged consumer readiness.
 
 ## Execution Ledger
 

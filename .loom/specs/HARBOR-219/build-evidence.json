@@ -1,9 +1,9 @@
 {
   "schema_version": "loom-build-evidence/v1",
   "item_id": "HARBOR-219",
-  "generated_at": "2026-07-08T17:05:41Z",
-  "branch": "work/harbor-219-health-contract",
-  "pre_commit_head": "4d0e8e69ec947a2395082dcdb789daaa3caabff9",
+  "generated_at": "2026-07-09T13:58:38Z",
+  "branch": "work/harbor-234-runtime-admission-smoke",
+  "pre_commit_head": "305d5dca784bd897fbdca1c4f15026036f0d6e84",
   "delegations": [],
   "subagent_notes": [
     "App lane completed read-only analysis and confirmed Harbor long-running runtime API is a blocker for App runtime supervision.",
@@ -12,10 +12,11 @@
   ],
   "ownership_constraints": {
     "write_ownership": [
-      "packages/runtime-api/src/server.ts",
       "packages/runtime-api/src/runtime-server.ts",
-      "packages/runtime-api/src/server.test.ts",
+      "packages/runtime-api/src/server-smoke.ts",
       "package.json",
+      ".loom/bootstrap/init-result.json",
+      ".loom/status/current.md",
       ".loom/work-items/HARBOR-219.md",
       ".loom/progress/HARBOR-219.md",
       ".loom/specs/HARBOR-219/**"
@@ -35,7 +36,7 @@
     "shared_carrier_policy": ".loom/status/current.md is intentionally active for HARBOR-219 in this formal worktree so fact-chain, current-head review, and merge-ready can consume the same item. Closeout/retire is out of scope until after merge."
   },
   "ownership_contract": {
-    "task_goal": "Repair HARBOR-219 Runtime API readiness compatibility and keep its Loom carriers aligned with the active worktree.",
+    "task_goal": "Repair HARBOR-219 runtime admission startup/smoke compatibility and keep its Loom carriers aligned with the active worktree.",
     "context_locators": [
       ".loom/status/current.md",
       ".loom/specs/HARBOR-219/build-evidence.json",
@@ -55,8 +56,8 @@
       ".loom/specs/HARBOR-219/**"
     ],
     "non_goals": [
-      "No product code changes outside Harbor Runtime API readiness compatibility",
-      "No GitHub operation, commit, push, merge, or closeout",
+      "No product code changes outside Harbor Runtime API admission startup/smoke compatibility",
+      "No PR creation, merge, issue closeout, or GitHub issue state mutation",
       "No real browser, profile, account, or production page action",
       "No App/Core/Lode changes"
     ],
@@ -76,8 +77,10 @@
       "pnpm typecheck",
       "pnpm test",
       "pnpm smoke:runtime",
+      "pnpm smoke:runtime:api",
       "HTTP readiness/provider readback",
       "git diff --check",
+      "jq empty .loom/bootstrap/init-result.json .loom/specs/HARBOR-219/build-evidence.json .loom/reviews/HARBOR-219.json",
       "loom fact-chain --target . --json",
       "loom verify --target . --json",
       "loom suite validate --target . --item HARBOR-219 --json",
@@ -137,7 +140,7 @@
     ]
   },
   "remaining_limitations": [
-    "This PR adds Harbor runtime API endpoint plumbing; it does not complete App packaged runtime supervision, Core real task execution, or Lode registry consumption.",
+    "This PR repairs Harbor runtime API startup/smoke admission; it does not complete App packaged runtime supervision, Core real task execution, or Lode registry consumption.",
     "CloakBrowser is not installed on this workstation; provider detection reports missing rather than launchable.",
     "No real account, browser profile, production page, or external visible action was used."
   ]

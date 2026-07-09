@@ -3,26 +3,24 @@
 ## Static Facts
 
 - Item ID: HARBOR-219
-- Goal: Provide a local Harbor Runtime HTTP API readiness entry point that App and Core can consume before real browser/session work.
-- Scope: Covers Harbor #219/#220/#221/#222/#223 as one thin Runtime API adapter batch under parent Harbor #218, with ownership constrained to Harbor Runtime API health/readiness files and HARBOR-219 carriers.
-- Execution Path: work/harbor-219-health-contract
+- Goal: Repair the local Harbor Runtime HTTP API admission path so App/Core can start it from source without stale ignored build output and verify the API contract before real browser/session work.
+- Scope: Covers Harbor #219 under parent Harbor #218, with ownership constrained to the runtime API start command, runtime server startup metadata, fixture-only API smoke, and HARBOR-219 carriers.
+- Execution Path: work/harbor-234-runtime-admission-smoke
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-219.md
 - Review Entry: .loom/reviews/HARBOR-219.json
-- Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; HTTP readiness/provider readback; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-219 --json; loom suite carrier validate --target . --item HARBOR-219 --json
-- Closing Condition: PR created and pushed for Harbor #219 with PR body listing covered and non-covered issues; no issue closeout before merge.
+- Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; pnpm smoke:runtime:api; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-219 --json; loom suite carrier validate --target . --item HARBOR-219 --json; loom suite evidence validate --target . --item HARBOR-219 --json
+- Closing Condition: PR created and pushed for Harbor #219 with PR body listing covered and non-covered issues; no issue closeout in this worker batch.
 
 ## Covered Work Items
 
 - #219 provide Harbor Runtime API readiness and service entry point.
-- #220 expose browser provider status endpoints.
-- #221 expose identity environment endpoints.
-- #222 expose browser session lifecycle endpoints.
-- #223 expose refs-only evidence endpoints.
 
 ## Non-covered Work Items
 
-- #203-#212 complete product closeout and live site evidence.
+- #220-#223 endpoint implementation closeouts already exist and are not reopened or reclosed by this branch.
+- #234 site-level resource facts and write-precheck facts is closed and not the anchor for this branch.
+- App/Core packaged E2E, live site evidence, and issue closeout are outside this worker batch.
 
 ## Safety Boundary
 
@@ -31,15 +29,13 @@
 
 ## Ownership Constraints
 
-- Writes are limited to Harbor Runtime API health/readiness adapter files, focused tests, and HARBOR-219 item-specific Loom carriers, including the active status pointer and current-head review record needed for merge-ready consumption.
+- Writes are limited to `package.json`, `packages/runtime-api/src/runtime-server.ts`, `packages/runtime-api/src/server-smoke.ts`, and HARBOR-219 item-specific Loom carriers, including the active status pointer needed for later PR/review consumption.
 - This worktree does not modify App, Core, Lode, closeout records, real browser profile data, cookies, tokens, raw DOM, raw HAR, network response bodies, or production page evidence.
 
 ## Associated Artifacts
 
-- packages/runtime-api/src/server.ts
-- packages/runtime-api/src/server.test.ts
 - packages/runtime-api/src/runtime-server.ts
-- packages/runtime-api/src/index.ts
+- packages/runtime-api/src/server-smoke.ts
 - package.json
 - .loom/specs/HARBOR-219/build-evidence.json
 - .loom/specs/HARBOR-219/**
