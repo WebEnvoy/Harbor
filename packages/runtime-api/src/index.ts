@@ -39,6 +39,15 @@ import {
 import { opaqueRef } from "./refs.js";
 import { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-provider-launcher.js";
 import {
+  createSiteResourceFacts,
+  HARBOR_SITE_RESOURCE_FACTS_SCHEMA,
+  missingSiteRuntimeSession,
+  siteResourceElements,
+  type SiteResourceFacts,
+  type SiteResourceFactsInput,
+  type SiteResourceFactsUnavailable
+} from "./site-runtime-facts.js";
+import {
   HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA, HARBOR_WRITE_PRECHECK_FACTS_SCHEMA,
   type PreviewEvidenceInput, type PreviewEvidenceState, type PreviewEvidenceStatusFixture, type RedactedPreviewExportFixture, type WritePrecheckFacts,
   type WritePrecheckInput
@@ -88,6 +97,7 @@ export {
   HARBOR_IDENTITY_PROVIDER_BINDING_SCHEMA
 } from "./provider-management.js";
 export { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-provider-launcher.js";
+export { HARBOR_SITE_RESOURCE_FACTS_SCHEMA } from "./site-runtime-facts.js";
 export { HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA, HARBOR_WRITE_PRECHECK_FACTS_SCHEMA } from "./runtime-fixtures.js";
 export { HARBOR_RUNTIME_FACTS_SCHEMA, HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA } from "./runtime-session.js";
 export { HARBOR_APP_RUNTIME_STATUS_FIXTURE_SCHEMA, HARBOR_CORE_RUNTIME_FACTS_SCHEMA, HARBOR_VIEWER_CONTROL_FACTS_SCHEMA } from "./viewer-control.js";
@@ -116,6 +126,16 @@ export type {
   SourceTrace,
   StorageScope
 } from "./page-scene.js";
+export type {
+  SiteResourceFact,
+  SiteResourceFactSeverity,
+  SiteResourceFactSource,
+  SiteResourceFactState,
+  SiteResourceFacts,
+  SiteResourceFactsInput,
+  SiteResourceFactsUnavailable,
+  SiteRuntimeId
+} from "./site-runtime-facts.js";
 export type {
   FormInputStateField,
   InputExportPolicy,
@@ -525,13 +545,13 @@ export class HarborRuntime {
       return { status: "unavailable", failure_class: "session_missing", message: "Runtime Session is missing.", retryable: true };
     }
     const capture = this.captureSnapshot(runtime_session_ref, {
-      title: input.title ?? "Write precheck fixture",
-      url: input.url ?? "https://example.test/write-precheck",
-      summary: input.summary ?? "Refs-only form state for validate-only preview.",
-      capture_method: "fixture",
-      source_locator: "fixture://write-precheck",
+      title: input.title ?? record.facts.current_page.title ?? "Write precheck target",
+      url: input.url ?? record.facts.current_page.current_url ?? record.facts.current_page.requested_url,
+      summary: input.summary ?? "Refs-only target state for validate-only write precheck.",
+      capture_method: "provided_context",
+      source_locator: `runtime-session://${runtime_session_ref}/write-precheck`,
       elements: [
-        { label: input.target_label ?? "Contact form", role: "form", locator_hint: input.locator_hint ?? "form[data-webenvoy-fixture='contact']" }
+        { label: input.target_label ?? "Write target", role: "form", locator_hint: input.locator_hint ?? "runtime-session://current-write-target" }
       ]
     });
     if (capture.status !== "captured") {
@@ -565,13 +585,14 @@ export class HarborRuntime {
         refmap_ref: capture.refmap_ref ?? "",
         evidence_refs: capture.evidence_refs,
         role: "form",
-        label: input.target_label ?? "Contact form",
-        locator_hint: input.locator_hint ?? "form[data-webenvoy-fixture='contact']",
+        label: input.target_label ?? "Write target",
+        locator_hint: input.locator_hint ?? "runtime-session://current-write-target",
         provenance: {
-          source: "fixture",
+          source: "provided_context",
           captured_at: now
         }
       },
+      submitted: false,
       form_state: {
         snapshot_ref: capture.snapshot_ref,
         fields,
@@ -595,6 +616,24 @@ export class HarborRuntime {
     };
   }
 
+  getSessionWritePrecheckFacts(runtime_session_ref: string, input: WritePrecheckInput = {}): WritePrecheckFacts | ViewerControlUnavailable {
+    return this.getWritePrecheckFacts(runtime_session_ref, sessionBoundWritePrecheckInput(input));
+  }
+
+  getSiteResourceFacts(runtime_session_ref: string, input: SiteResourceFactsInput = {}): SiteResourceFacts | SiteResourceFactsUnavailable {
+    const record = this.runtimeSessions.getRecord(runtime_session_ref);
+    if (!record) return missingSiteRuntimeSession(runtime_session_ref, input);
+    const capture = this.captureSnapshot(runtime_session_ref, {
+      title: record.facts.current_page.title ?? "Site resource facts",
+      url: record.facts.current_page.current_url ?? record.facts.current_page.requested_url,
+      summary: "Refs-only site resource facts for Core admission.",
+      capture_method: "provided_context",
+      source_locator: `runtime-session://${runtime_session_ref}/site-resource-facts`,
+      elements: siteResourceElements(input)
+    });
+    return createSiteResourceFacts(record.facts, input, capture);
+  }
+
   getAppRuntimeStatusFixture(runtime_session_ref: string): AppRuntimeStatusFixture | ViewerControlUnavailable {
     const record = this.runtimeSessions.getRecord(runtime_session_ref);
     if (!record) {
@@ -608,6 +647,13 @@ export class HarborRuntime {
   async closeSession(runtime_session_ref: string): Promise<RuntimeSessionFacts | null> {
     return this.runtimeSessions.closeSession(runtime_session_ref);
   }
+}
+
+function sessionBoundWritePrecheckInput(input: WritePrecheckInput): WritePrecheckInput {
+  return {
+    target_label: input.target_label,
+    fields: input.fields
+  };
 }
 
 export function defaultIdentitySiteUrl(site_id: string, origin: string): string {

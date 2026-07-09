@@ -49,6 +49,7 @@ export interface WritePrecheckFacts {
   provider_ref: string;
   profile_ref: string;
   writable_target: WritableTargetRef;
+  submitted: false;
   form_state: {
     snapshot_ref: string;
     fields: FormInputStateField[];

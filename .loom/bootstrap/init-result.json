@@ -244,12 +244,12 @@
     }
   ],
   "fact_chain": {
-    "mode": "idle",
-    "read_entry": "loom fact-chain --target . --json",
+    "mode": "active",
+    "read_entry": "loom fact-chain --target . --item HARBOR-234 --json",
     "entry_points": {
-      "current_item_id": "no_active_item",
-      "work_item": "not_applicable",
-      "recovery_entry": "not_applicable",
+      "current_item_id": "HARBOR-234",
+      "work_item": ".loom/work-items/HARBOR-234.md",
+      "recovery_entry": ".loom/progress/HARBOR-234.md",
       "status_surface": ".loom/status/current.md"
     }
   },

@@ -842,9 +842,11 @@ test("returns write-precheck target and form facts without raw private material"
   assert.equal("status" in facts, false);
   if ("status" in facts) throw new Error("write-precheck facts should be readable");
   assert.equal(facts.schema_version, "harbor-write-precheck-facts/v0");
+  assert.equal(facts.submitted, false);
   assert.match(facts.writable_target.target_ref, /^writable-target_/);
   assert.match(facts.writable_target.snapshot_ref, /^snapshot_/);
   assert.equal(facts.writable_target.role, "form");
+  assert.equal(facts.writable_target.provenance.source, "provided_context");
   assert.equal(facts.form_state.fields.length, 3);
   assert.equal(facts.form_state.fields[0]?.sensitivity, "sensitive");
   assert.equal(facts.form_state.fields[0]?.export_policy, "redacted");

@@ -4,7 +4,9 @@ import {
   type LocalIdentityEnvironmentStateUpdate,
   type ManagedLocalIdentityEnvironmentInput,
   type OpenIdentityEnvironmentSessionInput,
-  type RuntimeSessionControlInput
+  type RuntimeSessionControlInput,
+  type SiteResourceFactsInput,
+  type WritePrecheckInput
 } from "./index.js";
 
 export const HARBOR_RUNTIME_API_READINESS_SCHEMA = "harbor-runtime-api-readiness/v0";
@@ -139,12 +141,18 @@ function readinessBody(): object {
       "/runtime/identity-environments/{identity_environment_ref}",
       "/runtime/identity-environment-sessions",
       "/runtime/sessions/{runtime_session_ref}",
+      "/runtime/sessions/{runtime_session_ref}/site-resource-facts",
+      "/runtime/sessions/{runtime_session_ref}/write-precheck-facts",
       "/runtime/evidence/{evidence_ref}"
     ],
     safety_boundary: {
       raw_credentials: "not_exposed",
       raw_profile_storage: "not_exposed",
       raw_cdp_endpoint: "not_exposed",
+      raw_dom: "not_exposed",
+      raw_har: "not_exposed",
+      raw_network_bodies: "not_exposed",
+      screenshot_body: "not_exposed",
       hosted_browser: "not_provided",
       external_write_actions: "not_performed"
     }
@@ -189,6 +197,15 @@ async function routeSession(
     writeJson(response, 200, runtime.getSession(runtimeSessionRef) ?? { status: "unavailable", failure_class: "session_missing" });
     return;
   }
+  if (action === "site-resource-facts" && method === "GET") {
+    const requestUrl = new URL(request.url ?? "/", "http://harbor.local");
+    writeJson(response, 200, runtime.getSiteResourceFacts(runtimeSessionRef, siteResourceFactsInput(requestUrl)));
+    return;
+  }
+  if (action === "write-precheck-facts" && method === "POST") {
+    writeJson(response, 200, runtime.getSessionWritePrecheckFacts(runtimeSessionRef, await readJson<WritePrecheckInput>(request, {})));
+    return;
+  }
   if (method !== "POST") {
     writeJson(response, 405, { error: "method_not_allowed", method });
     return;
@@ -199,6 +216,13 @@ async function routeSession(
   else if (action === "stop") writeJson(response, 200, await runtime.stopSession(runtimeSessionRef, body));
   else if (action === "snapshot") writeJson(response, 201, await runtime.captureLiveSnapshot(runtimeSessionRef));
   else writeJson(response, 404, { error: "not_found", path: `/runtime/sessions/${runtimeSessionRef}/${action}` });
+}
+
+function siteResourceFactsInput(url: URL): SiteResourceFactsInput {
+  return {
+    site_id: url.searchParams.get("site_id") ?? undefined,
+    task_kind: url.searchParams.get("task_kind") ?? undefined
+  };
 }
 
 async function readJson<T>(request: IncomingMessage, fallback?: T): Promise<T> {
