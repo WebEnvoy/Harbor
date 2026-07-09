@@ -831,6 +831,10 @@ test("returns write-precheck target and form facts without raw private material"
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const session = await runtime.createSession();
   const facts = runtime.getWritePrecheckFacts(session.runtime_session_ref, {
+    title: "Spoofed direct title",
+    url: "https://attacker.example/direct-write-precheck",
+    summary: "Spoofed direct summary",
+    locator_hint: "body[data-direct-spoofed=true]",
     target_label: "Fixture contact form",
     fields: [
       { label: "Email", input_kind: "email", required: true, sensitivity: "sensitive", export_policy: "redacted", value_state: "redacted" },
@@ -846,6 +850,7 @@ test("returns write-precheck target and form facts without raw private material"
   assert.match(facts.writable_target.target_ref, /^writable-target_/);
   assert.match(facts.writable_target.snapshot_ref, /^snapshot_/);
   assert.equal(facts.writable_target.role, "form");
+  assert.notEqual(facts.writable_target.locator_hint, "body[data-direct-spoofed=true]");
   assert.equal(facts.writable_target.provenance.source, "provided_context");
   assert.equal(facts.form_state.fields.length, 3);
   assert.equal(facts.form_state.fields[0]?.sensitivity, "sensitive");
@@ -855,8 +860,17 @@ test("returns write-precheck target and form facts without raw private material"
   assert.deepEqual(facts.pre_write_guard.blocked_events, ["submit", "publish", "send", "delete", "pay"]);
   assert.equal(facts.pre_write_guard.enforcement, "facts_only_no_real_submit");
   assert.equal(facts.privacy_boundary.raw_values, "not_exposed");
+  const directEvidence = runtime.getEvidence(facts.writable_target.evidence_refs[0] ?? "");
+  assert.equal("status" in directEvidence, false);
+  if ("status" in directEvidence) throw new Error("direct write-precheck evidence should be readable");
+  const sourceLocator = directEvidence.provenance.source_locator;
+  assert.equal(typeof sourceLocator, "string");
+  if (!sourceLocator) throw new Error("direct write-precheck evidence should include a source locator");
+  assert.equal(sourceLocator.includes(session.runtime_session_ref), true);
 
   const publicJson = JSON.stringify(facts);
+  assert.equal(publicJson.includes("attacker.example"), false);
+  assert.equal(JSON.stringify(directEvidence).includes("attacker.example"), false);
   assert.equal(publicJson.includes("raw_dom"), false);
   assert.equal(publicJson.includes("raw_har"), false);
   assert.equal(publicJson.includes("cookie"), false);

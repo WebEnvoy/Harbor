@@ -544,14 +544,15 @@ export class HarborRuntime {
     if (!record) {
       return { status: "unavailable", failure_class: "session_missing", message: "Runtime Session is missing.", retryable: true };
     }
+    const boundedInput = sessionBoundWritePrecheckInput(input);
     const capture = this.captureSnapshot(runtime_session_ref, {
-      title: input.title ?? record.facts.current_page.title ?? "Write precheck target",
-      url: input.url ?? record.facts.current_page.current_url ?? record.facts.current_page.requested_url,
-      summary: input.summary ?? "Refs-only target state for validate-only write precheck.",
+      title: record.facts.current_page.title ?? "Write precheck target",
+      url: record.facts.current_page.current_url ?? record.facts.current_page.requested_url,
+      summary: "Refs-only target state for validate-only write precheck.",
       capture_method: "provided_context",
       source_locator: `runtime-session://${runtime_session_ref}/write-precheck`,
       elements: [
-        { label: input.target_label ?? "Write target", role: "form", locator_hint: input.locator_hint ?? "runtime-session://current-write-target" }
+        { label: boundedInput.target_label ?? "Write target", role: "form", locator_hint: "runtime-session://current-write-target" }
       ]
     });
     if (capture.status !== "captured") {
@@ -559,7 +560,7 @@ export class HarborRuntime {
     }
     const now = capture.core_scene_ref.captured_at;
     const target_ref = opaqueRef("writable-target");
-    const fields = (input.fields ?? [
+    const fields = (boundedInput.fields ?? [
       { label: "Email", input_kind: "email", required: true, sensitivity: "sensitive", export_policy: "redacted", value_state: "redacted" },
       { label: "Message", input_kind: "textarea", required: true, sensitivity: "public", export_policy: "safe_summary", value_state: "present" },
       { label: "Password", input_kind: "password", required: false, sensitivity: "secret", export_policy: "never_export", value_state: "unavailable" }
@@ -585,8 +586,8 @@ export class HarborRuntime {
         refmap_ref: capture.refmap_ref ?? "",
         evidence_refs: capture.evidence_refs,
         role: "form",
-        label: input.target_label ?? "Write target",
-        locator_hint: input.locator_hint ?? "runtime-session://current-write-target",
+        label: boundedInput.target_label ?? "Write target",
+        locator_hint: "runtime-session://current-write-target",
         provenance: {
           source: "provided_context",
           captured_at: now
@@ -617,7 +618,7 @@ export class HarborRuntime {
   }
 
   getSessionWritePrecheckFacts(runtime_session_ref: string, input: WritePrecheckInput = {}): WritePrecheckFacts | ViewerControlUnavailable {
-    return this.getWritePrecheckFacts(runtime_session_ref, sessionBoundWritePrecheckInput(input));
+    return this.getWritePrecheckFacts(runtime_session_ref, input);
   }
 
   getSiteResourceFacts(runtime_session_ref: string, input: SiteResourceFactsInput = {}): SiteResourceFacts | SiteResourceFactsUnavailable {
