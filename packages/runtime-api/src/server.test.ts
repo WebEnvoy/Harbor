@@ -89,6 +89,9 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
     assert.equal(siteFacts.task_kind, "search_notes");
     assert.equal(siteFacts.resource_facts.some((fact: any) => fact.key === "runtime.execution_surface.available"), true);
     assert.equal(siteFacts.resource_facts.some((fact: any) => fact.key === "identity.user_logged_in.confirmed"), true);
+    assert.equal(siteFacts.resource_facts.find((fact: any) => fact.key === "identity.user_logged_in.confirmed")?.state, "available");
+    assert.equal(siteFacts.resource_facts.find((fact: any) => fact.key === "page.vue_app.ready")?.state, "available");
+    assert.equal(siteFacts.resource_facts.find((fact: any) => fact.key === "page.pinia_store.ready")?.state, "available");
     assert.equal(siteFacts.evidence_refs.length > 0, true);
     assert.equal(siteFacts.public_boundary.raw_dom, "not_exposed");
 
