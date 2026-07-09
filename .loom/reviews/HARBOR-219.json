@@ -3,10 +3,10 @@
   "item_id": "HARBOR-219",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Code review allows HARBOR-219 through the carrier checkpoint correction head. The product change passes managed identity profile_storage_ref to the local provider as internal protected material, defaults user-owned sessions to visible local windows, preserves persistent profile dirs while cleaning ephemeral dirs, tightens persistent dir permissions, and redacts raw profile storage refs from direct/public identity facts. The follow-up carrier-only change moves the checkpoint from build to merge for PR #239 consumption. This is local contract evidence and does not claim live provider/session/site execution.",
+  "summary": "Code review allows HARBOR-219 through the carrier checkpoint cleanup head. The product change passes managed identity profile_storage_ref to the local provider as internal protected material, defaults user-owned sessions to visible local windows, preserves persistent profile dirs while cleaning ephemeral dirs, tightens persistent dir permissions, and redacts raw profile storage refs from direct/public identity facts. The follow-up carrier-only changes move the checkpoint from build to merge and keep Blockers as None for PR #239 consumption. This is local contract evidence and does not claim live provider/session/site execution.",
   "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
-  "authored_at": "2026-07-09T18:49:15Z",
-  "reviewed_head": "7cb86ce0bee572b9e1d0c1e86a06c80a6c5a4fb6",
+  "authored_at": "2026-07-09T18:54:57Z",
+  "reviewed_head": "32cd2bb4a5eae4acba1ee48a4db49552b7f2ff53",
   "reviewed_validation_summary": "2026-07-09T18:29Z UTC local validation passed on branch `work/harbor-219-persistent-profile-session` before commit: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime:api`, detection-only provider readback with `node --input-type=module -e \"import('./dist/packages/runtime-api/src/index.js').then(({detectBrowserProviders})=>console.log(JSON.stringify(detectBrowserProviders(),null,2)))\"`, cross-repo App `WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session npm run smoke:packaged:runtime`, cross-repo App `WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session npm run smoke:packaged:readonly`, `git diff --check`, `jq empty` for HARBOR-219 review/build evidence JSON, `loom fact-chain --target . --json`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json`. Evidence boundary: Harbor tests use captured launcher, fixture launcher, or fake browser process only; direct/public identity facts redact raw profile storage refs while managed session launch still receives the internal protected ref; provider detection reports CloakBrowser missing and official Chrome installed/launchable without launching a real browser. No real Xiaohongshu/BOSS account, browser profile, Cookie, production page action, submit, publish, send, hosted browser, marketplace, bulk collection, full account cloud hosting, or risk-control bypass occurred.",
   "reviewed_validation_summary_hash": "8bf67880f368185b6137bbaf0ab8a46e8a5470ff3f9e4d7fbcc8b3ba7e6abcf9",
   "validation_summary_source": "recovery.latest_validation_summary",
@@ -55,6 +55,6 @@
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Authored implementation review approved product commit ac3a5619038dd1f013b71aca10d3ed7eee254bd8 plus carrier checkpoint correction 7cb86ce0bee572b9e1d0c1e86a06c80a6c5a4fb6 for PR #239 merge-gate consumption; final merge consumption still requires hosted gate."
+    "reason": "Authored implementation review approved product commit ac3a5619038dd1f013b71aca10d3ed7eee254bd8 plus carrier checkpoint cleanup 32cd2bb4a5eae4acba1ee48a4db49552b7f2ff53 for PR #239 merge-gate consumption; final merge consumption still requires hosted gate."
   }
 }
