@@ -3,7 +3,7 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-219
-- Current Checkpoint: lane_retired_after_merge
+- Current Checkpoint: merge
 - Current Stop: PR #231 and PR #232 merged to `main`, covering HARBOR-219 readiness endpoint compatibility and structured missing identity input failures. Harbor #219 remains open until App/Core packaged consumer E2E proves provider/session/evidence consumption.
 - Next Step: Continue the next Harbor/App/Core consumer E2E batch from `no_active_item`; do not treat #231/#232 as full Harbor #218/#219 closeout.
 - Blockers: None
