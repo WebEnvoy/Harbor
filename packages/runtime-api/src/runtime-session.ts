@@ -87,12 +87,14 @@ export class RuntimeSessionStore {
     const profile_ref = input.profile_ref ?? opaqueRef("profile");
     const requestedUrl = input.url ?? "about:blank";
     const controlOwner = input.control_owner ?? "system";
+    const headless = input.headless ?? controlOwner !== "user";
     const launch = await this.launcher({
       browser_path: input.browser_path ?? "",
-      headless: input.headless ?? true,
+      headless,
       timeout_ms: input.timeout_ms ?? 5000,
       url: requestedUrl,
       profile_ref,
+      profile_storage_ref: input.profile_storage_ref,
       provider_ref
     });
     const runtime_session_ref = opaqueRef("session");
@@ -195,6 +197,7 @@ export class RuntimeSessionStore {
       identity_environment_ref: identityEnvironment.identity_environment_ref,
       execution_identity_ref: identityEnvironment.execution_identity_ref,
       profile_ref: identityEnvironment.profile_ref,
+      profile_storage_ref: identityEnvironment.browser_storage.profile_storage_ref,
       control_owner: owner,
       holder_ref: holder
     });

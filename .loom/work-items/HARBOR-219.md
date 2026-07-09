@@ -3,9 +3,9 @@
 ## Static Facts
 
 - Item ID: HARBOR-219
-- Goal: Repair the local Harbor Runtime HTTP API admission path so App/Core can start it from source without stale ignored build output and verify the API contract before real browser/session work.
-- Scope: Covers Harbor #219 under parent Harbor #218, with ownership constrained to the runtime API start command, runtime server startup metadata, fixture-only API smoke, and HARBOR-219 carriers.
-- Execution Path: work/harbor-234-runtime-admission-smoke
+- Goal: Repair Harbor #219 managed identity session behavior so App/Core can use Harbor owner API refs for persistent local browser profiles without exposing raw profile paths or sensitive browser material.
+- Scope: Covers Harbor #219 under parent Harbor #218, with ownership constrained to runtime API managed identity session launch inputs, local provider profile storage mapping, public identity ref redaction, viewer/headless defaults, privacy-preserving tests, fixture-only API smoke, and HARBOR-219 carriers.
+- Execution Path: work/harbor-219-persistent-profile-session
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-219.md
 - Review Entry: .loom/reviews/HARBOR-219.json
@@ -29,14 +29,17 @@
 
 ## Ownership Constraints
 
-- Writes are limited to `package.json`, `packages/runtime-api/src/runtime-server.ts`, `packages/runtime-api/src/server-smoke.ts`, and HARBOR-219 item-specific Loom carriers, including the active status pointer needed for later PR/review consumption.
+- Writes are limited to `packages/runtime-api/src/runtime-session-types.ts`, `packages/runtime-api/src/runtime-session.ts`, `packages/runtime-api/src/local-provider-launcher.ts`, `packages/runtime-api/src/identity-environment.ts`, `packages/runtime-api/src/identity-environment-manager.ts`, `packages/runtime-api/src/index.test.ts`, and HARBOR-219 item-specific Loom carriers, including the active status pointer needed for later PR/review consumption.
 - This worktree does not modify App, Core, Lode, closeout records, real browser profile data, cookies, tokens, raw DOM, raw HAR, network response bodies, or production page evidence.
 
 ## Associated Artifacts
 
-- packages/runtime-api/src/runtime-server.ts
-- packages/runtime-api/src/server-smoke.ts
-- package.json
+- packages/runtime-api/src/runtime-session-types.ts
+- packages/runtime-api/src/runtime-session.ts
+- packages/runtime-api/src/local-provider-launcher.ts
+- packages/runtime-api/src/identity-environment.ts
+- packages/runtime-api/src/identity-environment-manager.ts
+- packages/runtime-api/src/index.test.ts
 - .loom/specs/HARBOR-219/build-evidence.json
 - .loom/specs/HARBOR-219/**
 - .loom/status/current.md

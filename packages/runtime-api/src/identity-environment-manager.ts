@@ -139,7 +139,7 @@ export class LocalIdentityEnvironmentManager {
     };
     facts.browser_storage = {
       ...facts.browser_storage,
-      profile_storage_ref: input.profile_storage_ref ?? facts.browser_storage.profile_storage_ref,
+      profile_storage_ref: redactedRequiredRef("profile_storage", input.profile_storage_ref ?? current.local_material_refs.profile_storage_ref),
       state: storageState,
       cookies_session_state: storageState,
       local_storage_state: storageState,
@@ -157,7 +157,7 @@ export class LocalIdentityEnvironmentManager {
       }),
       local_material_refs: {
         ...current.local_material_refs,
-        profile_storage_ref: facts.browser_storage.profile_storage_ref,
+        profile_storage_ref: input.profile_storage_ref ?? current.local_material_refs.profile_storage_ref,
         cookie_jar_ref: input.cookie_jar_ref ?? current.local_material_refs.cookie_jar_ref,
         browser_storage_ref: input.browser_storage_ref ?? current.local_material_refs.browser_storage_ref
       }
@@ -177,8 +177,8 @@ export class LocalIdentityEnvironmentManager {
   }
 
   getFacts(identity_environment_ref: string): LocalIdentityEnvironmentFacts | null {
-    const facts = this.records.get(identity_environment_ref)?.identity_environment;
-    return facts ? snapshot(facts) : null;
+    const record = this.records.get(identity_environment_ref);
+    return record ? internalSessionFacts(record) : null;
   }
 
   delete(identity_environment_ref: string): LocalIdentityEnvironmentPublicRecord | null {
@@ -206,7 +206,7 @@ export class LocalIdentityEnvironmentManager {
       identity_environment: facts,
       consistency,
       local_material_refs: {
-        profile_storage_ref: facts.browser_storage.profile_storage_ref,
+        profile_storage_ref: input.profile_storage_ref ?? `${facts.profile_ref}:storage`,
         cookie_jar_ref: input.cookie_jar_ref ?? null,
         browser_storage_ref: input.browser_storage_ref ?? null,
         credential_ref: facts.credential_recovery.credential_ref,
@@ -239,6 +239,15 @@ export class LocalIdentityEnvironmentManager {
     writeFileSync(tmpPath, JSON.stringify({ schema_version: HARBOR_LOCAL_IDENTITY_ENVIRONMENT_STORE_SCHEMA, records: Array.from(this.records.values()) }, null, 2));
     renameSync(tmpPath, path);
   }
+}
+
+function internalSessionFacts(record: StoredLocalIdentityEnvironmentRecord): LocalIdentityEnvironmentFacts {
+  const facts = snapshot(record.identity_environment);
+  facts.browser_storage = {
+    ...facts.browser_storage,
+    profile_storage_ref: record.local_material_refs.profile_storage_ref
+  };
+  return facts;
 }
 
 function publicRecord(record: StoredLocalIdentityEnvironmentRecord): LocalIdentityEnvironmentPublicRecord {

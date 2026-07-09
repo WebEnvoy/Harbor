@@ -126,6 +126,7 @@ export interface CreateRuntimeSessionInput {
   identity_environment_ref?: string;
   execution_identity_ref?: string;
   profile_ref?: string;
+  profile_storage_ref?: string;
   provider_ref?: string;
   control_owner?: ControlOwner;
   holder_ref?: string;
@@ -148,6 +149,7 @@ export interface LocalProviderLaunchInput {
   timeout_ms: number;
   url: string;
   profile_ref: string;
+  profile_storage_ref?: string;
   provider_ref: string;
 }
 

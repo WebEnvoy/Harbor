@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   BrowserProviderDetectionInput,
   IdentityEnvironmentProviderBinding,
@@ -195,7 +196,7 @@ export function createLocalIdentityEnvironmentFacts(input: LocalIdentityEnvironm
       human_verification: humanVerification
     },
     browser_storage: {
-      profile_storage_ref: input.profile_storage_ref ?? `${profile_ref}:storage`,
+      profile_storage_ref: redactedRef("profile_storage", input.profile_storage_ref ?? `${profile_ref}:storage`),
       state: storageState,
       cookies_session_state: storageState,
       local_storage_state: storageState,
@@ -269,6 +270,10 @@ function normalizedKey(key: string): string {
 
 function missing(name: string, value: unknown): string[] {
   return value ? [] : [`${name}_missing`];
+}
+
+function redactedRef(kind: string, value: string): string {
+  return `${kind}_ref_${createHash("sha256").update(value).digest("hex").slice(0, 12)}`;
 }
 
 function materialBoundary(): MaterialBoundary[] {
