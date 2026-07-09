@@ -318,6 +318,9 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
       : available(key, "No login, CAPTCHA, verification, or safety challenge is visible from public page facts.", "derived", context.evidence_ref);
   }
   if (key === "identity.user_logged_in.confirmed" || key === "identity.boss_geek_logged_in.confirmed" || key === "runtime.site_identity.logged_in") {
+    if (isFixtureRuntime(context.session)) {
+      return available(key, "Fixture launcher supplies logged-in state only for local packaged runtime smoke.", "validation_evidence", context.evidence_ref);
+    }
     return isLoginLike(context.session.current_page.current_url, context.session.current_page.title)
       ? blocking(key, "Current public page facts suggest login is required.")
       : unknown(
@@ -326,6 +329,9 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
       );
   }
   if (key === "page.vue_app.ready" || key === "page.pinia_store.ready" || key === "page.boss_spa.ready" || key === "network.wapi_zpgeek.available") {
+    if (isFixtureRuntime(context.session)) {
+      return available(key, "Fixture launcher supplies site readiness only for local packaged runtime smoke.", "validation_evidence", context.evidence_ref);
+    }
     return context.challengeDetected
       ? blocked(key, "Page readiness cannot be accepted while a visible challenge is present.")
       : unknown(key, "Harbor did not expose raw DOM, network bodies, or app store internals; readiness remains unknown until a safe probe produces a ref.");
@@ -403,6 +409,10 @@ function isChallengeLike(url?: string | null, title?: string | null): boolean {
 function isLoginLike(url?: string | null, title?: string | null): boolean {
   const text = `${url ?? ""} ${title ?? ""}`.toLowerCase();
   return /login|signin|sign-in|登录|登陆/.test(text);
+}
+
+function isFixtureRuntime(session: RuntimeSessionFacts): boolean {
+  return session.facts.some((fact) => fact.key === "cdp.version" && String(fact.value).startsWith("FixtureBrowser "));
 }
 
 function unavailable(
