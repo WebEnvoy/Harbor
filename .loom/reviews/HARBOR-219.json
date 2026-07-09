@@ -3,12 +3,12 @@
   "item_id": "HARBOR-219",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Current-head code review allows Harbor #219 runtime API admission smoke PR. The implementation keeps the server source-start path buildable, adds a fixture-only runtime API smoke for readiness/provider/identity/session/evidence/write-precheck refs, and preserves safety boundaries. This review does not claim App/Core packaged E2E or live Xiaohongshu/BOSS execution.",
+  "summary": "Code review allows PR #238 for HARBOR-219 at current scope. The change marks site facts available only when runtime facts identify FixtureBrowser so local packaged App/Core smoke can exercise owner-shaped refs. This is fixture-only contract evidence and does not claim live provider/session/site execution.",
   "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
-  "authored_at": "2026-07-09T14:14:46Z",
-  "reviewed_head": "b3f55780efdd632466a8ca5cc02741223b2c15e6",
-  "reviewed_validation_summary": "2026-07-09T14:14Z UTC Harbor #219 current-head review validation passed at head b3f55780efdd632466a8ca5cc02741223b2c15e6. `pnpm typecheck`, `pnpm smoke:runtime:api`, `git diff --check`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json` passed in the formal worktree. Subagent PR-prep validation also passed `jq empty`, `loom fact-chain --target . --item HARBOR-219 --json`, and `loom verify --target . --json`; earlier same-product-head validation passed `pnpm test`, `pnpm smoke:runtime`, and `pnpm smoke:runtime:api`. Runtime API smoke used fixture provider only and reported real_account=not_used, real_browser_profile=not_used, production_page=not_opened, external_write_actions=not_performed.",
-  "reviewed_validation_summary_hash": "66b0309dcabb5d2cd3da9821501d55a13d191ea875f252ad61da0fa8dec3ed9d",
+  "authored_at": "2026-07-09T17:24:00Z",
+  "reviewed_head": "8efd348d4999a67e9c4c72a9bf53533954644455",
+  "reviewed_validation_summary": "2026-07-09T17:18Z UTC local validation passed for PR #238 branch `work/harbor-218-fixture-site-facts` at head `8efd348d4999a67e9c4c72a9bf53533954644455`: `pnpm install --frozen-lockfile` was required because this worktree had no `node_modules`, then `pnpm test` and `git diff --check` passed. Cross-repo App smoke also passed from the App worktree with `WEBENVOY_CORE_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/WebEnvoy.worktrees/core-244-harbor-site-facts-run WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-218-fixture-site-facts npm run smoke:packaged:readonly`. Scope: Harbor marks site facts available only when runtime facts identify `FixtureBrowser`, so this supports local packaged contract smoke only; no real Xiaohongshu/BOSS account, browser profile, Cookie, production page action, submit, publish, send, hosted browser, marketplace, bulk collection, full account cloud hosting, or risk-control bypass occurred.",
+  "reviewed_validation_summary_hash": "765e2a56b338188c6c679325b8043813bb6f1fb277c626a9049788df70f7dbf1",
   "validation_summary_source": "recovery.latest_validation_summary",
   "validation_summary_locator": ".loom/progress/HARBOR-219.md",
   "fallback_to": null,
@@ -36,8 +36,8 @@
     "engine_adapter": null,
     "engine_evidence": null,
     "normalized_findings": null,
-    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-234-runtime-admission-smoke --item HARBOR-219 --json",
-    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-234-runtime-admission-smoke --item HARBOR-219 --json",
+    "suite_evidence_validation": "loom suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-218-fixture-site-facts --item HARBOR-219 --json",
+    "suite_carrier_validation": "loom suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-218-fixture-site-facts --item HARBOR-219 --json",
     "suite_evidence_map": ".loom/specs/HARBOR-219/evidence-map.md",
     "suite_consistency_analysis": null,
     "suite_task_carriers": [
@@ -55,6 +55,6 @@
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "The current head only adds source-start/runtime API smoke compatibility and fixture-only contract coverage; no raw credential/profile/evidence material or live site action is introduced."
+    "reason": "The current head only adds FixtureBrowser site-fact availability for local packaged contract smoke; no raw credential/profile/evidence material or live site action is introduced."
   }
 }
