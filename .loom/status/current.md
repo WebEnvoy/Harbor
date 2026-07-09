@@ -2,34 +2,34 @@
 
 ## Derived Fact Chain View
 
-- Item ID: HARBOR-219
-- Goal: Provide a local Harbor Runtime HTTP API readiness entry point that App and Core can consume before real browser/session work.
-- Scope: Covers Harbor #219/#220/#221/#222/#223 as one thin Runtime API adapter batch under parent Harbor #218, with ownership constrained to Harbor Runtime API health/readiness files and HARBOR-219 carriers.
-- Execution Path: work/harbor-219-health-contract
-- Workspace Entry: .
-- Recovery Entry: .loom/progress/HARBOR-219.md
-- Review Entry: .loom/reviews/HARBOR-219.json
-- Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; HTTP readiness/provider readback; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-219 --json; loom suite carrier validate --target . --item HARBOR-219 --json
-- Closing Condition: PR created and pushed for Harbor #219 with PR body listing covered and non-covered issues; no issue closeout before merge.
-- Current Checkpoint: merge
-- Current Stop: Current-head review and PR metadata are recorded; ready to run PR gate and merge-ready for Harbor #219 compatibility PR.
-- Next Step: Run PR gate and merge-ready, then merge Harbor #231 before Core/App E2E consumption.
-- Blockers: None
-- Latest Validation Summary: 2026-07-08T17:21Z UTC main-controller validation passed: `pnpm typecheck`; `pnpm test`; `pnpm smoke:runtime:local`; `git diff --check`; `loom fact-chain --target . --json`; `loom build --target . --item HARBOR-219 --build-evidence .loom/specs/HARBOR-219/build-evidence.json --json`. Harbor smoke used local/dedicated browser facts and `about:blank`; it did not use real accounts, Cookies, production pages, submit/publish/send, or external visible actions. Deterministic review-readiness evidence was run and classified as repo-local tool surface absent, not product failure: `tools/skills_surface.py check` exit 127; `tools/loom_check.py --profile source --source-surface contract-only` exit 127; `tools/check_release_surface.py` exit 127; `tools/version_surface_check.py` exit 127; `tools/check_npm_package.py` exit 127.
-- Recovery Boundary: Revert branch `work/harbor-219-health-contract`; no App/Core/Lode repository changes, real account/profile/Cookie/production page action, submit, publish, send, hosted browser, marketplace, bulk collection, or risk-bypass claim occurred.
-- Current Lane: Harbor runtime API health/readiness compatibility for App #265.
+- Item ID: no_active_item
+- Goal: not_applicable
+- Scope: not_applicable
+- Execution Path: not_applicable
+- Workspace Entry: not_applicable
+- Recovery Entry: not_applicable
+- Review Entry: not_applicable
+- Validation Entry: not_applicable
+- Closing Condition: not_applicable
+- Current Checkpoint: not_applicable
+- Current Stop: not_applicable
+- Next Step: not_applicable
+- Blockers: not_applicable
+- Latest Validation Summary: not_applicable
+- Recovery Boundary: not_applicable
+- Current Lane: not_applicable
 
 ## Runtime Evidence
 
-- Run Entry: .loom/specs/HARBOR-219/build-evidence.json
-- Logs Entry: .loom/progress/HARBOR-219.md
-- Diagnostics Entry: .loom/specs/HARBOR-219/consistency-analysis.md
+- Run Entry: not_applicable
+- Logs Entry: not_applicable
+- Diagnostics Entry: not_applicable
 - Verification Entry: loom verify --target . --json
-- Lane Entry: HARBOR-219
+- Lane Entry: no_active_item
 
 ## Sources
 
-- Static Truth: .loom/work-items/HARBOR-219.md
-- Dynamic Truth: .loom/progress/HARBOR-219.md
+- Static Truth: not_applicable
+- Dynamic Truth: not_applicable
 - Locator Truth: .loom/bootstrap/init-result.json
 - Fact Chain CLI: loom fact-chain --target . --json
