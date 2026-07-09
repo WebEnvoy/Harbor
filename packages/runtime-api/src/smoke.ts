@@ -114,6 +114,12 @@ const xhsLiveEvidence = "status" in xhsLiveCapture && xhsLiveCapture.status === 
 const bossLiveEvidence = "status" in bossLiveCapture && bossLiveCapture.status === "captured"
   ? bossLiveCapture.evidence_refs.map((ref) => runtime.getEvidence(ref))
   : bossLiveCapture;
+const xhsSiteResourceFacts = "status" in managedBrowserSession || managedBrowserSession.lifecycle_state !== "active"
+  ? managedBrowserSession
+  : runtime.getSiteResourceFacts(managedBrowserSession.runtime_session_ref, { site_id: "xiaohongshu", task_kind: "search_notes" });
+const bossSiteResourceFacts = "status" in bossBrowserSession || bossBrowserSession.lifecycle_state !== "active"
+  ? bossBrowserSession
+  : runtime.getSiteResourceFacts(bossBrowserSession.runtime_session_ref, { site_id: "boss", task_kind: "job_search" });
 const managedBrowserStopped = "status" in managedBrowserSession || managedBrowserSession.lifecycle_state === "failed"
   ? managedBrowserSession
   : await runtime.stopSession(managedBrowserSession.runtime_session_ref, { control_owner: "agent" });
@@ -179,6 +185,8 @@ console.log(JSON.stringify({
   bossLiveCapture,
   xhsLiveEvidence,
   bossLiveEvidence,
+  xhsSiteResourceFacts,
+  bossSiteResourceFacts,
   managedBrowserStopped,
   bossBrowserStopped,
   browserSessionReusable,
@@ -205,6 +213,12 @@ const browserSessionReady = !("status" in browserSession) && browserSession.curr
 const browserSessionFailedWithFacts = "status" in browserSession || (!("status" in browserSession) && browserSession.current_error !== null);
 const xhsLiveCaptureCaptured = "status" in xhsLiveCapture && xhsLiveCapture.status === "captured";
 const bossLiveCaptureCaptured = "status" in bossLiveCapture && bossLiveCapture.status === "captured";
+const xhsSiteResourceFactsReady = !("status" in xhsSiteResourceFacts) &&
+  xhsSiteResourceFacts.schema_version === "harbor-site-resource-facts/v0" &&
+  xhsSiteResourceFacts.evidence_refs.length > 0;
+const bossSiteResourceFactsReady = !("status" in bossSiteResourceFacts) &&
+  bossSiteResourceFacts.schema_version === "harbor-site-resource-facts/v0" &&
+  bossSiteResourceFacts.evidence_refs.length > 0;
 const staleEvidenceInvalid = !staleEvidenceStatus ||
   "status" in staleEvidenceStatus ||
   staleEvidenceStatus.scene_status.display_state !== "stale";
@@ -232,6 +246,8 @@ if (
   (!useLocalProvider && ("status" in bossBrowserSession || bossBrowserSession.current_page.requested_url !== DEFAULT_IDENTITY_SITE_URLS.boss)) ||
   (!useLocalProvider && !xhsLiveCaptureCaptured) ||
   (!useLocalProvider && !bossLiveCaptureCaptured) ||
+  (!useLocalProvider && !xhsSiteResourceFactsReady) ||
+  (!useLocalProvider && !bossSiteResourceFactsReady) ||
   (useLocalProvider && !browserSessionReady && !browserSessionFailedWithFacts) ||
   "status" in viewerControl ||
   "status" in handoff ||

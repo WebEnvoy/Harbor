@@ -1,0 +1,258 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "item_id": "HARBOR-234",
+  "generated_at": "2026-07-09T10:32:00Z",
+  "branch": "work/harbor-234-site-runtime-facts",
+  "pre_commit_head": "c05de4892586121012981cd644774c4d022c5b22",
+  "delegations": [
+    {
+      "agent": "019f464d-b883-7213-92c3-6786ceba356e",
+      "role": "read_only_review",
+      "task_goal": "Review Harbor #234 implementation for API contract, privacy boundary, test coverage, and scope control.",
+      "context_locators": [
+        ".loom/work-items/HARBOR-234.md",
+        ".loom/specs/HARBOR-234/spec.md",
+        "packages/runtime-api/src/site-runtime-facts.ts",
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/server.ts",
+        "packages/runtime-api/src/server.test.ts",
+        "packages/runtime-api/src/runtime-fixtures.ts",
+        "packages/runtime-api/src/smoke.ts"
+      ],
+      "read_scope": [
+        "Current Harbor #234 runtime-api diff",
+        "HARBOR-234 spec and Work Item boundaries"
+      ],
+      "write_ownership": [
+        "none: read-only http-provenance review lane"
+      ],
+      "write_ownership_note": "read-only review lane; no files were written by the delegate",
+      "non_goals": [
+        "No file edits",
+        "No GitHub operations",
+        "No real browser/profile/account/production page actions"
+      ],
+      "validation_expectation": [
+        "git diff -- packages/runtime-api/src",
+        "pnpm typecheck",
+        "pnpm test"
+      ],
+      "integration_target": [
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/server.ts",
+        "packages/runtime-api/src/server.test.ts",
+        ".loom/specs/HARBOR-234/build-evidence.json",
+        ".loom/progress/HARBOR-234.md"
+      ],
+      "output_format": "Findings first with file/line references, then validation results, risks, and whether scope was exceeded.",
+      "id": "harbor-234-read-only-review",
+      "lane_id": "harbor-234-read-only-review",
+      "status": "integrated",
+      "result": "major finding fixed",
+      "finding": "HTTP write-precheck endpoint allowed caller-supplied page/target facts to become provided-context evidence.",
+      "resolution": "Added session-bound HTTP write-precheck wrapper and regression test proving spoofed URL/title/locator are not emitted in evidence provenance.",
+      "summary": "Delegate output was integrated by routing HTTP write-precheck through getSessionWritePrecheckFacts, adding spoofing regression coverage, and recording the finding/resolution in HARBOR-234 progress and build evidence."
+    },
+    {
+      "agent": "019f4658-7d40-72e0-aa66-b08d10b2c8f3",
+      "role": "read_only_review",
+      "task_goal": "Review Harbor #234 current PR for runtime API, evidence boundary, and security boundary risks before implementation review.",
+      "context_locators": [
+        "packages/runtime-api/src/site-runtime-facts.ts",
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/server.ts",
+        "packages/runtime-api/src/server.test.ts",
+        "packages/runtime-api/src/index.test.ts",
+        ".loom/specs/HARBOR-234/spec.md",
+        ".loom/specs/HARBOR-234/implementation-contract.md",
+        ".loom/specs/HARBOR-234/evidence-map.md"
+      ],
+      "read_scope": [
+        "Current Harbor #234 runtime-api diff",
+        "Public/direct and HTTP write-precheck evidence provenance boundaries"
+      ],
+      "write_ownership": [
+        "none: read-only direct-runtime review lane"
+      ],
+      "write_ownership_note": "read-only review lane; no files were written by the delegate",
+      "non_goals": [
+        "No file edits",
+        "No GitHub operations",
+        "No real browser/profile/account/production page actions"
+      ],
+      "validation_expectation": [
+        "git diff -- packages/runtime-api/src",
+        "git diff --check",
+        "semantic review of evidence boundary"
+      ],
+      "integration_target": [
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/index.test.ts",
+        ".loom/specs/HARBOR-234/build-evidence.json",
+        ".loom/progress/HARBOR-234.md"
+      ],
+      "output_format": "Findings first with file/line references, then validation results, risks, and allow/block recommendation.",
+      "id": "harbor-234-direct-runtime-review",
+      "lane_id": "harbor-234-direct-runtime-review",
+      "status": "integrated",
+      "result": "blocking finding fixed",
+      "finding": "Public HarborRuntime.getWritePrecheckFacts still accepted caller-supplied title/url/summary/locator_hint, allowing in-process Core/App consumers to spoof write-precheck evidence provenance even though HTTP was session-bound.",
+      "resolution": "Made getWritePrecheckFacts session-bound for page URL/title/summary/locator, kept only target label and field-state input, made getSessionWritePrecheckFacts call the same safe path, and added direct-method spoofing regression assertions.",
+      "summary": "Delegate output was integrated by tightening the public runtime method and adding direct-library regression coverage in index.test.ts."
+    }
+  ],
+  "delegation_evidence": {
+    "used_nested_subagents": true,
+    "unintegrated_subagent_output": false,
+    "integrated_lanes": [
+      "harbor-234-read-only-review",
+      "harbor-234-direct-runtime-review"
+    ],
+    "integration_summary": "Read-only review lanes did not write files or GitHub state. Main controller integrated both findings into implementation, regression tests, .loom/progress/HARBOR-234.md, and this build evidence."
+  },
+  "integration_evidence": [
+    {
+      "locator": "packages/runtime-api/src/server.ts",
+      "summary": "HTTP write-precheck facts now use session-bound page facts instead of caller-supplied page URL/title/locator context."
+    },
+    {
+      "locator": "packages/runtime-api/src/server.test.ts",
+      "summary": "Regression coverage posts spoofed URL/title/locator and verifies spoofed provenance is not emitted."
+    },
+    {
+      "locator": "packages/runtime-api/src/index.ts",
+      "summary": "Public getWritePrecheckFacts is now session-bound for page URL/title/summary/locator and no longer permits in-process callers to spoof evidence provenance."
+    },
+    {
+      "locator": "packages/runtime-api/src/index.test.ts",
+      "summary": "Direct-method regression coverage passes spoofed URL/title/locator and verifies the spoofed values are absent while evidence provenance is tied to the runtime session."
+    },
+    {
+      "locator": ".loom/progress/HARBOR-234.md",
+      "summary": "Subagent findings, integration decisions, validation, and no-live-action boundary are recorded in the recovery carrier."
+    }
+  ],
+  "ownership_constraints": {
+    "write_ownership": [
+      "packages/runtime-api/src/site-runtime-facts.ts",
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/server.ts",
+      "packages/runtime-api/src/server.test.ts",
+      "packages/runtime-api/src/index.test.ts",
+      "packages/runtime-api/src/runtime-fixtures.ts",
+      "packages/runtime-api/src/smoke.ts",
+      ".loom/work-items/HARBOR-234.md",
+      ".loom/progress/HARBOR-234.md",
+      ".loom/specs/HARBOR-234/**"
+    ],
+    "forbidden_targets": [
+      "App/Core/Lode repositories",
+      "provider launch internals outside existing session/snapshot APIs",
+      "user daily browser profile",
+      "real account",
+      "production page action",
+      "raw cookies",
+      "raw tokens",
+      "raw DOM",
+      "raw HAR",
+      "network response bodies",
+      "full screenshot bytes",
+      "GitHub issue closeout",
+      "merge"
+    ],
+    "shared_carrier_policy": ".loom/status/current.md remains active for HARBOR-234 in the formal worktree. Closeout/retire is out of scope until after merge."
+  },
+  "ownership_contract": {
+    "task_goal": "Add Harbor Runtime API projections for site-level resource facts and write-precheck facts so Core can consume Lode Xiaohongshu/BOSS requirements without receiving raw browser material.",
+    "context_locators": [
+      ".loom/work-items/HARBOR-234.md",
+      ".loom/specs/HARBOR-234/spec.md",
+      ".loom/specs/HARBOR-234/contracts.md",
+      ".loom/specs/HARBOR-234/evidence-map.md",
+      "packages/runtime-api/src/site-runtime-facts.ts",
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/server.ts",
+      "packages/runtime-api/src/server.test.ts"
+    ],
+    "read_scope": [
+      "Harbor runtime API facts, session, snapshot, evidence, write-precheck, tests, and HARBOR-234 carriers"
+    ],
+    "write_ownership": [
+      "packages/runtime-api/src/**",
+      ".loom/progress/HARBOR-234.md",
+      ".loom/specs/HARBOR-234/**"
+    ],
+    "non_goals": [
+      "No App/Core/Lode implementation",
+      "No live Xiaohongshu/BOSS account or profile use",
+      "No submit, publish, send, save, delete, pay, or risk-control bypass",
+      "No hosted browser, marketplace, or bulk collection"
+    ],
+    "validation_expectation": [
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm smoke:runtime",
+      "git diff --check",
+      "loom fact-chain --target . --item HARBOR-234 --json",
+      "loom suite validate --target . --item HARBOR-234 --json",
+      "loom suite evidence validate --target . --item HARBOR-234 --json",
+      "loom suite carrier validate --target . --item HARBOR-234 --json"
+    ],
+    "output_format": "PR-ready branch with validation evidence and no-live-action boundary.",
+    "integration_target": [
+      ".loom/progress/HARBOR-234.md",
+      ".loom/specs/HARBOR-234/evidence-map.md",
+      ".loom/specs/HARBOR-234/build-evidence.json"
+    ],
+    "no_overlap": true
+  },
+  "validation": {
+    "passed": [
+      "pnpm typecheck",
+      "pnpm test (32/32 tests)",
+      "pnpm smoke:runtime (fixture mode)",
+      "git diff --check",
+      "loom suite validate --target . --item HARBOR-234 --json",
+      "loom suite evidence validate --target . --item HARBOR-234 --json",
+      "loom suite carrier validate --target . --item HARBOR-234 --json"
+    ],
+    "to_refresh_after_commit": [
+      "head SHA",
+      "suite evidence freshness context",
+      "PR metadata readback",
+      "current-head semantic review"
+    ]
+  },
+  "runtime_boundary": {
+    "provider_detection": "fixture/local-safe validation only in this build evidence",
+    "profile": "no real user profile opened",
+    "forbidden_actions": [
+      "login",
+      "submit",
+      "publish",
+      "apply",
+      "greet",
+      "send_message",
+      "save",
+      "captcha_or_risk_bypass",
+      "raw_cookie_token_profile_dom_har_network_body_or_screenshot_export"
+    ],
+    "raw_debug_endpoint": "not_exposed",
+    "raw_screenshot_bytes": "not_exposed"
+  },
+  "sample_payload_evidence": {
+    "site_resource_schema": "harbor-site-resource-facts/v0",
+    "write_precheck_schema": "harbor-write-precheck-facts/v0",
+    "write_precheck_submitted": false,
+    "write_precheck_no_submit_guard": "active",
+    "readiness_endpoints": [
+      "/runtime/sessions/{runtime_session_ref}/site-resource-facts",
+      "/runtime/sessions/{runtime_session_ref}/write-precheck-facts"
+    ]
+  },
+  "remaining_limitations": [
+    "This PR does not complete Core task execution, App packaged runtime supervision, or final App Computer Use E2E.",
+    "Site login/app readiness facts may be unknown unless a later safe live probe supplies observed refs.",
+    "Live Xiaohongshu/BOSS profile and production page validation require explicit user authorization."
+  ]
+}

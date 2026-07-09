@@ -1,16 +1,8 @@
-# Current Status
+# HARBOR-234 Progress
 
-## Derived Fact Chain View
+## Dynamic Facts
 
 - Item ID: HARBOR-234
-- Goal: Add Harbor Runtime API projections for site-level resource facts and write-precheck facts so Core can satisfy Lode Xiaohongshu/BOSS resource requirements without receiving raw browser material.
-- Scope: Covers Harbor #234 under parent Harbor #218. Ownership is limited to Harbor runtime API facts projection code, focused tests, and HARBOR-234 item-specific Loom carriers. The implementation may expose session-scoped facts endpoints and write-precheck facts endpoints that return public/redacted status, refs, failure classes, and guard state only.
-- Execution Path: work/harbor-234-site-runtime-facts
-- Workspace Entry: .
-- Recovery Entry: .loom/progress/HARBOR-234.md
-- Review Entry: .loom/reviews/HARBOR-234.json
-- Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-234 --json; loom suite carrier validate --target . --item HARBOR-234 --json
-- Closing Condition: PR ready with current-head review and hosted checks for Harbor #234. Issue closeout requires merge commit, PR/head SHA, validation commands, sample facts payload evidence, and explicit boundary that no live account/profile/production page action occurred in this PR.
 - Current Checkpoint: merge
 - Current Stop: Harbor runtime API now exposes site-level resource facts and write-precheck facts for fixture/local-safe sessions. Implementation covers session-scoped facts projection, HTTP endpoints, readiness discovery, tests, smoke output, session-bound HTTP write-precheck evidence provenance, and session-bound direct `HarborRuntime.getWritePrecheckFacts` provenance. Spec review and implementation review records are present for HARBOR-234. The dependency correction still holds: App #265 and Core #243 remain downstream until Core consumes these facts and App E2E is implemented.
 - Next Step: Run PR metadata readback, PR gate, hosted checks, controlled merge, and post-merge closeout for Harbor #234.
@@ -19,6 +11,25 @@
 - Recovery Boundary: Revert branch `work/harbor-234-site-runtime-facts`. No App/Core/Lode code changes, real account/profile/Cookie/production page action, submit, publish, send, save, hosted browser, marketplace, bulk collection, or risk-bypass claim may occur in this batch.
 - Current Lane: Harbor #234 site-level runtime facts and write-precheck facts.
 
+## Subagent Integration
+
+- Read-only review lane `019f464d-b883-7213-92c3-6786ceba356e` reported one major finding: HTTP write-precheck accepted caller-supplied page/target facts that could be emitted as provided-context evidence.
+- Integrated fix: HTTP now calls `getSessionWritePrecheckFacts`, which strips caller-supplied `url`, `title`, `summary`, and `locator_hint`; evidence provenance remains tied to the current runtime session.
+- Regression evidence: `packages/runtime-api/src/server.test.ts` posts spoofed URL/title/locator and asserts the spoofed URL is absent from evidence provenance and the locator is not accepted.
+- Delegate did not write files, did not perform GitHub operations, and did not touch real browser/profile/account/production pages.
+- Read-only review lane `019f4658-7d40-72e0-aa66-b08d10b2c8f3` reported one blocking finding: public `HarborRuntime.getWritePrecheckFacts` still accepted caller-supplied `title`, `url`, `summary`, and `locator_hint`, so direct Core/App library consumers could spoof write-precheck evidence provenance even though HTTP was fixed.
+- Integrated fix: `getWritePrecheckFacts` is now session-bound for page URL/title/summary/locator, accepts only target label and field state from input, and `getSessionWritePrecheckFacts` reuses the same safe path.
+- Regression evidence: `packages/runtime-api/src/index.test.ts` passes spoofed URL/title/locator to the direct method and asserts spoofed values are absent while evidence provenance is tied to the runtime session.
+
+## Execution Ledger
+
+- Ledger Binding: recovery_entry
+- Plan Locator: .loom/specs/HARBOR-234/plan.md
+- Acceptance Locator: .loom/specs/HARBOR-234/spec.md
+- Validation Evidence Locator: .loom/specs/HARBOR-234/evidence-map.md
+- Handoff Notes Locator: .loom/specs/HARBOR-234/task-carrier.md
+- Evidence Freshness: current
+
 ## Runtime Evidence
 
 - Run Entry: 2026-07-09T10:36Z `loom spec-review --target . --item HARBOR-234 --json`; `loom build --target . --item HARBOR-234 --build-evidence .loom/specs/HARBOR-234/build-evidence.json --json`; `loom review record --target . --item HARBOR-234 --decision allow --kind code_review --json`; prior validation passed `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime`, `git diff --check`, `loom verify --target . --json`, `loom fact-chain --target . --item HARBOR-234 --json`, `loom suite validate --target . --item HARBOR-234 --json`, `loom suite evidence validate --target . --item HARBOR-234 --json`, and `loom suite carrier validate --target . --item HARBOR-234 --json`.
@@ -26,10 +37,3 @@
 - Diagnostics Entry: .loom/specs/HARBOR-234/consistency-analysis.md
 - Verification Entry: loom verify --target . --json
 - Lane Entry: HARBOR-234
-
-## Sources
-
-- Static Truth: .loom/work-items/HARBOR-234.md
-- Dynamic Truth: .loom/progress/HARBOR-234.md
-- Locator Truth: .loom/bootstrap/init-result.json
-- Fact Chain CLI: loom fact-chain --target . --item HARBOR-234 --json

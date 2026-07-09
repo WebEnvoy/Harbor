@@ -1,0 +1,54 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-234",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "Spec review allow for HARBOR-234 at head 461c3682393561ace3597eaafdef81d6f7ffe490. Reviewed full suite path and confirmed the direct runtime API spoofing fix remains inside the existing HARBOR-234 spec: Harbor exposes session-scoped site resource facts and write-precheck facts with public/redacted refs only, no live account/profile/production page claim, and no submit/publish/send/save action. Validation consumed pnpm typecheck, pnpm test 32/32, git diff --check, suite evidence validate, and loom build pass on 2026-07-09T10:35Z.",
+  "reviewer": "codex-main",
+  "authored_at": "2026-07-09T10:35:54Z",
+  "reviewed_head": "461c3682393561ace3597eaafdef81d6f7ffe490",
+  "reviewed_validation_summary": "2026-07-09T10:32Z UTC build validation on branch `work/harbor-234-site-runtime-facts` after direct runtime API spoofing fix: `pnpm typecheck` passed, `pnpm test` passed with 32/32 tests, `pnpm smoke:runtime` passed in fixture mode, and `git diff --check` passed. Earlier Loom checks passed for `loom verify --target . --json`, `loom fact-chain --target . --item HARBOR-234 --json`, `loom suite validate --target . --item HARBOR-234 --json`, `loom suite evidence validate --target . --item HARBOR-234 --json`, `loom suite carrier validate --target . --item HARBOR-234 --json`, and `loom build --target . --item HARBOR-234 --build-evidence .loom/specs/HARBOR-234/build-evidence.json --json`. Read-only review lanes reported and the main controller fixed two provenance findings: HTTP write-precheck accepted caller-supplied page facts, and public `HarborRuntime.getWritePrecheckFacts` accepted caller-supplied URL/title/summary/locator for direct consumers. Downstream App/Core E2E remains outside HARBOR-234 scope until Core consumes this API and the user authorizes any real account/profile/production page action. This validation did not use real accounts, browser profiles, production pages, submit/publish/send/save actions, hosted browser, marketplace, bulk collection, or risk-control bypass.",
+  "reviewed_validation_summary_hash": "8cfc83b561e0aedcbc5aeb5dc17f5e50744aeb54f9c4cc47012573d450d53158",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-234.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-234.md",
+    "recovery_entry": ".loom/progress/HARBOR-234.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "budget_risk": {
+      "schema_version": "loom-execution-budget-risk/v1",
+      "status": "not_applicable",
+      "enforcement": "advisory",
+      "highest_risk": "none",
+      "risk_dimensions": [],
+      "summary": "execution budget is not_applicable; budget risk remains advisory and non-blocking",
+      "budget_summary": "execution budget is not collected for this invocation.",
+      "adapter_evidence_locator": "",
+      "provenance": {
+        "source": "github_host"
+      }
+    },
+    "engine_adapter": null,
+    "engine_evidence": null,
+    "normalized_findings": null,
+    "suite_validation": "suite validate",
+    "suite_validator": "loom",
+    "suite_validator_mode": "global-cli",
+    "suite_spec": ".loom/specs/HARBOR-234/spec.md",
+    "suite_plan": ".loom/specs/HARBOR-234/plan.md",
+    "suite_evidence_map": ".loom/specs/HARBOR-234/evidence-map.md",
+    "suite_consistency_analysis": ".loom/specs/HARBOR-234/consistency-analysis.md",
+    "suite_task_carriers": [
+      ".loom/specs/HARBOR-234/task-carrier.md"
+    ],
+    "suite_consumed_contracts": [
+      "docs/methodology/harness/full-spec-suite-cli-surface.md",
+      "docs/methodology/templates/spec-suite.md"
+    ]
+  }
+}
