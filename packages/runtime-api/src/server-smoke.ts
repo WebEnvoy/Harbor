@@ -1,0 +1,208 @@
+import assert from "node:assert/strict";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
+
+interface StartupLine {
+  service: string;
+  status: string;
+  url: string;
+  provider_launcher?: string;
+}
+
+const endpointsChecked: string[] = [];
+const child = spawn("pnpm", ["start:runtime"], {
+  cwd: process.cwd(),
+  detached: true,
+  env: {
+    ...process.env,
+    HARBOR_RUNTIME_PORT: "0",
+    HARBOR_RUNTIME_PROVIDER: "fixture"
+  },
+  stdio: ["ignore", "pipe", "pipe"]
+});
+
+try {
+  const startup = await waitForStartup(child);
+  assert.equal(startup.service, "harbor-runtime-api");
+  assert.equal(startup.status, "ready");
+  assert.equal(startup.provider_launcher, "fixture");
+
+  for (const path of ["/health", "/ready", "/readiness", "/runtime/health"]) {
+    const body = await getJson(startup.url, path);
+    assert.equal(body.status, "ready");
+    assert.equal(body.safety_boundary.raw_credentials, "not_exposed");
+  }
+
+  const providers = await getJson(startup.url, "/runtime/browser-providers");
+  assert.equal(providers.schema_version, "harbor-browser-provider-status/v0");
+
+  const emptyEnvironments = await getJson(startup.url, "/runtime/identity-environments");
+  assert.deepEqual(emptyEnvironments.identity_environments, []);
+
+  const identityEnvironment = await postJson(startup.url, "/runtime/identity-environments", {
+    identity_environment_ref: "identity-env_api-smoke",
+    execution_identity_ref: "execution-identity_api-smoke",
+    profile_ref: "profile_api-smoke",
+    profile_storage_ref: "profile-storage_api-smoke",
+    site: {
+      site_id: "xiaohongshu",
+      origin: "https://www.xiaohongshu.com",
+      display_name: "Xiaohongshu",
+      account_ref: "account_api-smoke"
+    },
+    login_state: "logged_in",
+    storage_state: "present",
+    language: "zh-CN",
+    timezone: "Asia/Shanghai",
+    fingerprint_summary: "fixture-provider-claim"
+  });
+  assert.equal(identityEnvironment.identity_environment_ref, "identity-env_api-smoke");
+  assert.equal(identityEnvironment.public_boundary.raw_material, "not_exposed");
+
+  const environments = await getJson(startup.url, "/runtime/identity-environments");
+  assert.equal(environments.identity_environments.length, 1);
+
+  const session = await postJson(startup.url, "/runtime/identity-environment-sessions", {
+    identity_environment_ref: "identity-env_api-smoke",
+    url: "https://example.test/runtime-api-smoke",
+    control_owner: "agent",
+    holder_ref: "api-smoke"
+  });
+  assert.equal(session.lifecycle_state, "active");
+
+  const snapshot = await postJson(startup.url, `/runtime/sessions/${session.runtime_session_ref}/snapshot`, {});
+  assert.equal(snapshot.status, "captured");
+  assert.equal(snapshot.evidence_refs.length > 0, true);
+
+  const siteFacts = await getJson(
+    startup.url,
+    `/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=xiaohongshu&task_kind=search_notes`
+  );
+  assert.equal(siteFacts.schema_version, "harbor-site-resource-facts/v0");
+  assert.equal(siteFacts.public_boundary.raw_dom, "not_exposed");
+  assert.equal(siteFacts.evidence_refs.length > 0, true);
+
+  const writePrecheck = await postJson(startup.url, `/runtime/sessions/${session.runtime_session_ref}/write-precheck-facts`, {
+    site_id: "xiaohongshu",
+    target_label: "Publish note precheck",
+    fields: [
+      { label: "Title", input_kind: "text", required: true, sensitivity: "public", value_state: "present" }
+    ]
+  });
+  assert.equal(writePrecheck.schema_version, "harbor-write-precheck-facts/v0");
+  assert.equal(writePrecheck.submitted, false);
+  assert.equal(writePrecheck.pre_write_guard.no_submit_guard, "active");
+  assert.equal(writePrecheck.privacy_boundary.raw_values, "not_exposed");
+
+  for (const evidenceRef of [snapshot.evidence_refs[0], siteFacts.evidence_refs[0], writePrecheck.writable_target.evidence_refs[0]]) {
+    const evidence = await getJson(startup.url, `/runtime/evidence/${evidenceRef}`);
+    assert.equal(evidence.evidence_ref, evidenceRef);
+    assert.equal(JSON.stringify(evidence).includes("cookie"), false);
+  }
+
+  console.log(JSON.stringify({
+    schema_version: "harbor-runtime-api-server-smoke/v0",
+    command: "pnpm start:runtime",
+    provider_launcher: "fixture",
+    endpoints_checked: endpointsChecked,
+    safety_boundary: {
+      real_account: "not_used",
+      real_browser_profile: "not_used",
+      production_page: "not_opened",
+      external_write_actions: "not_performed"
+    }
+  }, null, 2));
+} finally {
+  await stop(child);
+}
+
+async function getJson(baseUrl: string, path: string): Promise<any> {
+  const response = await fetch(`${baseUrl}${path}`);
+  endpointsChecked.push(`GET ${path}`);
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+async function postJson(baseUrl: string, path: string, body: unknown): Promise<any> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" }
+  });
+  endpointsChecked.push(`POST ${path}`);
+  assert.equal(response.status === 200 || response.status === 201, true);
+  return response.json();
+}
+
+async function waitForStartup(childProcess: ChildProcessByStdio<null, Readable, Readable>): Promise<StartupLine> {
+  let stdout = "";
+  let stderr = "";
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timed out waiting for Harbor runtime API startup.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+    }, 30_000);
+
+    childProcess.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    childProcess.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+      const startup = parseStartup(stdout);
+      if (startup) {
+        clearTimeout(timer);
+        resolve(startup);
+      }
+    });
+    childProcess.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      reject(new Error(`Harbor runtime API exited before startup: code=${code ?? "null"} signal=${signal ?? "null"}\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+    });
+    childProcess.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function parseStartup(output: string): StartupLine | null {
+  for (const line of output.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as Partial<StartupLine>;
+      if (parsed.service === "harbor-runtime-api" && parsed.status === "ready" && parsed.url) {
+        return parsed as StartupLine;
+      }
+    } catch {
+      // Ignore pnpm lifecycle output; the runtime server prints a JSON startup line.
+    }
+  }
+  return null;
+}
+
+async function stop(childProcess: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
+  if (childProcess.exitCode !== null || childProcess.signalCode !== null) return;
+  killGroup(childProcess, "SIGTERM");
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      killGroup(childProcess, "SIGKILL");
+      resolve();
+    }, 5_000);
+    childProcess.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+function killGroup(childProcess: ChildProcessByStdio<null, Readable, Readable>, signal: NodeJS.Signals): void {
+  if (childProcess.pid) {
+    try {
+      process.kill(-childProcess.pid, signal);
+      return;
+    } catch {
+      // Fall back to the wrapper process if the platform does not expose the group.
+    }
+  }
+  childProcess.kill(signal);
+}
