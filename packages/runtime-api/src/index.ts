@@ -273,6 +273,10 @@ export class HarborRuntime {
       return manualAuthenticationUnavailable("user_confirmation_required", runtime_session_ref);
     }
 
+    const managedIdentityEnvironment = this.identityEnvironments.getFacts(session.identity_environment_ref);
+    if (!managedIdentityEnvironment || managedIdentityEnvironment.execution_identity_ref !== session.execution_identity_ref) {
+      return manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
+    }
     const identityEnvironment = this.identityEnvironments.completeManualAuthentication(session.identity_environment_ref);
     return identityEnvironment ?? manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
   }

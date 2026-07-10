@@ -185,7 +185,11 @@ export class RuntimeSessionStore {
     const holder = input.holder_ref ?? owner;
     const reusable = input.reuse_existing === false
       ? null
-      : this.findReusableSession(identityEnvironment.profile_ref, identityEnvironment.identity_environment_ref);
+      : this.findReusableSession(
+        identityEnvironment.profile_ref,
+        identityEnvironment.identity_environment_ref,
+        identityEnvironment.execution_identity_ref
+      );
     if (reusable) {
       const conflict = this.acquireControl(reusable, owner, holder);
       if (conflict) return conflict;
@@ -318,11 +322,16 @@ export class RuntimeSessionStore {
     return lifecycle === "active" || lifecycle === "idle";
   }
 
-  private findReusableSession(profile_ref: string, identity_environment_ref: string): RuntimeSessionRecord | null {
+  private findReusableSession(
+    profile_ref: string,
+    identity_environment_ref: string,
+    execution_identity_ref: string
+  ): RuntimeSessionRecord | null {
     for (const record of this.records.values()) {
       if (
         record.facts.profile_ref === profile_ref &&
         record.facts.identity_environment_ref === identity_environment_ref &&
+        record.facts.execution_identity_ref === execution_identity_ref &&
         record.facts.lifecycle_state !== "closed" &&
         record.facts.lifecycle_state !== "failed" &&
         record.facts.lifecycle_state !== "expired"

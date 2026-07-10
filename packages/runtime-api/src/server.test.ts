@@ -456,6 +456,48 @@ test("does not reuse a profile session for a different identity and keeps authen
   }
 });
 
+test("does not reuse or confirm a session with a different execution identity", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_execution-boundary",
+      execution_identity_ref: "execution-identity_a",
+      profile_ref: "profile_execution-boundary",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "manual_auth_required",
+      storage_state: "present"
+    });
+    const first = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_execution-boundary",
+      url: "https://example.test/execution-identity-a",
+      control_owner: "user"
+    });
+    const second = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment: {
+        identity_environment_ref: "identity-env_execution-boundary",
+        execution_identity_ref: "execution-identity_b",
+        profile_ref: "profile_execution-boundary",
+        site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+        login_state: "manual_auth_required",
+        storage_state: "present"
+      },
+      url: "https://example.test/execution-identity-b",
+      control_owner: "user"
+    });
+    assert.notEqual(first.runtime_session_ref, second.runtime_session_ref);
+    assert.equal(second.execution_identity_ref, "execution-identity_b");
+
+    const response = await fetch(`${running.url}/runtime/sessions/${second.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).failure_class, "identity_environment_unmanaged");
+    const managedIdentity = await getJson(`${running.url}/runtime/identity-environments/identity-env_execution-boundary`);
+    assert.equal(managedIdentity.status.login_state, "manual_auth_required");
+  } finally {
+    await running.close();
+  }
+});
+
 test("does not publish a confirmed login state when identity persistence fails", async () => {
   let persistenceWrites = 0;
   const runtime = new HarborRuntime(createFixtureLauncher("ready"), {
