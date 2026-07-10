@@ -4,7 +4,42 @@
   "branch": "work/harbor-241-manual-auth-sync",
   "delegations": [
     {
-      "scope": "Harbor Runtime API endpoint and fixture tests",
+      "id": "harbor-241-runtime-api-worker",
+      "status": "integrated",
+      "task_goal": "Implement the session-bound manual authentication completion intent and fixture tests for Harbor #241.",
+      "context_locators": [
+        ".loom/work-items/HARBOR-241.md",
+        ".loom/specs/HARBOR-241/spec.md",
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/server.ts",
+        "packages/runtime-api/src/server.test.ts"
+      ],
+      "read_scope": [
+        "Harbor Runtime API session and identity-manager code",
+        "existing Runtime API tests"
+      ],
+      "write_ownership": [
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/server.ts",
+        "packages/runtime-api/src/server.test.ts"
+      ],
+      "non_goals": [
+        "App/Core/Lode code",
+        "cookies, credentials, verification codes, profile storage, DOM, or raw evidence",
+        "login automation and external writes"
+      ],
+      "validation_expectation": [
+        "pnpm typecheck",
+        "pnpm test",
+        "git diff --check"
+      ],
+      "output_format": "changed files, tests, head, status, and risks for main-controller readback",
+      "integration_target": [
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/server.ts",
+        "packages/runtime-api/src/server.test.ts",
+        ".loom/progress/HARBOR-241.md"
+      ],
       "result": "integrated and read back by the main controller"
     }
   ],
