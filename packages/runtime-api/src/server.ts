@@ -8,6 +8,7 @@ import {
   type SiteResourceFactsInput,
   type WritePrecheckInput
 } from "./index.js";
+import { ManualAuthenticationAuthorizer } from "./manual-authentication-authorization.js";
 
 export const HARBOR_RUNTIME_API_READINESS_SCHEMA = "harbor-runtime-api-readiness/v0";
 
@@ -15,6 +16,7 @@ export interface HarborRuntimeServerOptions {
   host?: string;
   port?: number;
   runtime?: HarborRuntime;
+  manual_authentication_supervisor_token?: string;
 }
 
 export interface RunningHarborRuntimeServer {
@@ -25,10 +27,14 @@ export interface RunningHarborRuntimeServer {
   close: () => Promise<void>;
 }
 
-export function createHarborRuntimeHttpServer(runtime = new HarborRuntime()): Server {
+export function createHarborRuntimeHttpServer(
+  runtime = new HarborRuntime(),
+  options: Pick<HarborRuntimeServerOptions, "manual_authentication_supervisor_token"> = {}
+): Server {
+  const manualAuthenticationAuthorizer = new ManualAuthenticationAuthorizer(options.manual_authentication_supervisor_token);
   return createServer(async (request, response) => {
     try {
-      await route(runtime, request, response);
+      await route(runtime, manualAuthenticationAuthorizer, request, response);
     } catch (error) {
       const badRequest = error instanceof BadRequest;
       writeJson(response, badRequest ? 400 : 500, {
@@ -41,7 +47,7 @@ export function createHarborRuntimeHttpServer(runtime = new HarborRuntime()): Se
 
 export async function startHarborRuntimeServer(options: HarborRuntimeServerOptions = {}): Promise<RunningHarborRuntimeServer> {
   const host = options.host ?? "127.0.0.1";
-  const server = createHarborRuntimeHttpServer(options.runtime);
+  const server = createHarborRuntimeHttpServer(options.runtime, options);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.port ?? 8788, host, () => {
@@ -60,7 +66,12 @@ export async function startHarborRuntimeServer(options: HarborRuntimeServerOptio
   };
 }
 
-async function route(runtime: HarborRuntime, request: IncomingMessage, response: ServerResponse): Promise<void> {
+async function route(
+  runtime: HarborRuntime,
+  manualAuthenticationAuthorizer: ManualAuthenticationAuthorizer,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
   const method = request.method ?? "GET";
   const url = new URL(request.url ?? "/", "http://harbor.local");
   const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -113,7 +124,7 @@ async function route(runtime: HarborRuntime, request: IncomingMessage, response:
   }
 
   if (parts[0] === "runtime" && (parts[1] === "sessions" || parts[1] === "identity-environment-sessions") && parts[2]) {
-    await routeSession(runtime, parts[2], parts[3], method, request, response);
+    await routeSession(runtime, manualAuthenticationAuthorizer, parts[2], parts[3], method, request, response);
     return;
   }
 
@@ -188,6 +199,7 @@ async function routeIdentityEnvironment(
 
 async function routeSession(
   runtime: HarborRuntime,
+  manualAuthenticationAuthorizer: ManualAuthenticationAuthorizer,
   runtimeSessionRef: string,
   action: string | undefined,
   method: string,
@@ -208,6 +220,14 @@ async function routeSession(
     return;
   }
   if (action === "manual-authentication-completed" && method === "POST") {
+    const authorization = manualAuthenticationAuthorizer.authorize(request);
+    if (!authorization.authorized) {
+      writeJson(response, authorization.status_code, { failure_class: authorization.failure_class });
+      return;
+    }
+    const requestUrl = new URL(request.url ?? "/", "http://harbor.local");
+    if (requestUrl.search) throw new BadRequest("Manual authentication completion does not accept query parameters.");
+    await requireEmptyRequestBody(request);
     const result = runtime.completeManualAuthentication(runtimeSessionRef);
     writeJson(response, result.status === "unavailable" ? result.failure_class === "session_missing" ? 404 : 409 : 200, result);
     return;
@@ -248,6 +268,14 @@ async function readJson<T>(request: IncomingMessage, fallback?: T): Promise<T> {
     return JSON.parse(Buffer.concat(chunks).toString("utf8")) as T;
   } catch {
     throw new BadRequest("Invalid JSON request body.");
+  }
+}
+
+async function requireEmptyRequestBody(request: IncomingMessage): Promise<void> {
+  for await (const chunk of request) {
+    if ((Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk)) > 0) {
+      throw new BadRequest("Manual authentication completion requires an empty request body.");
+    }
   }
 }
 

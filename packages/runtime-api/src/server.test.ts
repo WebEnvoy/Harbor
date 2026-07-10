@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -262,7 +263,7 @@ test("persists identity environment public records for the local runtime API", a
 test("records user-confirmed manual authentication for an active managed session and persists the public record", async () => {
   const persistence_path = join(mkdtempSync(join(tmpdir(), "harbor-manual-auth-")), "identity-environments.json");
   const runtime = new HarborRuntime(createFixtureLauncher("ready"), { persistence_path });
-  const first = await startHarborRuntimeServer({ port: 0, runtime });
+  const first = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
     await postJson(`${first.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_manual-auth",
@@ -287,13 +288,16 @@ test("records user-confirmed manual authentication for an active managed session
     });
 
     const untrustedResponse = await fetch(`${first.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
-    assert.equal(untrustedResponse.status, 409);
-    assert.equal((await untrustedResponse.json()).failure_class, "user_confirmation_required");
+    assert.equal(untrustedResponse.status, 403);
+    assert.equal((await untrustedResponse.json()).failure_class, "manual_auth_authorization_required");
     const untrustedReadback = await getJson(`${first.url}/runtime/identity-environments/identity-env_manual-auth`);
     assert.equal(untrustedReadback.status.login_state, "manual_auth_required");
 
     runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
-    const response = await fetch(`${first.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    const response = await fetch(`${first.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
+      method: "POST",
+      headers: manualAuthHeaders()
+    });
     assert.equal(response.status, 200);
     const completed = await response.json();
     assert.equal(completed.identity_environment_ref, "identity-env_manual-auth");
@@ -307,6 +311,9 @@ test("records user-confirmed manual authentication for an active managed session
     assert.equal(publicJson.includes("cookie-jar_manual-auth-sensitive"), false);
     assert.equal(completed.public_boundary.not_exposed.includes("password"), true);
     assert.equal(completed.public_boundary.not_exposed.includes("verification_code"), true);
+    assert.equal(publicJson.includes(supervisorToken()), false);
+    assert.equal(readFileSync(persistence_path, "utf8").includes(supervisorToken()), false);
+    assert.equal(JSON.stringify(await getJson(`${first.url}/ready`)).includes(supervisorToken()), false);
 
     const readback = await getJson(`${first.url}/runtime/identity-environments/identity-env_manual-auth`);
     assert.equal(readback.status.login_state, "logged_in");
@@ -329,9 +336,77 @@ test("records user-confirmed manual authentication for an active managed session
   }
 });
 
+test("fails closed before session lookup and requires one valid fixed-format supervisor credential", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const unavailable = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    for (const runtimeSessionRef of ["session_missing", "session_not_inspected"]) {
+      const response = await fetch(`${unavailable.url}/runtime/sessions/${runtimeSessionRef}/manual-authentication-completed`, { method: "POST" });
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { failure_class: "manual_auth_authorization_unavailable" });
+    }
+  } finally {
+    await unavailable.close();
+  }
+
+  const configured = await startHarborRuntimeServer({
+    port: 0,
+    runtime,
+    manual_authentication_supervisor_token: supervisorToken()
+  });
+  try {
+    await postJson(`${configured.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_authorization"));
+    const session = await postJson(`${configured.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_authorization",
+      url: "https://example.test/authorization",
+      control_owner: "user"
+    });
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    const before = await getJson(`${configured.url}/runtime/identity-environments/identity-env_authorization`);
+
+    const rejectedHeaders: Record<string, string>[] = [{}, { authorization: "Bearer invalid" }, { authorization: `Bearer ${differentSupervisorToken()}` }];
+    for (const headers of rejectedHeaders) {
+      const [known, unknown] = await Promise.all([
+        fetch(`${configured.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, { method: "POST", headers }),
+        fetch(`${configured.url}/runtime/sessions/session_not_inspected/manual-authentication-completed`, { method: "POST", headers })
+      ]);
+      assert.equal(known.status, 403);
+      assert.equal(unknown.status, 403);
+      assert.deepEqual(await known.json(), await unknown.json());
+      assert.deepEqual(await getJson(`${configured.url}/runtime/identity-environments/identity-env_authorization`), before);
+    }
+
+    const duplicate = await postDuplicateAuthorization(
+      `${configured.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`,
+      supervisorToken()
+    );
+    assert.equal(duplicate.status, 403);
+    assert.deepEqual(duplicate.body, { failure_class: "manual_auth_authorization_required" });
+    assert.deepEqual(await getJson(`${configured.url}/runtime/identity-environments/identity-env_authorization`), before);
+
+    for (const request of [
+      fetch(`${configured.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed?token=${supervisorToken()}`, {
+        method: "POST",
+        headers: manualAuthHeaders()
+      }),
+      fetch(`${configured.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
+        method: "POST",
+        headers: { ...manualAuthHeaders(), "content-type": "application/json" },
+        body: "{}"
+      })
+    ]) {
+      const response = await request;
+      assert.equal(response.status, 400);
+      assert.deepEqual(await getJson(`${configured.url}/runtime/identity-environments/identity-env_authorization`), before);
+    }
+  } finally {
+    await configured.close();
+  }
+});
+
 test("rejects missing, unmanaged, closed, and failed sessions without changing identity state", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
-  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
     await postJson(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_manual-auth-reject",
@@ -347,7 +422,7 @@ test("rejects missing, unmanaged, closed, and failed sessions without changing i
       storage_state: "present"
     });
 
-    const missing = await fetch(`${running.url}/runtime/sessions/session_missing/manual-authentication-completed`, { method: "POST" });
+    const missing = await fetch(`${running.url}/runtime/sessions/session_missing/manual-authentication-completed`, { method: "POST", headers: manualAuthHeaders() });
     assert.equal(missing.status, 404);
     assert.equal((await missing.json()).failure_class, "session_missing");
 
@@ -364,7 +439,7 @@ test("rejects missing, unmanaged, closed, and failed sessions without changing i
       control_owner: "user"
     });
     runtime.recordHandoff(unmanaged.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
-    const unmanagedResponse = await fetch(`${running.url}/runtime/sessions/${unmanaged.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    const unmanagedResponse = await fetch(`${running.url}/runtime/sessions/${unmanaged.runtime_session_ref}/manual-authentication-completed`, { method: "POST", headers: manualAuthHeaders() });
     assert.equal(unmanagedResponse.status, 409);
     assert.equal((await unmanagedResponse.json()).failure_class, "identity_environment_unmanaged");
 
@@ -381,7 +456,7 @@ test("rejects missing, unmanaged, closed, and failed sessions without changing i
       url: "https://example.test/agent",
       control_owner: "agent"
     });
-    const agentResponse = await fetch(`${running.url}/runtime/sessions/${agentSession.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    const agentResponse = await fetch(`${running.url}/runtime/sessions/${agentSession.runtime_session_ref}/manual-authentication-completed`, { method: "POST", headers: manualAuthHeaders() });
     assert.equal(agentResponse.status, 409);
     assert.equal((await agentResponse.json()).failure_class, "user_confirmation_required");
 
@@ -390,7 +465,7 @@ test("rejects missing, unmanaged, closed, and failed sessions without changing i
       url: "https://example.test/closed"
     });
     await postJson(`${running.url}/runtime/sessions/${closed.runtime_session_ref}/stop`, { control_owner: "agent" });
-    const closedResponse = await fetch(`${running.url}/runtime/sessions/${closed.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    const closedResponse = await fetch(`${running.url}/runtime/sessions/${closed.runtime_session_ref}/manual-authentication-completed`, { method: "POST", headers: manualAuthHeaders() });
     assert.equal(closedResponse.status, 409);
     assert.equal((await closedResponse.json()).failure_class, "session_not_active");
 
@@ -403,14 +478,18 @@ test("rejects missing, unmanaged, closed, and failed sessions without changing i
       login_state: "manual_auth_required",
       storage_state: "present"
     });
-    const failedServer = await startHarborRuntimeServer({ port: 0, runtime: failedRuntime });
+    const failedServer = await startHarborRuntimeServer({
+      port: 0,
+      runtime: failedRuntime,
+      manual_authentication_supervisor_token: supervisorToken()
+    });
     try {
       const failed = await postJson(`${failedServer.url}/runtime/identity-environment-sessions`, {
         identity_environment_ref: "identity-env_failed",
         url: "https://example.test/failed"
       });
       assert.equal(failed.lifecycle_state, "failed");
-      const failedResponse = await fetch(`${failedServer.url}/runtime/sessions/${failed.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+      const failedResponse = await fetch(`${failedServer.url}/runtime/sessions/${failed.runtime_session_ref}/manual-authentication-completed`, { method: "POST", headers: manualAuthHeaders() });
       assert.equal(failedResponse.status, 409);
       assert.equal((await failedResponse.json()).failure_class, "session_not_active");
       const failedReadback = await getJson(`${failedServer.url}/runtime/identity-environments/identity-env_failed`);
@@ -430,7 +509,7 @@ test("rejects missing, unmanaged, closed, and failed sessions without changing i
 
 test("does not reuse a profile session for a different identity and keeps authentication confirmation scoped", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
-  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
     for (const identity_environment_ref of ["identity-env_same-profile-a", "identity-env_same-profile-b"]) {
       await postJson(`${running.url}/runtime/identity-environments`, {
@@ -455,7 +534,7 @@ test("does not reuse a profile session for a different identity and keeps authen
     assert.notEqual(first.runtime_session_ref, second.runtime_session_ref);
 
     runtime.recordHandoff(second.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
-    const response = await fetch(`${running.url}/runtime/sessions/${second.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    const response = await fetch(`${running.url}/runtime/sessions/${second.runtime_session_ref}/manual-authentication-completed`, { method: "POST", headers: manualAuthHeaders() });
     assert.equal(response.status, 200);
     const firstIdentity = await getJson(`${running.url}/runtime/identity-environments/identity-env_same-profile-a`);
     const secondIdentity = await getJson(`${running.url}/runtime/identity-environments/identity-env_same-profile-b`);
@@ -468,7 +547,7 @@ test("does not reuse a profile session for a different identity and keeps authen
 
 test("does not reuse or confirm a session with a different execution identity", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
-  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
     await postJson(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_execution-boundary",
@@ -499,7 +578,7 @@ test("does not reuse or confirm a session with a different execution identity", 
     assert.equal(second.execution_identity_ref, "execution-identity_b");
 
     runtime.recordHandoff(second.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
-    const response = await fetch(`${running.url}/runtime/sessions/${second.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    const response = await fetch(`${running.url}/runtime/sessions/${second.runtime_session_ref}/manual-authentication-completed`, { method: "POST", headers: manualAuthHeaders() });
     assert.equal(response.status, 409);
     assert.equal((await response.json()).failure_class, "identity_environment_unmanaged");
     const managedIdentity = await getJson(`${running.url}/runtime/identity-environments/identity-env_execution-boundary`);
@@ -511,7 +590,7 @@ test("does not reuse or confirm a session with a different execution identity", 
 
 test("rejects manual authentication when a session differs from the managed profile and storage binding", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
-  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
     await postJson(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_profile-storage-boundary",
@@ -537,7 +616,7 @@ test("rejects manual authentication when a session differs from the managed prof
     });
 
     runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
-    const response = await fetch(`${running.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    const response = await fetch(`${running.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, { method: "POST", headers: manualAuthHeaders() });
     assert.equal(response.status, 409);
     assert.equal((await response.json()).failure_class, "identity_environment_unmanaged");
     const unchanged = await getJson(`${running.url}/runtime/identity-environments/identity-env_profile-storage-boundary`);
@@ -556,7 +635,7 @@ test("does not publish a confirmed login state when identity persistence fails",
       if (persistenceWrites > 1) throw new Error("simulated persistence failure at /private/identity-environments.json");
     }
   });
-  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
     await postJson(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_persist-failure",
@@ -572,7 +651,7 @@ test("does not publish a confirmed login state when identity persistence fails",
       control_owner: "user"
     });
     runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
-    const response = await fetch(`${running.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    const response = await fetch(`${running.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, { method: "POST", headers: manualAuthHeaders() });
     assert.equal(response.status, 500);
     const failure = await response.json();
     assert.equal(failure.error, "internal_error");
@@ -632,4 +711,61 @@ async function deleteJson(url: string): Promise<any> {
   const response = await fetch(url, { method: "DELETE" });
   assert.equal(response.status, 200);
   return response.json();
+}
+
+function supervisorToken(): string {
+  return Buffer.alloc(32, 7).toString("base64url");
+}
+
+function differentSupervisorToken(): string {
+  return Buffer.alloc(32, 8).toString("base64url");
+}
+
+function manualAuthHeaders(): Record<string, string> {
+  return { authorization: `Bearer ${supervisorToken()}` };
+}
+
+function manualAuthenticationEnvironment(identity_environment_ref: string): Record<string, unknown> {
+  return {
+    identity_environment_ref,
+    execution_identity_ref: `${identity_environment_ref}:execution`,
+    profile_ref: `${identity_environment_ref}:profile`,
+    site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+    login_state: "manual_auth_required",
+    storage_state: "present"
+  };
+}
+
+async function postDuplicateAuthorization(url: string, token: string): Promise<{ status: number; body: unknown }> {
+  const target = new URL(url);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({
+      hostname: target.hostname,
+      port: Number(target.port),
+      path: `${target.pathname}${target.search}`,
+      method: "POST",
+      headers: [
+        "Host", target.host,
+        "Authorization", `Bearer ${token}`,
+        "Authorization", `Bearer ${token}`,
+        "Content-Length", "0"
+      ]
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.once("error", reject);
+      response.once("end", () => {
+        try {
+          resolve({
+            status: response.statusCode ?? 0,
+            body: JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          });
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    request.once("error", reject);
+    request.end();
+  });
 }

@@ -8,6 +8,8 @@
 ## Boundary
 
 - The endpoint records only a user-confirmed completion fact for the exact active managed session.
+- `POST /runtime/sessions/{runtime_session_ref}/manual-authentication-completed` alone requires a startup-configured `HARBOR_MANUAL_AUTH_SUPERVISOR_TOKEN`: an unconfigured or invalid configuration fails closed with `manual_auth_authorization_unavailable`; missing, malformed, duplicate, or unequal credentials return `manual_auth_authorization_required` before any session lookup.
+- The token is fixed-format base64url, compared with `timingSafeEqual`, accepted only through one `Authorization: Bearer` header, and never persisted, emitted, logged, or added to evidence. The completion request accepts no query parameters and requires an empty body.
 - It does not inspect or claim proof from cookies, page content, URLs, titles, screenshots, or site responses.
 - It does not submit, publish, send, or otherwise write to an external site.
 
