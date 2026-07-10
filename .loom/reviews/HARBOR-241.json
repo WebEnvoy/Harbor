@@ -3,19 +3,19 @@
   "item_id": "HARBOR-241",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Controller code review allows HARBOR-241 at the reviewed head. The dedicated route performs fixed-format bearer authorization before session lookup, uses timing-safe byte comparison, rejects missing/malformed/duplicate/query/body variants, requires an active user-held managed session with canonical identity/profile/execution bindings, persists before exposing the public state, and returns a redacted public identity fact only. Tests cover authorization, session and identity boundaries, persistence failure, restart readback, and sensitive-value non-disclosure. No automatic login, Cookie/DOM inspection, credential storage, site task, or external write is introduced.",
+  "summary": "Controller review allows HARBOR-241 at the current head. Opening or reusing an interactive managed session for control_owner=user now establishes the existing user-held predicate; closed and released sessions still clear it. Manual-authentication completion remains supervisor-authorized and still requires active canonical identity/profile/execution bindings before the redacted public identity state can change. No automatic login, credential or Cookie material, site task, or external write is introduced.",
   "reviewer": "Codex main controller",
-  "authored_at": "2026-07-10T09:32:00Z",
-  "reviewed_head": "57ada8af7699d257021bc295f143c3d3f5682af0",
-  "reviewed_validation_summary": "2026-07-10 local validation on `work/harbor-241-manual-auth-sync`: `pnpm install --offline --frozen-lockfile`, `pnpm typecheck`, focused Runtime API tests, `pnpm test` (39 passed), and `git diff --check` passed. Review corrections enforce same-identity session reuse, user-held session control, atomic persistence before public mutation, and public user-confirmed provenance. Fixture tests only; no Cookie, DOM, page content, or live identity state was read or changed.",
-  "reviewed_validation_summary_hash": "138e1b4e18cf8b0f564d4a3416da2e89fc164fabafc6085fadcc83c538aafd4d",
+  "authored_at": "2026-07-10T11:07:00Z",
+  "reviewed_head": "77c598bc8b8923544bc7bf964a2c67c9c7dced3a",
+  "reviewed_validation_summary": "2026-07-10T10:32Z on `work/harbor-241-live-auth-sync`: `pnpm install --offline --frozen-lockfile`, `pnpm typecheck`, focused manual-authentication test (43 passed), and `git diff --check` passed. Full `pnpm test` observed two concurrent local-provider timing failures; the isolated persistent-profile and stale-DevTools-port regressions both passed. A real local official-Chrome Xiaohongshu session was active with user control, but its confirmation failed because direct user session open/reuse did not mark the interactive session user-held.",
+  "reviewed_validation_summary_hash": "d8f80a807632c544fbbe6ae4404830beb21ad2b2810f2a685eeaba5a01b3cb74",
   "validation_summary_source": "recovery.latest_validation_summary",
   "validation_summary_locator": ".loom/progress/HARBOR-241.md",
   "fallback_to": null,
   "findings": [],
   "blocking_issues": [],
   "follow_ups": [
-    "After Harbor #241 and App #236 merge, perform packaged App E2E against the user-confirmed managed session before closing either user story."
+    "After merge, rebuild the packaged App and verify user-confirmed public identity synchronization against the active local managed session."
   ],
   "consumed_inputs": {
     "work_item": ".loom/work-items/HARBOR-241.md",

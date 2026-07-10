@@ -2,34 +2,34 @@
 
 ## Derived Fact Chain View
 
-- Item ID: HARBOR-219
-- Goal: Repair Harbor #219 managed identity session behavior so App/Core can use Harbor owner API refs for persistent local browser profiles without exposing raw profile paths or sensitive browser material.
-- Scope: Covers Harbor #219 under parent Harbor #218, with ownership constrained to runtime API managed identity session launch inputs, local provider profile storage mapping, public identity ref redaction, viewer/headless defaults, privacy-preserving tests, fixture-only API smoke, and HARBOR-219 carriers.
-- Execution Path: work/harbor-219-persistent-profile-session
+- Item ID: HARBOR-241
+- Goal: 同步用户确认的受控会话认证状态，使 App 可消费 Harbor public identity fact。
+- Scope: Harbor runtime API、identity environment manager、session-bound user-confirmed authentication intent、对应测试和 HARBOR-241 carriers。 Ownership constraints: only Harbor Runtime API code and HARBOR-241 carriers may change; App/Core/Lode and sensitive material remain forbidden.
+- Execution Path: work/harbor-241-live-auth-sync
 - Workspace Entry: .
-- Recovery Entry: .loom/progress/HARBOR-219.md
-- Review Entry: .loom/reviews/HARBOR-219.json
-- Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; pnpm smoke:runtime:api; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-219 --json; loom suite carrier validate --target . --item HARBOR-219 --json; loom suite evidence validate --target . --item HARBOR-219 --json
-- Closing Condition: PR created and pushed for Harbor #219 with PR body listing covered and non-covered issues; no issue closeout in this worker batch.
-- Current Checkpoint: merge
-- Current Stop: PR #240 contains the stale `DevToolsActivePort` repair needed by the real App authentication path. It needs a current-head review record and hosted merge-gate consumption. This is controller-owned integration work, not a user blocker.
-- Next Step: Merge PR #240 after the hosted gate passes, rebuild the packaged App from Harbor main, and repeat the real App authentication session launch. Do not treat fixture smoke or fake-browser tests as live App/Core E2E evidence.
-- Blockers: None
-- Latest Validation Summary: 2026-07-10T10:05Z validation at rebased implementation head `46122903378083cb49c5098732bd2f7ca9fc82f5`: `pnpm typecheck`, the targeted persistent-profile close test, `git diff --check`, `loom fact-chain --target . --json`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json` passed. Full `pnpm test` observed one timing-sensitive fake-browser timeout in the persistent-profile test, then the isolated same test passed; the new unavailable/non-CDP stale-port regression passed in the full run. This is local runtime/test evidence only; no real site/account action, publish, send, submit, credential/Cookie capture, hosted browser, marketplace, bulk collection or risk-control bypass occurred.
-- Recovery Boundary: Revert branch `work/harbor-219-persistent-profile-session`; no App/Core/Lode code changes, real account/profile/Cookie/production page action, submit, publish, send, hosted browser, marketplace, bulk collection, or risk-bypass claim occurred.
-- Current Lane: Harbor #219 managed persistent profile session contract.
+- Recovery Entry: .loom/progress/HARBOR-241.md
+- Review Entry: .loom/reviews/HARBOR-241.json
+- Validation Entry: pnpm typecheck; pnpm test; git diff --check
+- Closing Condition: Create and push a Harbor #241 PR with ownership constraints, current head, test evidence, and no-sensitive-material/non-write boundary; close only after real session/identity and App refresh evidence.
+- Current Checkpoint: review
+- Current Stop: None.
+- Next Step: Review, push, and merge the corrective Harbor #241 implementation; then rebuild the packaged App and repeat the public identity synchronization E2E.
+- Blockers: None recorded.
+- Latest Validation Summary: 2026-07-10T10:32Z on `work/harbor-241-live-auth-sync`: `pnpm install --offline --frozen-lockfile`, `pnpm typecheck`, focused manual-authentication test (43 passed), and `git diff --check` passed. Full `pnpm test` observed two concurrent local-provider timing failures; the isolated persistent-profile and stale-DevTools-port regressions both passed. A real local official-Chrome Xiaohongshu session was active with user control, but its confirmation failed because direct user session open/reuse did not mark the interactive session user-held.
+- Recovery Boundary: Do not read or store Cookie, password, verification code, DOM, page payload, or raw profile material. Do not submit, publish, send, bypass risk controls, use hosted browser, marketplace, or bulk collection.
+- Current Lane: Harbor #241 user-held manual-authentication synchronization correction.
 
 ## Runtime Evidence
 
-- Run Entry: fixture_and_fake_browser_contract_smoke_no_live_site
-- Logs Entry: command output from `pnpm test`; `pnpm smoke:runtime:api`; App `smoke:packaged:runtime`; App `smoke:packaged:readonly`
-- Diagnostics Entry: packages/runtime-api/src/runtime-session.ts; packages/runtime-api/src/local-provider-launcher.ts; packages/runtime-api/src/index.test.ts
-- Verification Entry: .loom/progress/HARBOR-219.md
-- Lane Entry: HARBOR-219
+- Run Entry: user-confirmed managed session state synchronization pending packaged-App E2E after merge.
+- Logs Entry: pnpm typecheck; pnpm test; isolated local-provider regressions; local Harbor public session/identity readback.
+- Diagnostics Entry: packages/runtime-api/src/runtime-session.ts; packages/runtime-api/src/index.ts; packages/runtime-api/src/server.test.ts
+- Verification Entry: .loom/progress/HARBOR-241.md
+- Lane Entry: HARBOR-241
 
 ## Sources
 
-- Static Truth: .loom/work-items/HARBOR-219.md
-- Dynamic Truth: .loom/progress/HARBOR-219.md
+- Static Truth: .loom/work-items/HARBOR-241.md
+- Dynamic Truth: .loom/progress/HARBOR-241.md
 - Locator Truth: .loom/bootstrap/init-result.json
-- Fact Chain CLI: loom fact-chain --target . --item HARBOR-219 --json
+- Fact Chain CLI: loom fact-chain --target . --item HARBOR-241 --json

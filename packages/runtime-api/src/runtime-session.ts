@@ -162,7 +162,7 @@ export class RuntimeSessionStore {
       identity_binding: {
         profile_storage_ref: input.profile_storage_ref ?? null
       },
-      user_held_session: false,
+      user_held_session: controlOwner === "user" && ready && isInteractiveUserViewer(facts),
       openUrl: ready ? launch.openUrl : undefined,
       captureScreenshot: ready ? launch.captureScreenshot : undefined,
       close: ready ? launch.close : undefined
@@ -378,7 +378,7 @@ export class RuntimeSessionStore {
       updated_at: now,
       conflict_error: null
     };
-    record.user_held_session = false;
+    record.user_held_session = owner === "user" && isInteractiveUserViewer(record.facts);
     this.viewerControls.recordHandoff(record.facts.runtime_session_ref, { control_owner: owner });
     record.facts.facts.push(
       { key: "session.reuse", source: "observed", value: "same_profile_session" },
