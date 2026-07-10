@@ -293,7 +293,6 @@ test("records user-confirmed manual authentication for an active managed session
     const untrustedReadback = await getJson(`${first.url}/runtime/identity-environments/identity-env_manual-auth`);
     assert.equal(untrustedReadback.status.login_state, "manual_auth_required");
 
-    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
     const response = await fetch(`${first.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
       method: "POST",
       headers: manualAuthHeaders()
