@@ -248,7 +248,7 @@ export function classifyLaunchFailure(error: unknown): BrowserProviderFailureCla
   if (message.includes("profile") || message.includes("user data") || message.includes("lock")) return "profile_dir_unavailable";
   if (message.includes("proxy")) return "proxy_unavailable";
   if (message.includes("argument") || message.includes("flag")) return "launch_args_incompatible";
-  if (message.includes("cdp") || message.includes("devtools")) return "cdp_unavailable";
+  if (message.includes("cdp") || message.includes("devtools") || message.includes("fetch failed")) return "cdp_unavailable";
   return "unknown";
 }
 
