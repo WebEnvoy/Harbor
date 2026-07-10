@@ -231,6 +231,9 @@ export type {
   LocalProviderLaunchInput,
   LocalProviderLaunchResult,
   LocalProviderPageFacts,
+  LocalProviderReadProbeInput,
+  LocalProviderReadProbePublicSummary,
+  LocalProviderReadProbeResult,
   LocalProviderScreenshotFacts,
   OpenIdentityEnvironmentSessionInput,
   ProviderMode,
@@ -310,7 +313,8 @@ export class HarborRuntime {
     ) {
       return manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
     }
-    const identityEnvironment = this.identityEnvironments.completeManualAuthentication(session.facts.identity_environment_ref);
+    const identityEnvironment = this.identityEnvironments.completeManualAuthentication(session.facts.identity_environment_ref, runtime_session_ref);
+    if (identityEnvironment) this.runtimeSessions.markReadOperationUserConfirmed(runtime_session_ref);
     return identityEnvironment ?? manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
   }
 
@@ -470,11 +474,17 @@ export class HarborRuntime {
     ) {
       return readOperationUnavailable(runtime_session_ref, "session_not_ready", requestIdentity(admission.request));
     }
-    if (session.facts.control_owner === "user" && session.facts.control_lock.state === "held") {
-      return readOperationUnavailable(runtime_session_ref, "session_user_controlled", requestIdentity(admission.request));
-    }
-    if (managedIdentity.login_state.state !== "logged_in" || managedIdentity.login_state.recovery_required) {
+    if (
+      !this.identityEnvironments.hasUserConfirmedManagedSession(managedIdentity.identity_environment_ref, runtime_session_ref) ||
+      managedIdentity.login_state.state !== "logged_in" ||
+      managedIdentity.login_state.reason !== "user_confirmed_managed_session" ||
+      managedIdentity.login_state.manual_authentication_state !== "completed" ||
+      managedIdentity.login_state.recovery_required
+    ) {
       return readOperationUnavailable(runtime_session_ref, "not_logged_in", requestIdentity(admission.request));
+    }
+    if (!hasStableReadOperationController(session)) {
+      return readOperationUnavailable(runtime_session_ref, "session_user_controlled", requestIdentity(admission.request));
     }
     if (isChallengeLike(session.facts.current_page.current_url, session.facts.current_page.title)) {
       return readOperationUnavailable(runtime_session_ref, "safety_challenge", requestIdentity(admission.request));
@@ -493,18 +503,6 @@ export class HarborRuntime {
       });
     }
 
-    const capture = await this.captureLiveSnapshot(runtime_session_ref, {
-      summary: "Managed local provider completed an allowlisted read-only page probe; raw page material remains private.",
-      source_locator: `runtime-session://${runtime_session_ref}/read-operations`,
-      elements: [{
-        label: "Allowlisted read operation post-check",
-        role: "status",
-        locator_hint: "harbor://allowlisted-read-operation/post-check"
-      }]
-    });
-    if (capture.status !== "captured") {
-      return readOperationUnavailable(runtime_session_ref, "evidence_refs_missing", requestIdentity(admission.request));
-    }
     const proof = this.readOperationObservations.capture({
       operation_ref: opaqueRef("read_operation"),
       runtime_session_ref,
@@ -512,8 +510,8 @@ export class HarborRuntime {
       observed_origin: probe.observed_origin,
       observed_at: probe.observed_at,
       checked_signal_kinds: probe.source_kinds,
-      snapshot_ref: capture.snapshot_ref,
-      evidence_refs: capture.evidence_refs
+      public_summary: probe.public_summary,
+      evidence_refs: []
     });
     if (typeof proof === "string") return readOperationUnavailable(runtime_session_ref, proof, requestIdentity(admission.request));
     const result = this.readOperationObservations.complete(admission.entry, proof);
@@ -839,6 +837,15 @@ function sameManagedIdentity(session: RuntimeSessionRecord, identity: LocalIdent
     session.facts.execution_identity_ref === identity.execution_identity_ref &&
     session.facts.profile_ref === identity.profile_ref &&
     session.identity_binding.profile_storage_ref === identity.browser_storage.profile_storage_ref;
+}
+
+function hasStableReadOperationController(session: RuntimeSessionRecord): boolean {
+  return session.read_operation_user_handoff &&
+    (session.facts.control_owner === "agent" || session.facts.control_owner === "core_task") &&
+    session.facts.control_lock.state === "held" &&
+    session.facts.control_lock.owner === session.facts.control_owner &&
+    Boolean(session.facts.control_lock.holder_ref) &&
+    session.facts.lifecycle_state === "active";
 }
 
 function requestIdentity(input: { site_id: string; operation_id: string }): { site_id: string; operation_id: string } {

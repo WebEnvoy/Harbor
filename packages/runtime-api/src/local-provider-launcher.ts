@@ -17,6 +17,7 @@ import type {
   LocalProviderPageFacts,
   LocalProviderReadProbeInput,
   LocalProviderReadProbeResult,
+  LocalProviderReadProbePublicSummary,
   LocalProviderScreenshotFacts,
   RuntimeErrorCode,
   RuntimeErrorFact,
@@ -276,6 +277,13 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
     const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.enable");
       await client.send("Runtime.enable");
+      await client.send("Network.enable");
+      let operationResponseStatus: number | null = null;
+      const stopObservingNetwork = client.on("Network.responseReceived", (event) => {
+        const response = event.response as { url?: unknown; status?: unknown } | undefined;
+        const status = typeof response?.status === "number" ? response.status : null;
+        if (status !== null && status >= 200 && status < 300 && isOperationReadNetworkUrl(input, response?.url)) operationResponseStatus = status;
+      });
       for (let attempt = 0; attempt < 20; attempt++) {
         const evaluated = await client.send("Runtime.evaluate", {
           expression: readProbeExpression(input.site_id),
@@ -289,15 +297,17 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           login_like?: boolean;
           challenge_like?: boolean;
           pinia_ready?: boolean;
-          same_origin_fetch_ready?: boolean;
-          wapi_zpgeek_ready?: boolean;
         } } | undefined)?.value;
-        if (value?.origin && value.ready) return value;
+        if (value?.origin && value.ready && operationResponseStatus !== null) {
+          stopObservingNetwork();
+          return { ...value, operation_response_status: operationResponseStatus };
+        }
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
+      stopObservingNetwork();
       return null;
     });
-    const pageFacts = await readTargetPageFacts(page, input.target_url);
+    const pageFacts = readOperationPageFacts(input.target_url);
     if (!observation) return probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts);
     const validation = validateReadOperationProbe(input, observation);
     if (validation.status === "unavailable") return probeUnavailable(validation.failure_class, validation.message, validation.retryable, pageFacts);
@@ -306,7 +316,8 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       observed_at: new Date().toISOString(),
       observed_origin: input.expected_origin,
       page: pageFacts,
-      source_kinds: validation.source_kinds
+      source_kinds: validation.source_kinds,
+      public_summary: validation.public_summary
     };
   } catch (cause) {
     return probeUnavailable(
@@ -334,36 +345,90 @@ interface ReadProbeObservation {
   login_like?: boolean;
   challenge_like?: boolean;
   pinia_ready?: boolean;
-  same_origin_fetch_ready?: boolean;
-  wapi_zpgeek_ready?: boolean;
+  operation_response_status?: number;
 }
 
 export function validateReadOperationProbe(
   input: LocalProviderReadProbeInput,
   observation: ReadProbeObservation
 ):
-  | { status: "completed"; source_kinds: string[] }
+  | { status: "completed"; source_kinds: string[]; public_summary: LocalProviderReadProbePublicSummary }
   | { status: "unavailable"; failure_class: Extract<LocalProviderReadProbeResult, { status: "unavailable" }>["failure_class"]; message: string; retryable: boolean } {
   if (observation.origin !== input.expected_origin) return { status: "unavailable", failure_class: "origin_drift", message: "The read-operation page left the pinned allowed origin.", retryable: false };
   if (observation.challenge_like) return { status: "unavailable", failure_class: "safety_challenge", message: "The read-operation page shows a verification or safety challenge.", retryable: false };
   if (observation.login_like) return { status: "unavailable", failure_class: "not_logged_in", message: "The read-operation page requires a manual login refresh.", retryable: true };
-  if (!observation.ready || !observation.rendered_surface) return { status: "unavailable", failure_class: "page_not_ready", message: "The read-operation page has no rendered read surface.", retryable: true };
+  if (!observation.ready) return { status: "unavailable", failure_class: "page_not_ready", message: "The read-operation page did not reach the expected operation surface.", retryable: true };
   if (input.operation_id === "xhs_search_notes") {
-    const xhsSurface = observation.pathname === "/search_result" || /^\/explore\/[^/]+/.test(observation.pathname ?? "");
-    if (!xhsSurface || !observation.pinia_ready || !observation.same_origin_fetch_ready) {
-      return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search/note, Pinia, or same-origin read signal is unavailable.", retryable: true };
+    const xhsSurface = observation.pathname === "/search_result";
+    if (!xhsSurface || !observation.pinia_ready || !isSuccessfulReadResponse(observation.operation_response_status)) {
+      return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search/note, Pinia, or operation-specific read signal is unavailable.", retryable: true };
     }
-    return { status: "completed", source_kinds: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"] };
+    return {
+      status: "completed",
+      source_kinds: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"],
+      public_summary: {
+        schema_version: "harbor-read-operation-public-summary/v0",
+        operation_id: "xhs_search_notes",
+        result_kind: "xiaohongshu_search_notes_surface",
+        surface: "search_result",
+        result_state: "operation_read_response_observed",
+        response_status: observation.operation_response_status,
+        source_signals: ["pinia_store", "xhs_search_read_network"]
+      }
+    };
   }
   const bossJobsSurface = observation.pathname === "/web/geek/jobs";
-  if (!bossJobsSurface || !observation.wapi_zpgeek_ready) {
+  if (!bossJobsSurface || !isSuccessfulReadResponse(observation.operation_response_status)) {
     return { status: "unavailable", failure_class: "page_not_ready", message: "BOSS jobs surface or required WAPI read signal is unavailable.", retryable: true };
   }
-  return { status: "completed", source_kinds: ["network_summary"] };
+  return {
+    status: "completed",
+    source_kinds: ["network_summary"],
+    public_summary: {
+      schema_version: "harbor-read-operation-public-summary/v0",
+      operation_id: "boss_job_search",
+      result_kind: "boss_job_search_surface",
+      surface: "web_geek_jobs",
+      result_state: "operation_read_response_observed",
+      response_status: observation.operation_response_status,
+      source_signals: ["boss_wapi_zpgeek_read_network"]
+    }
+  };
+}
+
+function isSuccessfulReadResponse(status: unknown): status is number {
+  return typeof status === "number" && Number.isInteger(status) && status >= 200 && status < 300;
 }
 
 function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"]): string {
-  return "(() => { const text = (location.pathname + ' ' + document.title).toLowerCase(); const body = document.body; const resources = performance.getEntriesByType('resource'); const sameOriginFetch = resources.some((entry) => { try { const url = new URL(entry.name); return url.origin === location.origin && (entry.initiatorType === 'fetch' || entry.initiatorType === 'xmlhttprequest'); } catch { return false; } }); const wapiZpgeek = resources.some((entry) => { try { const url = new URL(entry.name); return url.origin === 'https://www.zhipin.com' && url.pathname.startsWith('/wapi/zpgeek/') && (entry.initiatorType === 'fetch' || entry.initiatorType === 'xmlhttprequest'); } catch { return false; } }); return { origin: location.origin, pathname: location.pathname, ready: document.readyState === 'interactive' || document.readyState === 'complete', rendered_surface: Boolean(body && body.childElementCount > 0 && body.innerText.trim().length > 0), login_like: /login|signin|sign-in|登录|登陆/.test(text) || Boolean(document.querySelector('input[type=password]')), challenge_like: /captcha|challenge|verify|verification|security|安全|验证|校验/.test(text), pinia_ready: Boolean(window.__PINIA__ || window.__pinia), same_origin_fetch_ready: sameOriginFetch, wapi_zpgeek_ready: wapiZpgeek }; })()";
+  return "(() => ({ origin: location.origin, pathname: location.pathname, ready: true, pinia_ready: Boolean(window.__PINIA__ || window.__pinia) }))()";
+}
+
+function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    if (url.origin !== input.expected_origin) return false;
+    return input.operation_id === "xhs_search_notes"
+      ? url.pathname === "/api/sns/web/v1/search/notes"
+      : url.pathname.startsWith("/wapi/zpgeek/");
+  } catch {
+    return false;
+  }
+}
+
+function readOperationPageFacts(targetUrl: string): LocalProviderPageFacts {
+  const evidence_ref = opaqueRef("validation");
+  return {
+    current_url: targetUrl,
+    title: null,
+    status: "ready",
+    facts: [
+      { key: "page.current_url", source: "observed", value: targetUrl, evidence_ref },
+      { key: "page.title", source: "observed", value: "not_read", evidence_ref },
+      { key: "page.status", source: "validation_evidence", value: "operation_probe_ready", evidence_ref }
+    ]
+  };
 }
 
 async function readPageFacts(port: string, requested_url: string): Promise<LocalProviderPageFacts> {
@@ -455,29 +520,54 @@ async function withCdp<T>(webSocketUrl: string, callback: (client: CdpClient) =>
 
 class CdpClient {
   private nextId = 1;
+  private readonly pending = new Map<number, {
+    resolve: (result: Record<string, unknown>) => void;
+    reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  private readonly listeners = new Map<string, Set<(params: Record<string, unknown>) => void>>();
 
-  constructor(private readonly ws: WebSocket) {}
+  constructor(private readonly ws: WebSocket) {
+    ws.addEventListener("message", this.handleMessage);
+  }
+
+  on(method: string, listener: (params: Record<string, unknown>) => void): () => void {
+    const listeners = this.listeners.get(method) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(method, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) this.listeners.delete(method);
+    };
+  }
 
   send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.ws.removeEventListener("message", onMessage);
+        this.pending.delete(id);
         reject(new Error(`CDP command timed out: ${method}`));
       }, 20000);
-      const onMessage = (event: MessageEvent) => {
-        const text = typeof event.data === "string" ? event.data : Buffer.from(event.data as ArrayBuffer).toString("utf8");
-        const payload = JSON.parse(text) as { id?: number; result?: Record<string, unknown>; error?: { message?: string } };
-        if (payload.id !== id) return;
-        clearTimeout(timer);
-        this.ws.removeEventListener("message", onMessage);
-        if (payload.error) reject(new Error(payload.error.message ?? `CDP command failed: ${method}`));
-        else resolve(payload.result ?? {});
-      };
-      this.ws.addEventListener("message", onMessage);
+      this.pending.set(id, { resolve, reject, timer });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
+
+  private readonly handleMessage = (event: MessageEvent) => {
+    const text = typeof event.data === "string" ? event.data : Buffer.from(event.data as ArrayBuffer).toString("utf8");
+    const payload = JSON.parse(text) as { id?: number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown>; error?: { message?: string } };
+    if (payload.id !== undefined) {
+      const pending = this.pending.get(payload.id);
+      if (!pending) return;
+      this.pending.delete(payload.id);
+      clearTimeout(pending.timer);
+      if (payload.error) pending.reject(new Error(payload.error.message ?? "CDP command failed."));
+      else pending.resolve(payload.result ?? {});
+      return;
+    }
+    if (!payload.method) return;
+    for (const listener of this.listeners.get(payload.method) ?? []) listener(payload.params ?? {});
+  };
 }
 
 function fixtureScreenshot(seed: string): LocalProviderScreenshotFacts {

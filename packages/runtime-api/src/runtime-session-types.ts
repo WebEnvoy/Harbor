@@ -171,6 +171,16 @@ export interface LocalProviderReadProbeInput {
   expected_origin: string;
 }
 
+export interface LocalProviderReadProbePublicSummary {
+  schema_version: "harbor-read-operation-public-summary/v0";
+  operation_id: AllowlistedReadOperationId;
+  result_kind: "xiaohongshu_search_notes_surface" | "boss_job_search_surface";
+  surface: "search_result" | "web_geek_jobs";
+  result_state: "operation_read_response_observed";
+  response_status: number;
+  source_signals: readonly string[];
+}
+
 export type LocalProviderReadProbeResult =
   | {
       status: "completed";
@@ -178,6 +188,7 @@ export type LocalProviderReadProbeResult =
       observed_origin: string;
       page: LocalProviderPageFacts;
       source_kinds: string[];
+      public_summary: LocalProviderReadProbePublicSummary;
     }
   | {
       status: "unavailable";

@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   admitAllowlistedReadOperation,
+  canonicalPinnedMirrorSha256,
   LODE_262_ALLOWLIST_PIN,
-  ReadOperationObservationStore
+  ReadOperationObservationStore,
+  validatePinnedAllowlist
 } from "./read-operation.js";
 import { validateReadOperationProbe } from "./local-provider-launcher.js";
 
@@ -12,6 +14,9 @@ test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.commit, "e36a4a7");
   assert.equal(LODE_262_ALLOWLIST_PIN.asset_path, "registry/runtime-consumption-allowlist.json");
   assert.equal(LODE_262_ALLOWLIST_PIN.asset_sha256, "5aa6be8bd416bbd19f73dcfab995f62f769849923f2aa2e995da974b0f329184");
+  assert.equal(canonicalPinnedMirrorSha256(), LODE_262_ALLOWLIST_PIN.mirror_payload_sha256);
+  assert.equal(validatePinnedAllowlist(), null);
+  assert.equal(validatePinnedAllowlist({ entries: [] }), "allowlist_pin_invalid");
 });
 
 test("admits only the two pinned read-only operation identities", () => {
@@ -26,23 +31,33 @@ test("admits only the two pinned read-only operation identities", () => {
   assert.equal(xiaohongshu.entry.lock_ref, "lode://lock/site-capability/xiaohongshu/search-notes@0.1.0");
   assert.equal(new URL(xiaohongshu.target_url).origin, "https://www.xiaohongshu.com");
 
-  assert.equal(admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_publish_note" }), "invalid_request");
-  assert.equal(admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", operation_mode: "write" }), "invalid_request");
+  assert.equal(admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_publish_note", query: "AI tools" }), "invalid_request");
+  assert.equal(admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", operation_mode: "write" }), "invalid_request");
 });
 
 test("fails closed for invalid target URLs and cross-origin requests", () => {
   assert.equal(
-    admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", url: "http://www.zhipin.com/web/geek/jobs" }),
+    admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", url: "http://www.zhipin.com/web/geek/jobs" }),
     "target_url_invalid"
   );
   assert.equal(
-    admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", url: "https://www.zhipin.com.evil.test/web/geek/jobs" }),
+    admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", url: "https://www.zhipin.com.evil.test/web/geek/jobs" }),
     "target_origin_not_allowed"
+  );
+  for (const path of ["/publish", "/chat", "/profile"]) {
+    assert.equal(
+      admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_search_notes", query: "AI tools", url: `https://www.xiaohongshu.com${path}` }),
+      "target_path_not_allowlisted"
+    );
+  }
+  assert.equal(
+    admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", url: "https://www.zhipin.com/web/geek/profile" }),
+    "target_path_not_allowlisted"
   );
 });
 
 test("does not construct post-check provenance from missing or arbitrary source labels", () => {
-  const admitted = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search" });
+  const admitted = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools" });
   if (typeof admitted === "string") throw new Error("Pinned BOSS operation was unexpectedly rejected.");
   const store = new ReadOperationObservationStore();
   assert.equal(store.capture({
@@ -51,9 +66,17 @@ test("does not construct post-check provenance from missing or arbitrary source 
     entry: admitted.entry,
     observed_origin: "https://www.zhipin.com",
     observed_at: "2026-07-11T00:00:00.000Z",
-    snapshot_ref: "snapshot_test",
     evidence_refs: ["evidence_test"],
-    checked_signal_kinds: ["attacker_label"]
+    checked_signal_kinds: ["attacker_label"],
+    public_summary: {
+      schema_version: "harbor-read-operation-public-summary/v0",
+      operation_id: "boss_job_search",
+      result_kind: "boss_job_search_surface",
+      surface: "web_geek_jobs",
+      result_state: "operation_read_response_observed",
+      response_status: 200,
+      source_signals: ["boss_wapi_zpgeek_read_network"]
+    }
   }), "source_refs_missing");
 
   const proof = store.capture({
@@ -62,20 +85,31 @@ test("does not construct post-check provenance from missing or arbitrary source 
     entry: admitted.entry,
     observed_origin: "https://www.zhipin.com",
     observed_at: "2026-07-11T00:00:01.000Z",
-    snapshot_ref: "snapshot_bound",
-    evidence_refs: ["evidence_bound"],
-    checked_signal_kinds: ["network_summary"]
+    evidence_refs: [],
+    checked_signal_kinds: ["network_summary"],
+    public_summary: {
+      schema_version: "harbor-read-operation-public-summary/v0",
+      operation_id: "boss_job_search",
+      result_kind: "boss_job_search_surface",
+      surface: "web_geek_jobs",
+      result_state: "operation_read_response_observed",
+      response_status: 200,
+      source_signals: ["boss_wapi_zpgeek_read_network"]
+    }
   });
   if (typeof proof === "string") throw new Error("Bound observation was unexpectedly rejected.");
   const source = proof.source_refs[0]!;
   const networkEvidence = proof.evidence_ref_kinds.find((ref) => ref.kind === "network_summary_ref")!;
   assert.notEqual(source.ref, proof.post_check_ref);
   assert.notEqual(networkEvidence.ref, proof.post_check_ref);
+  assert.notEqual(proof.public_summary_ref, proof.post_check_ref);
+  assert.notEqual(proof.public_summary_ref, source.ref);
   const postCheck = store.get(proof.post_check_ref);
   assert.deepEqual(postCheck?.post_check?.source_refs, proof.source_refs);
   assert.deepEqual(postCheck?.post_check?.evidence_refs, proof.evidence_refs);
   const forged = { ...proof, source_refs: [{ kind: "attacker_label", ref: source.ref }] };
   assert.equal(store.complete(admitted.entry, forged), "post_check_missing");
+  assert.equal(store.complete(admitted.entry, { ...proof, public_summary: { ...proof.public_summary, response_status: 201 } }), "public_summary_missing");
 });
 
 test("fails closed when the live probe lacks an operation-specific surface or required signal", () => {
@@ -89,12 +123,12 @@ test("fails closed when the live probe lacks an operation-specific surface or re
     origin: "https://www.xiaohongshu.com",
     pathname: "/search_result",
     ready: true,
-    rendered_surface: true,
     pinia_ready: true,
-    same_origin_fetch_ready: true
+    operation_response_status: 200
   };
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pathname: "/settings" }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pinia_ready: false }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, operation_response_status: undefined }).status, "unavailable");
 
   const bossInput = {
     site_id: "boss" as const,
@@ -106,9 +140,8 @@ test("fails closed when the live probe lacks an operation-specific surface or re
     origin: "https://www.zhipin.com",
     pathname: "/web/geek/jobs",
     ready: true,
-    rendered_surface: true,
-    wapi_zpgeek_ready: true
+    operation_response_status: 200
   };
   assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, pathname: "/web/geek/profile" }).status, "unavailable");
-  assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, wapi_zpgeek_ready: false }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, operation_response_status: 500 }).status, "unavailable");
 });

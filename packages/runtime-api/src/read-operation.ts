@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { opaqueRef } from "./refs.js";
-import type { AllowlistedReadOperationId, AllowlistedReadOperationSite } from "./runtime-session-types.js";
+import type { AllowlistedReadOperationId, AllowlistedReadOperationSite, LocalProviderReadProbePublicSummary } from "./runtime-session-types.js";
 
 export const HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA = "harbor-allowlisted-read-operation/v0";
 
@@ -8,6 +9,7 @@ export const LODE_262_ALLOWLIST_PIN = {
   commit: "e36a4a7",
   asset_path: "registry/runtime-consumption-allowlist.json",
   asset_sha256: "5aa6be8bd416bbd19f73dcfab995f62f769849923f2aa2e995da974b0f329184",
+  mirror_payload_sha256: "bbc17210563ed91fc320f006bbd81a9a965ed43f18ffd3018ee9b25f6c5bdf2e",
   allowlist_id: "lode.xhs-boss.read.runtime-consumption",
   allowlist_version: "0.1.0",
   asset_owner: "Lode",
@@ -24,6 +26,7 @@ export type ReadOperationFailureClass =
   | "allowlist_pin_invalid"
   | "target_url_invalid"
   | "target_origin_not_allowed"
+  | "target_path_not_allowlisted"
   | "session_missing"
   | "session_unmanaged"
   | "session_not_ready"
@@ -35,6 +38,7 @@ export type ReadOperationFailureClass =
   | "origin_drift"
   | "page_not_ready"
   | "network_resource_unavailable"
+  | "public_summary_missing"
   | "source_refs_missing"
   | "evidence_refs_missing"
   | "post_check_missing";
@@ -42,7 +46,7 @@ export type ReadOperationFailureClass =
 export interface AllowlistedReadOperationRequest {
   site_id: AllowlistedReadOperationSite;
   operation_id: AllowlistedReadOperationId;
-  query?: string;
+  query: string;
   url?: string;
 }
 
@@ -55,6 +59,10 @@ export interface PinnedReadOperation {
   operation_mode: "read";
   lifecycle: "proposed";
   allowed_origin: string;
+  target_schema: {
+    pathname: string;
+    public_query_parameter: "keyword" | "query";
+  };
   resource_requirement_id: string;
   required_harbor_fact_keys: readonly string[];
   failure_mapping_id: string;
@@ -92,6 +100,8 @@ export interface CompletedReadOperation {
   operation_id: AllowlistedReadOperationId;
   operation_mode: "read";
   observed_at: string;
+  public_summary_ref: string;
+  public_summary: LocalProviderReadProbePublicSummary;
   source_refs: ReadOperationRef[];
   evidence_refs: string[];
   evidence_ref_kinds: ReadOperationRef[];
@@ -111,7 +121,7 @@ export interface ReadOperationRef {
 
 export interface ReadOperationObservationRecord {
   schema_version: "harbor-read-operation-observation/v0";
-  record_type: "source_observation" | "operation_evidence" | "post_check";
+  record_type: "source_observation" | "operation_evidence" | "operation_result_summary" | "post_check";
   ref: string;
   operation_ref: string;
   runtime_session_ref: string;
@@ -121,6 +131,7 @@ export interface ReadOperationObservationRecord {
   observed_at: string;
   source_kind?: string;
   evidence_kind?: string;
+  public_summary?: LocalProviderReadProbePublicSummary;
   post_check?: {
     status: "passed";
     reason: "managed_provider_read_probe_completed";
@@ -138,6 +149,8 @@ export interface OperationProbeEvidence {
   operation_id: AllowlistedReadOperationId;
   origin: string;
   observed_at: string;
+  public_summary_ref: string;
+  public_summary: LocalProviderReadProbePublicSummary;
   source_refs: ReadOperationRef[];
   evidence_refs: string[];
   evidence_ref_kinds: ReadOperationRef[];
@@ -180,6 +193,10 @@ const PINNED_READ_OPERATIONS: readonly PinnedReadOperation[] = [
     operation_mode: "read",
     lifecycle: "proposed",
     allowed_origin: "https://www.xiaohongshu.com",
+    target_schema: {
+      pathname: "/search_result",
+      public_query_parameter: "keyword"
+    },
     resource_requirement_id: "xiaohongshu.search-notes.resources",
     required_harbor_fact_keys: [
       "runtime.execution_surface.available",
@@ -219,6 +236,10 @@ const PINNED_READ_OPERATIONS: readonly PinnedReadOperation[] = [
     operation_mode: "read",
     lifecycle: "proposed",
     allowed_origin: "https://www.zhipin.com",
+    target_schema: {
+      pathname: "/web/geek/jobs",
+      public_query_parameter: "query"
+    },
     resource_requirement_id: "boss.job-search.resources",
     required_harbor_fact_keys: [
       "runtime.execution_surface.available",
@@ -269,6 +290,25 @@ export function admitAllowlistedReadOperation(input: unknown): AdmittedReadOpera
   return { status: "admitted", request, entry, target_url: target.target_url };
 }
 
+const PINNED_READ_OPERATION_MIRROR = {
+  schema_version: HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA,
+  lode_pin: {
+    repository: LODE_262_ALLOWLIST_PIN.repository,
+    commit: LODE_262_ALLOWLIST_PIN.commit,
+    asset_path: LODE_262_ALLOWLIST_PIN.asset_path,
+    asset_sha256: LODE_262_ALLOWLIST_PIN.asset_sha256,
+    allowlist_id: LODE_262_ALLOWLIST_PIN.allowlist_id,
+    allowlist_version: LODE_262_ALLOWLIST_PIN.allowlist_version,
+    asset_owner: LODE_262_ALLOWLIST_PIN.asset_owner,
+    consumer: LODE_262_ALLOWLIST_PIN.consumer
+  },
+  entries: PINNED_READ_OPERATIONS
+} as const;
+
+export function canonicalPinnedMirrorSha256(mirror: unknown = PINNED_READ_OPERATION_MIRROR): string {
+  return createHash("sha256").update(canonicalJson(mirror)).digest("hex");
+}
+
 export function readOperationUnavailable(
   runtime_session_ref: string,
   failure_class: ReadOperationFailureClass,
@@ -291,6 +331,7 @@ function completeReadOperation(
   proof: OperationProbeEvidence
 ): CompletedReadOperation | ReadOperationFailureClass {
   if (!proof.post_check_ref) return "post_check_missing";
+  if (!proof.public_summary_ref || !isExpectedPublicSummary(entry, proof.public_summary)) return "public_summary_missing";
   if (proof.evidence_refs.length === 0 || proof.evidence_refs.some((ref) => !ref)) return "evidence_refs_missing";
   if (!entry.required_source_ref_kinds.every((kind) => proof.source_refs.some((ref) => ref.kind === kind && ref.ref))) return "source_refs_missing";
   if (!entry.required_evidence_ref_kinds.every((kind) => proof.evidence_ref_kinds.some((ref) => ref.kind === kind && ref.ref))) return "evidence_refs_missing";
@@ -303,6 +344,8 @@ function completeReadOperation(
     operation_id: proof.operation_id,
     operation_mode: "read",
     observed_at: proof.observed_at,
+    public_summary_ref: proof.public_summary_ref,
+    public_summary: proof.public_summary,
     source_refs: proof.source_refs,
     evidence_refs: proof.evidence_refs,
     evidence_ref_kinds: proof.evidence_ref_kinds,
@@ -326,11 +369,12 @@ export class ReadOperationObservationStore {
     observed_origin: string;
     observed_at: string;
     checked_signal_kinds: readonly string[];
-    snapshot_ref?: string;
+    public_summary: LocalProviderReadProbePublicSummary;
     evidence_refs: readonly string[];
   }): OperationProbeEvidence | ReadOperationFailureClass {
     if (input.observed_origin !== input.entry.allowed_origin) return "origin_drift";
-    if (!input.snapshot_ref || input.evidence_refs.length === 0 || input.evidence_refs.some((ref) => !ref)) return "evidence_refs_missing";
+    if (!isExpectedPublicSummary(input.entry, input.public_summary)) return "public_summary_missing";
+    if (input.evidence_refs.some((ref) => !ref)) return "evidence_refs_missing";
     const checked = new Set(input.checked_signal_kinds);
     if (!input.entry.required_source_ref_kinds.every((kind) => checked.has(kind))) return "source_refs_missing";
     if (checked.size !== input.checked_signal_kinds.length || [...checked].some((kind) => !input.entry.required_source_ref_kinds.includes(kind))) return "source_refs_missing";
@@ -340,8 +384,13 @@ export class ReadOperationObservationStore {
       this.records.set(ref, observationRecord(input, "source_observation", ref, { source_kind: kind }));
       return { kind, ref };
     });
-    const evidence_refs = [...input.evidence_refs];
-    const evidence_ref_kinds: ReadOperationRef[] = [{ kind: "snapshot_ref", ref: input.snapshot_ref }];
+    const public_summary_ref = opaqueRef("read_result");
+    this.records.set(public_summary_ref, observationRecord(input, "operation_result_summary", public_summary_ref, {
+      evidence_kind: "snapshot_ref",
+      public_summary: input.public_summary
+    }));
+    const evidence_refs = [public_summary_ref, ...input.evidence_refs];
+    const evidence_ref_kinds: ReadOperationRef[] = [{ kind: "snapshot_ref", ref: public_summary_ref }];
     if (input.entry.required_evidence_ref_kinds.includes("network_summary_ref")) {
       const source = source_refs.find((ref) => ref.kind === "network_summary");
       if (!source) return "source_refs_missing";
@@ -373,6 +422,8 @@ export class ReadOperationObservationStore {
       operation_id: input.entry.operation_id,
       origin: input.observed_origin,
       observed_at: input.observed_at,
+      public_summary_ref,
+      public_summary: input.public_summary,
       source_refs,
       evidence_refs,
       evidence_ref_kinds,
@@ -400,6 +451,15 @@ export class ReadOperationObservationStore {
       !sameRefs(postCheck.post_check.source_refs, proof.source_refs) ||
       !sameStrings(postCheck.post_check.evidence_refs, proof.evidence_refs)
     ) return "post_check_missing";
+    const publicSummary = this.records.get(proof.public_summary_ref);
+    if (
+      !publicSummary ||
+      publicSummary.record_type !== "operation_result_summary" ||
+      publicSummary.evidence_kind !== "snapshot_ref" ||
+      !publicSummary.public_summary ||
+      !sameBinding(publicSummary, proof) ||
+      !samePublicSummary(publicSummary.public_summary, proof.public_summary)
+    ) return "public_summary_missing";
     for (const source of proof.source_refs) {
       const record = this.records.get(source.ref);
       if (!record || record.record_type !== "source_observation" || record.source_kind !== source.kind || !sameBinding(record, proof)) {
@@ -435,6 +495,16 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 }
 
+function samePublicSummary(left: LocalProviderReadProbePublicSummary, right: LocalProviderReadProbePublicSummary): boolean {
+  return left.schema_version === right.schema_version &&
+    left.operation_id === right.operation_id &&
+    left.result_kind === right.result_kind &&
+    left.surface === right.surface &&
+    left.result_state === right.result_state &&
+    left.response_status === right.response_status &&
+    sameStrings(left.source_signals, right.source_signals);
+}
+
 function observationRecord(
   input: {
     operation_ref: string;
@@ -445,7 +515,7 @@ function observationRecord(
   },
   record_type: ReadOperationObservationRecord["record_type"],
   ref: string,
-  detail: Pick<ReadOperationObservationRecord, "source_kind" | "evidence_kind" | "post_check">
+  detail: Pick<ReadOperationObservationRecord, "source_kind" | "evidence_kind" | "public_summary" | "post_check">
 ): ReadOperationObservationRecord {
   return {
     schema_version: "harbor-read-operation-observation/v0",
@@ -467,7 +537,7 @@ function parseRequest(input: unknown): AllowlistedReadOperationRequest | ReadOpe
   const allowedKeys = new Set(["site_id", "operation_id", "query", "url"]);
   if (Object.keys(input).some((key) => !allowedKeys.has(key))) return "invalid_request";
   if (!isSiteId(input.site_id) || !isOperationId(input.operation_id)) return "invalid_request";
-  if (input.query !== undefined && (!isPublicText(input.query) || input.query.length > 256)) return "invalid_request";
+  if (!isPublicText(input.query) || input.query.length > 256) return "invalid_request";
   if (input.url !== undefined && (!isPublicText(input.url) || input.url.length > 2048)) return "invalid_request";
   return {
     site_id: input.site_id,
@@ -481,6 +551,7 @@ function resolveTargetUrl(
   request: AllowlistedReadOperationRequest,
   entry: PinnedReadOperation
 ): { target_url: string } | ReadOperationFailureClass {
+  const derived = deriveTargetUrl(request, entry);
   if (request.url) {
     let url: URL;
     try {
@@ -490,25 +561,34 @@ function resolveTargetUrl(
     }
     if (url.protocol !== "https:" || url.username || url.password) return "target_url_invalid";
     if (url.origin !== entry.allowed_origin) return "target_origin_not_allowed";
-    return { target_url: url.toString() };
+    if (!matchesTargetSchema(url, entry) || url.toString() !== derived) return "target_path_not_allowlisted";
   }
-  if (entry.site_id === "xiaohongshu") {
-    return { target_url: request.query
-      ? `${entry.allowed_origin}/search_result?keyword=${encodeURIComponent(request.query)}`
-      : `${entry.allowed_origin}/explore` };
-  }
-  return { target_url: request.query
-    ? `${entry.allowed_origin}/web/geek/jobs?query=${encodeURIComponent(request.query)}`
-    : `${entry.allowed_origin}/web/geek/jobs` };
+  return { target_url: derived };
 }
 
-function validatePinnedAllowlist(): ReadOperationFailureClass | null {
+function deriveTargetUrl(request: AllowlistedReadOperationRequest, entry: PinnedReadOperation): string {
+  const url = new URL(entry.target_schema.pathname, entry.allowed_origin);
+  url.searchParams.set(entry.target_schema.public_query_parameter, request.query);
+  return url.toString();
+}
+
+function matchesTargetSchema(url: URL, entry: PinnedReadOperation): boolean {
+  const schema = entry.target_schema;
+  if (url.pathname !== schema.pathname || url.hash) return false;
+  const keys = [...url.searchParams.keys()];
+  return keys.length === 1 && keys[0] === schema.public_query_parameter && Boolean(url.searchParams.get(schema.public_query_parameter));
+}
+
+export function validatePinnedAllowlist(mirror: unknown = PINNED_READ_OPERATION_MIRROR): ReadOperationFailureClass | null {
   if (
     LODE_262_ALLOWLIST_PIN.repository !== "WebEnvoy/Lode" ||
     LODE_262_ALLOWLIST_PIN.commit !== "e36a4a7" ||
     LODE_262_ALLOWLIST_PIN.asset_path !== "registry/runtime-consumption-allowlist.json" ||
-    LODE_262_ALLOWLIST_PIN.asset_sha256.length !== 64 ||
-    PINNED_READ_OPERATIONS.length !== 2
+    !/^[a-f0-9]{64}$/.test(LODE_262_ALLOWLIST_PIN.asset_sha256) ||
+    canonicalPinnedMirrorSha256(mirror) !== LODE_262_ALLOWLIST_PIN.mirror_payload_sha256 ||
+    !isRecord(mirror) ||
+    !Array.isArray(mirror.entries) ||
+    mirror.entries.length !== 2
   ) return "allowlist_pin_invalid";
   for (const entry of PINNED_READ_OPERATIONS) {
     if (
@@ -524,10 +604,24 @@ function validatePinnedAllowlist(): ReadOperationFailureClass | null {
       entry.required_source_ref_kinds.length === 0 ||
       entry.required_evidence_ref_kinds.length === 0 ||
       entry.required_post_check_fields.length !== 4 ||
+      !entry.target_schema.pathname.startsWith("/") ||
       !isPinnedHttpsOrigin(entry.allowed_origin)
     ) return "allowlist_pin_invalid";
   }
   return null;
+}
+
+function isExpectedPublicSummary(entry: PinnedReadOperation, summary: LocalProviderReadProbePublicSummary): boolean {
+  if (summary.schema_version !== "harbor-read-operation-public-summary/v0" || summary.operation_id !== entry.operation_id || summary.source_signals.length === 0) return false;
+  if (summary.result_state !== "operation_read_response_observed" || !Number.isInteger(summary.response_status) || summary.response_status < 200 || summary.response_status >= 300) return false;
+  if (entry.operation_id === "xhs_search_notes") {
+    return summary.result_kind === "xiaohongshu_search_notes_surface" &&
+      summary.surface === "search_result" &&
+      sameStrings(summary.source_signals, ["pinia_store", "xhs_search_read_network"]);
+  }
+  return summary.result_kind === "boss_job_search_surface" &&
+    summary.surface === "web_geek_jobs" &&
+    sameStrings(summary.source_signals, ["boss_wapi_zpgeek_read_network"]);
 }
 
 function retryableFailure(failure: ReadOperationFailureClass): boolean {
@@ -537,6 +631,7 @@ function retryableFailure(failure: ReadOperationFailureClass): boolean {
     "allowlist_pin_invalid",
     "target_url_invalid",
     "target_origin_not_allowed",
+    "target_path_not_allowlisted",
     "fixture_runtime",
     "origin_drift",
     "safety_challenge"
@@ -566,4 +661,10 @@ function isSiteId(value: unknown): value is AllowlistedReadOperationSite {
 
 function isOperationId(value: unknown): value is AllowlistedReadOperationId {
   return value === "xhs_search_notes" || value === "boss_job_search";
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (isRecord(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
 }

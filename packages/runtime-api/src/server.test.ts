@@ -4,7 +4,7 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createFixtureLauncher, HarborRuntime } from "./index.js";
+import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher } from "./index.js";
 import { startHarborRuntimeServer } from "./server.js";
 
 test("serves readiness and provider facts as JSON", async () => {
@@ -733,9 +733,10 @@ test("rejects every fixture-backed allowlisted read operation without leaking pr
     const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_read-operation-fixture",
       url: "https://www.xiaohongshu.com/explore",
-      control_owner: "agent",
-      holder_ref: "core-test"
+      control_owner: "user"
     });
+    runtime.completeManualAuthentication(session.runtime_session_ref);
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
 
     const invalid = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "xiaohongshu",
@@ -748,6 +749,7 @@ test("rejects every fixture-backed allowlisted read operation without leaking pr
     const crossOrigin = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "xiaohongshu",
       operation_id: "xhs_search_notes",
+      query: "AI tools",
       url: "https://attacker.example/read"
     });
     assert.equal(crossOrigin.status, 400);
@@ -791,10 +793,113 @@ test("blocks an allowlisted read operation before provider execution when the ma
     });
     const blocked = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
-      operation_id: "boss_job_search"
+      operation_id: "boss_job_search",
+      query: "AI tools"
     });
     assert.equal(blocked.status, 409);
     assert.equal(blocked.body.failure_class, "not_logged_in");
+  } finally {
+    await running.close();
+  }
+});
+
+test("serves a completed local-provider read operation only with its bound public result summary", async () => {
+  const runtime = new HarborRuntime(successfulBossReadLauncher);
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_read-operation-success",
+      execution_identity_ref: "execution-identity_read-operation-success",
+      profile_ref: "profile_read-operation-success",
+      profile_storage_ref: "profile-storage_read-operation-success",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "logged_in",
+      storage_state: "present"
+    });
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-success",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "user"
+    });
+    runtime.completeManualAuthentication(session.runtime_session_ref);
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
+    const response = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(response.status, 201);
+    assert.equal(response.body.status, "completed");
+    assert.deepEqual(response.body.public_summary, {
+      schema_version: "harbor-read-operation-public-summary/v0",
+      operation_id: "boss_job_search",
+      result_kind: "boss_job_search_surface",
+      surface: "web_geek_jobs",
+      result_state: "operation_read_response_observed",
+      response_status: 200,
+      source_signals: ["boss_wapi_zpgeek_read_network"]
+    });
+    assert.match(response.body.public_summary_ref, /^read_result_/);
+    assert.notEqual(response.body.public_summary_ref, response.body.operation_ref);
+    assert.notEqual(response.body.public_summary_ref, response.body.post_check.post_check_ref);
+    assert.equal(response.body.evidence_refs.includes(response.body.public_summary_ref), true);
+    assert.equal(JSON.stringify(response.body).includes("profile-storage_read-operation-success"), false);
+    assert.equal(JSON.stringify(response.body).includes("webSocketDebuggerUrl"), false);
+  } finally {
+    await running.close();
+  }
+});
+
+test("fails closed before probing when PATCH login state or release lacks a confirmed held controller", async () => {
+  successfulBossProbeCalls = 0;
+  const runtime = new HarborRuntime(successfulBossReadLauncher);
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_read-operation-bypass",
+      execution_identity_ref: "execution-identity_read-operation-bypass",
+      profile_ref: "profile_read-operation-bypass",
+      profile_storage_ref: "profile-storage_read-operation-bypass",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "manual_auth_required",
+      storage_state: "present"
+    });
+    const patchedSession = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-bypass",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "agent"
+    });
+    const patched = await patchJson(`${running.url}/runtime/identity-environments/identity-env_read-operation-bypass`, {
+      login_state: "logged_in",
+      manual_authentication_state: "completed"
+    });
+    assert.equal(patched.status.authentication_provenance, "unknown");
+    const patchedRead = await postReadOperation(`${running.url}/runtime/sessions/${patchedSession.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(patchedRead.status, 409);
+    assert.equal(patchedRead.body.failure_class, "not_logged_in");
+
+    const confirmedSession = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-bypass",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "user",
+      reuse_existing: false
+    });
+    assert.ok(runtime.completeManualAuthentication(confirmedSession.runtime_session_ref));
+    runtime.recordHandoff(confirmedSession.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
+    const released = await postJson(`${running.url}/runtime/sessions/${confirmedSession.runtime_session_ref}/release`, {});
+    assert.equal(released.control_owner, "none");
+    const releasedRead = await postReadOperation(`${running.url}/runtime/sessions/${confirmedSession.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(releasedRead.status, 409);
+    assert.equal(releasedRead.body.failure_class, "session_user_controlled");
+    assert.equal(successfulBossProbeCalls, 0);
   } finally {
     await running.close();
   }
@@ -814,6 +919,67 @@ test("returns JSON errors for bad routes and bad methods", async () => {
     await running.close();
   }
 });
+
+let successfulBossProbeCalls = 0;
+
+const successfulBossReadLauncher: LocalProviderLauncher = async (input) => ({
+  status: "ready",
+  execution_surface: "local_provider",
+  cdp_ref: "cdp_test-local-read-provider",
+  viewer_entry: {
+    availability: "available",
+    access_mode: "interactive",
+    transport: "local_window",
+    input_capabilities: ["keyboard_mouse"]
+  },
+  page: localReadPage(input.url),
+  facts: [],
+  openUrl: async (url) => localReadPage(url),
+  probeReadOperation: async (probe) => {
+    successfulBossProbeCalls += 1;
+    return probe.operation_id === "boss_job_search"
+    ? {
+        status: "completed",
+        observed_at: "2026-07-11T00:00:00.000Z",
+        observed_origin: "https://www.zhipin.com",
+        page: localReadPage(probe.target_url),
+        source_kinds: ["network_summary"],
+        public_summary: {
+          schema_version: "harbor-read-operation-public-summary/v0",
+          operation_id: "boss_job_search",
+          result_kind: "boss_job_search_surface",
+          surface: "web_geek_jobs",
+          result_state: "operation_read_response_observed",
+          response_status: 200,
+          source_signals: ["boss_wapi_zpgeek_read_network"]
+        }
+      }
+    : {
+        status: "unavailable",
+        failure_class: "provider_probe_unavailable",
+      message: "The local test provider only exposes the BOSS read probe.",
+      retryable: false
+      };
+  },
+  captureScreenshot: async () => ({
+    screenshot_ref: "screenshot_test-local-read-provider",
+    mime_type: "image/png",
+    byte_length: 0,
+    sha256: "0".repeat(64),
+    captured_at: "2026-07-11T00:00:00.000Z",
+    facts: []
+  }),
+  close: async () => {}
+});
+
+function localReadPage(url: string) {
+  return {
+    current_url: url,
+    title: "Local read provider",
+    status: "ready" as const,
+    facts: []
+  };
+}
 
 async function getJson(url: string): Promise<any> {
   const response = await fetch(url);

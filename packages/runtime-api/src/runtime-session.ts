@@ -12,6 +12,7 @@ import {
   type LocalProviderLauncher,
   type LocalProviderPageFacts,
   type LocalProviderReadProbeInput,
+  type LocalProviderReadProbePublicSummary,
   type LocalProviderReadProbeResult,
   type LocalProviderScreenshotFacts,
   type OpenIdentityEnvironmentSessionInput,
@@ -45,6 +46,7 @@ export type {
   LocalProviderLaunchResult,
   LocalProviderPageFacts,
   LocalProviderReadProbeInput,
+  LocalProviderReadProbePublicSummary,
   LocalProviderReadProbeResult,
   LocalProviderScreenshotFacts,
   OpenIdentityEnvironmentSessionInput,
@@ -69,6 +71,8 @@ export interface RuntimeSessionRecord {
     profile_storage_ref: string | null;
   };
   user_held_session: boolean;
+  read_operation_user_confirmed: boolean;
+  read_operation_user_handoff: boolean;
   execution_surface: "local_provider" | "fixture" | "unknown";
   openUrl?: (url: string) => Promise<LocalProviderPageFacts>;
   probeReadOperation?: (input: LocalProviderReadProbeInput) => Promise<LocalProviderReadProbeResult>;
@@ -169,6 +173,8 @@ export class RuntimeSessionStore {
         profile_storage_ref: input.profile_storage_ref ?? null
       },
       user_held_session: controlOwner === "user" && ready && isInteractiveUserViewer(facts),
+      read_operation_user_confirmed: false,
+      read_operation_user_handoff: false,
       execution_surface: ready ? launch.execution_surface ?? "unknown" : "unknown",
       openUrl: ready ? launch.openUrl : undefined,
       probeReadOperation: ready ? launch.probeReadOperation : undefined,
@@ -257,6 +263,7 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = false;
+    record.read_operation_user_handoff = false;
     this.viewerControls.recordHandoff(runtime_session_ref, { control_owner: "none" });
     record.facts.facts.push({ key: "session.release", source: "observed", value: owner ?? "unscoped" });
     return snapshot(record.facts);
@@ -290,6 +297,7 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = false;
+    record.read_operation_user_handoff = false;
     record.facts.current_page = { ...record.facts.current_page, status: "unavailable", observed_at: now };
     this.viewerControls.markClosed(runtime_session_ref, now);
     return snapshot(record.facts);
@@ -307,7 +315,7 @@ export class RuntimeSessionStore {
     );
   }
 
-  applyHandoff(runtime_session_ref: string, control: Pick<ControlOwnerFacts, "owner" | "handoff_reason" | "takeover" | "updated_at">): void {
+  applyHandoff(runtime_session_ref: string, control: Pick<ControlOwnerFacts, "owner" | "previous_owner" | "handoff_reason" | "takeover" | "updated_at">): void {
     const record = this.records.get(runtime_session_ref);
     if (!record) return;
     record.facts.control_owner = control.owner;
@@ -320,6 +328,9 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = control.owner === "user" && isInteractiveUserViewer(record.facts);
+    record.read_operation_user_handoff = record.read_operation_user_confirmed &&
+      control.previous_owner === "user" &&
+      (control.owner === "agent" || control.owner === "core_task");
     record.facts.facts.push(
       { key: "control.owner", source: "observed", value: control.owner },
       { key: "handoff.reason", source: "observed", value: control.handoff_reason ?? "none" },
@@ -330,6 +341,13 @@ export class RuntimeSessionStore {
   isTrustedUserHeldSession(runtime_session_ref: string): boolean {
     const record = this.records.get(runtime_session_ref);
     return !!record && record.user_held_session && isInteractiveUserViewer(record.facts);
+  }
+
+  markReadOperationUserConfirmed(runtime_session_ref: string): void {
+    const record = this.records.get(runtime_session_ref);
+    if (!record || !record.user_held_session || record.facts.control_owner !== "user") return;
+    record.read_operation_user_confirmed = true;
+    record.read_operation_user_handoff = false;
   }
 
   getValidationRuntimeFacts(runtime_session_ref: string): ValidationRuntimeFacts | null {
@@ -421,6 +439,7 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = owner === "user" && isInteractiveUserViewer(record.facts);
+    record.read_operation_user_handoff = false;
     this.viewerControls.recordHandoff(record.facts.runtime_session_ref, { control_owner: owner });
     record.facts.facts.push(
       { key: "session.reuse", source: "observed", value: "same_profile_session" },
