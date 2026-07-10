@@ -1,0 +1,42 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-241",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "Controller spec review allows HARBOR-241: the full suite accurately scopes a security-sensitive Harbor Runtime API and persistent identity-state change. It requires session-bound user confirmation, atomic owner persistence, redacted public output, explicit failure behavior, and excludes automatic login, sensitive-material inspection, site execution, and all external writes. The remaining live evidence requirement is correctly deferred to the post-merge packaged App flow rather than represented by fixtures.",
+  "reviewer": "Codex main controller",
+  "authored_at": "2026-07-10T09:32:00Z",
+  "reviewed_head": "57ada8af7699d257021bc295f143c3d3f5682af0",
+  "reviewed_validation_summary": "2026-07-10 local validation on `work/harbor-241-manual-auth-sync`: `pnpm install --offline --frozen-lockfile`, `pnpm typecheck`, focused Runtime API tests, `pnpm test` (39 passed), and `git diff --check` passed. Review corrections enforce same-identity session reuse, user-held session control, atomic persistence before public mutation, and public user-confirmed provenance. Fixture tests only; no Cookie, DOM, page content, or live identity state was read or changed.",
+  "reviewed_validation_summary_hash": "138e1b4e18cf8b0f564d4a3416da2e89fc164fabafc6085fadcc83c538aafd4d",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-241.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "Live user-session evidence is required for issue closeout but is not a substitute for this API/spec review."
+  ],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-241.md",
+    "recovery_entry": ".loom/progress/HARBOR-241.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "suite_validation": "loom suite validate --target . --item HARBOR-241 --json",
+    "suite_validator": "loom",
+    "suite_validator_mode": "global-cli",
+    "suite_index": ".loom/specs/HARBOR-241/suite-index.md",
+    "suite_spec": ".loom/specs/HARBOR-241/spec.md",
+    "suite_plan": ".loom/specs/HARBOR-241/plan.md",
+    "suite_contracts": ".loom/specs/HARBOR-241/contracts.md",
+    "suite_evidence_map": ".loom/specs/HARBOR-241/evidence-map.md",
+    "suite_consistency_analysis": ".loom/specs/HARBOR-241/consistency-analysis.md",
+    "suite_task_carriers": [
+      ".loom/specs/HARBOR-241/task-carrier.md"
+    ],
+    "suite_consumed_contracts": [
+      "docs/methodology/harness/full-spec-suite-cli-surface.md",
+      "docs/methodology/templates/spec-suite.md"
+    ]
+  }
+}

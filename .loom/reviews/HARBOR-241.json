@@ -1,0 +1,50 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-241",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Controller code review allows HARBOR-241 at the reviewed head. The dedicated route performs fixed-format bearer authorization before session lookup, uses timing-safe byte comparison, rejects missing/malformed/duplicate/query/body variants, requires an active user-held managed session with canonical identity/profile/execution bindings, persists before exposing the public state, and returns a redacted public identity fact only. Tests cover authorization, session and identity boundaries, persistence failure, restart readback, and sensitive-value non-disclosure. No automatic login, Cookie/DOM inspection, credential storage, site task, or external write is introduced.",
+  "reviewer": "Codex main controller",
+  "authored_at": "2026-07-10T09:32:00Z",
+  "reviewed_head": "57ada8af7699d257021bc295f143c3d3f5682af0",
+  "reviewed_validation_summary": "2026-07-10 local validation on `work/harbor-241-manual-auth-sync`: `pnpm install --offline --frozen-lockfile`, `pnpm typecheck`, focused Runtime API tests, `pnpm test` (39 passed), and `git diff --check` passed. Review corrections enforce same-identity session reuse, user-held session control, atomic persistence before public mutation, and public user-confirmed provenance. Fixture tests only; no Cookie, DOM, page content, or live identity state was read or changed.",
+  "reviewed_validation_summary_hash": "138e1b4e18cf8b0f564d4a3416da2e89fc164fabafc6085fadcc83c538aafd4d",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-241.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [
+    "After Harbor #241 and App #236 merge, perform packaged App E2E against the user-confirmed managed session before closing either user story."
+  ],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-241.md",
+    "recovery_entry": ".loom/progress/HARBOR-241.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "suite_evidence_validation": "loom suite evidence validate --target . --item HARBOR-241 --json",
+    "suite_carrier_validation": "loom suite carrier validate --target . --item HARBOR-241 --json",
+    "suite_index": ".loom/specs/HARBOR-241/suite-index.md",
+    "suite_spec": ".loom/specs/HARBOR-241/spec.md",
+    "suite_plan": ".loom/specs/HARBOR-241/plan.md",
+    "suite_contracts": ".loom/specs/HARBOR-241/contracts.md",
+    "suite_evidence_map": ".loom/specs/HARBOR-241/evidence-map.md",
+    "suite_consistency_analysis": ".loom/specs/HARBOR-241/consistency-analysis.md",
+    "suite_task_carriers": [
+      ".loom/specs/HARBOR-241/task-carrier.md"
+    ],
+    "suite_evidence_consumed_contracts": [
+      "docs/methodology/harness/full-spec-suite-cli-surface.md",
+      "docs/methodology/templates/evidence-map.md"
+    ],
+    "suite_carrier_consumed_contracts": [
+      "docs/methodology/harness/task-carrier-contract.md",
+      "docs/methodology/templates/execution-breakdown.md",
+      "docs/methodology/harness/full-spec-suite-cli-surface.md"
+    ]
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Controller-authored implementation review found no P0-P2 authorization, identity-binding, persistence, or public-data-boundary defects."
+  }
+}

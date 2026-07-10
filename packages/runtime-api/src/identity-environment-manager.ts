@@ -21,6 +21,7 @@ export type LocalIdentityEnvironmentReadiness = "ready" | "needs_auth" | "blocke
 
 export interface LocalIdentityEnvironmentManagerOptions {
   persistence_path?: string;
+  persist_records?: (records: StoredLocalIdentityEnvironmentRecord[]) => void;
 }
 
 export interface ManagedLocalIdentityEnvironmentInput extends LocalIdentityEnvironmentInput {
@@ -75,6 +76,7 @@ export interface LocalIdentityEnvironmentPublicRecord {
   status: {
     readiness: LocalIdentityEnvironmentReadiness;
     login_state: LoginState;
+    authentication_provenance: "unknown" | "user_confirmed_managed_session";
     browser_storage_state: BrowserStorageState;
     manual_authentication_state: ManualAuthenticationState;
     recovery_required: boolean;
@@ -125,6 +127,22 @@ export class LocalIdentityEnvironmentManager {
 
   update(identity_environment_ref: string, input: LocalIdentityEnvironmentStateUpdate): LocalIdentityEnvironmentPublicRecord | null {
     assertNoSensitiveMaterialInput(input);
+    if (input.login_state_reason === USER_CONFIRMED_MANAGED_SESSION_REASON) {
+      throw new Error("Reserved authentication provenance can only be set by a managed session confirmation.");
+    }
+    return this.updateRecord(identity_environment_ref, input);
+  }
+
+  completeManualAuthentication(identity_environment_ref: string): LocalIdentityEnvironmentPublicRecord | null {
+    return this.updateRecord(identity_environment_ref, {
+      login_state: "logged_in",
+      manual_authentication_state: "completed",
+      login_state_reason: USER_CONFIRMED_MANAGED_SESSION_REASON
+    });
+  }
+
+  private updateRecord(identity_environment_ref: string, input: LocalIdentityEnvironmentStateUpdate): LocalIdentityEnvironmentPublicRecord | null {
+    assertNoSensitiveMaterialInput(input);
     const current = this.records.get(identity_environment_ref);
     if (!current) return null;
     const facts = snapshot(current.identity_environment);
@@ -162,8 +180,10 @@ export class LocalIdentityEnvironmentManager {
         browser_storage_ref: input.browser_storage_ref ?? current.local_material_refs.browser_storage_ref
       }
     };
+    const nextRecords = new Map(this.records);
+    nextRecords.set(identity_environment_ref, record);
+    this.persist(nextRecords);
     this.records.set(identity_environment_ref, record);
-    this.persist();
     return publicRecord(record);
   }
 
@@ -231,12 +251,16 @@ export class LocalIdentityEnvironmentManager {
     }
   }
 
-  private persist(): void {
+  private persist(records = this.records): void {
+    if (this.options.persist_records) {
+      this.options.persist_records(Array.from(records.values()));
+      return;
+    }
     const path = this.options.persistence_path;
     if (!path) return;
     mkdirSync(dirname(path), { recursive: true });
     const tmpPath = `${path}.tmp`;
-    writeFileSync(tmpPath, JSON.stringify({ schema_version: HARBOR_LOCAL_IDENTITY_ENVIRONMENT_STORE_SCHEMA, records: Array.from(this.records.values()) }, null, 2));
+    writeFileSync(tmpPath, JSON.stringify({ schema_version: HARBOR_LOCAL_IDENTITY_ENVIRONMENT_STORE_SCHEMA, records: Array.from(records.values()) }, null, 2));
     renameSync(tmpPath, path);
   }
 }
@@ -267,6 +291,7 @@ function publicRecord(record: StoredLocalIdentityEnvironmentRecord): LocalIdenti
     status: {
       readiness: readiness(facts, record.consistency),
       login_state: facts.login_state.state,
+      authentication_provenance: facts.login_state.reason === USER_CONFIRMED_MANAGED_SESSION_REASON ? "user_confirmed_managed_session" : "unknown",
       browser_storage_state: facts.browser_storage.state,
       manual_authentication_state: facts.login_state.manual_authentication_state,
       recovery_required: facts.login_state.recovery_required,
@@ -300,6 +325,8 @@ function publicRecord(record: StoredLocalIdentityEnvironmentRecord): LocalIdenti
     risk_boundary: facts.risk_boundary
   };
 }
+
+const USER_CONFIRMED_MANAGED_SESSION_REASON = "user_confirmed_managed_session";
 
 function readiness(facts: LocalIdentityEnvironmentFacts, consistency: IdentityConsistencyFacts): LocalIdentityEnvironmentReadiness {
   if (facts.login_state.recovery_required) return "needs_auth";

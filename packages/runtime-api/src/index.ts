@@ -264,6 +264,34 @@ export class HarborRuntime {
     return this.runtimeSessions.getSession(runtime_session_ref);
   }
 
+  completeManualAuthentication(runtime_session_ref: string): LocalIdentityEnvironmentPublicRecord | ManualAuthenticationCompletionUnavailable {
+    const session = this.runtimeSessions.getRecord(runtime_session_ref);
+    if (!session) return manualAuthenticationUnavailable("session_missing", runtime_session_ref);
+    if (session.facts.lifecycle_state !== "active") return manualAuthenticationUnavailable("session_not_active", runtime_session_ref);
+    if (!session.facts.identity_environment_ref) return manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
+    if (
+      !this.runtimeSessions.isTrustedUserHeldSession(runtime_session_ref) ||
+      session.facts.control_owner !== "user" ||
+      session.facts.control_lock.owner !== "user" ||
+      session.facts.control_lock.state !== "held"
+    ) {
+      return manualAuthenticationUnavailable("user_confirmation_required", runtime_session_ref);
+    }
+
+    const managedIdentityEnvironment = this.identityEnvironments.getFacts(session.facts.identity_environment_ref);
+    if (
+      !managedIdentityEnvironment ||
+      managedIdentityEnvironment.identity_environment_ref !== session.facts.identity_environment_ref ||
+      managedIdentityEnvironment.execution_identity_ref !== session.facts.execution_identity_ref ||
+      managedIdentityEnvironment.profile_ref !== session.facts.profile_ref ||
+      managedIdentityEnvironment.browser_storage.profile_storage_ref !== session.identity_binding.profile_storage_ref
+    ) {
+      return manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
+    }
+    const identityEnvironment = this.identityEnvironments.completeManualAuthentication(session.facts.identity_environment_ref);
+    return identityEnvironment ?? manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
+  }
+
   async openIdentityEnvironmentSession(input: OpenIdentityEnvironmentSessionInput): Promise<RuntimeSessionFacts | RuntimeSessionUnavailable> {
     return this.runtimeSessions.openIdentityEnvironmentSession(input);
   }
@@ -648,6 +676,33 @@ export class HarborRuntime {
   async closeSession(runtime_session_ref: string): Promise<RuntimeSessionFacts | null> {
     return this.runtimeSessions.closeSession(runtime_session_ref);
   }
+}
+
+export interface ManualAuthenticationCompletionUnavailable {
+  status: "unavailable";
+  failure_class: "session_missing" | "session_not_active" | "identity_environment_unmanaged" | "user_confirmation_required";
+  runtime_session_ref: string;
+  retryable: false;
+  public_boundary: {
+    output: "status_and_redacted_refs_only";
+    raw_material: "not_exposed";
+  };
+}
+
+function manualAuthenticationUnavailable(
+  failure_class: ManualAuthenticationCompletionUnavailable["failure_class"],
+  runtime_session_ref: string
+): ManualAuthenticationCompletionUnavailable {
+  return {
+    status: "unavailable",
+    failure_class,
+    runtime_session_ref,
+    retryable: false,
+    public_boundary: {
+      output: "status_and_redacted_refs_only",
+      raw_material: "not_exposed"
+    }
+  };
 }
 
 function sessionBoundWritePrecheckInput(input: WritePrecheckInput): WritePrecheckInput {
