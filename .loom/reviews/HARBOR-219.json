@@ -3,12 +3,12 @@
   "item_id": "HARBOR-219",
   "decision": "allow",
   "kind": "code_review",
-  "summary": "Code review allows HARBOR-219 through the carrier checkpoint cleanup head. The product change passes managed identity profile_storage_ref to the local provider as internal protected material, defaults user-owned sessions to visible local windows, preserves persistent profile dirs while cleaning ephemeral dirs, tightens persistent dir permissions, and redacts raw profile storage refs from direct/public identity facts. The follow-up carrier-only changes move the checkpoint from build to merge and keep Blockers as None for PR #239 consumption. This is local contract evidence and does not claim live provider/session/site execution.",
+  "summary": "Code review allows the stale DevToolsActivePort repair at implementation head 573bb54dc8fe653719ed15f9e8782f5aad4123d0. The change removes an unavailable or non-CDP retained port before a dedicated-profile browser launch and preserves live CDP ports; it neither reads profile content nor changes account state.",
   "reviewer": "Codex main controller thread 019f3a6c-9bb5-7a80-8095-13751f46cead",
-  "authored_at": "2026-07-09T18:54:57Z",
-  "reviewed_head": "32cd2bb4a5eae4acba1ee48a4db49552b7f2ff53",
-  "reviewed_validation_summary": "2026-07-09T18:29Z UTC local validation passed on branch `work/harbor-219-persistent-profile-session` before commit: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime:api`, detection-only provider readback with `node --input-type=module -e \"import('./dist/packages/runtime-api/src/index.js').then(({detectBrowserProviders})=>console.log(JSON.stringify(detectBrowserProviders(),null,2)))\"`, cross-repo App `WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session npm run smoke:packaged:runtime`, cross-repo App `WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session npm run smoke:packaged:readonly`, `git diff --check`, `jq empty` for HARBOR-219 review/build evidence JSON, `loom fact-chain --target . --json`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json`. Evidence boundary: Harbor tests use captured launcher, fixture launcher, or fake browser process only; direct/public identity facts redact raw profile storage refs while managed session launch still receives the internal protected ref; provider detection reports CloakBrowser missing and official Chrome installed/launchable without launching a real browser. No real Xiaohongshu/BOSS account, browser profile, Cookie, production page action, submit, publish, send, hosted browser, marketplace, bulk collection, full account cloud hosting, or risk-control bypass occurred.",
-  "reviewed_validation_summary_hash": "8bf67880f368185b6137bbaf0ab8a46e8a5470ff3f9e4d7fbcc8b3ba7e6abcf9",
+  "authored_at": "2026-07-10T10:15:00Z",
+  "reviewed_head": "46122903378083cb49c5098732bd2f7ca9fc82f5",
+  "reviewed_validation_summary": "2026-07-10T10:05Z validation at rebased implementation head `46122903378083cb49c5098732bd2f7ca9fc82f5`: `pnpm typecheck`, the targeted persistent-profile close test, `git diff --check`, `loom fact-chain --target . --json`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json` passed. Full `pnpm test` observed one timing-sensitive fake-browser timeout in the persistent-profile test, then the isolated same test passed; the new unavailable/non-CDP stale-port regression passed in the full run. This is local runtime/test evidence only; no real site/account action, publish, send, submit, credential/Cookie capture, hosted browser, marketplace, bulk collection or risk-control bypass occurred.",
+  "reviewed_validation_summary_hash": "7e2e1374aa51b9e2d0ad3bc094bb286e0bf54f6a3073e6e77c318721e05d03b4",
   "validation_summary_source": "recovery.latest_validation_summary",
   "validation_summary_locator": ".loom/progress/HARBOR-219.md",
   "fallback_to": null,
@@ -55,6 +55,6 @@
   },
   "semantic_review_disposition": {
     "status": "passed",
-    "reason": "Authored implementation review approved product commit ac3a5619038dd1f013b71aca10d3ed7eee254bd8 plus carrier checkpoint cleanup 32cd2bb4a5eae4acba1ee48a4db49552b7f2ff53 for PR #239 merge-gate consumption; final merge consumption still requires hosted gate."
+    "reason": "Authored implementation review approved the rebased stale DevToolsActivePort repair at 46122903378083cb49c5098732bd2f7ca9fc82f5. Any later head may contain only HARBOR-219 carrier/review rebinding; hosted merge-gate consumption remains required."
   }
 }
