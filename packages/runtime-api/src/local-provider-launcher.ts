@@ -40,6 +40,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     ...(input.headless ? ["--headless=new"] : []),
     input.url
   ];
+  await removeStaleDevtoolsPort(profileStorage.profileDir);
   const child = spawn(browserPath, args, { stdio: "ignore" });
   try {
     const port = await waitForDevtoolsPort(profileStorage.profileDir, input.timeout_ms);
@@ -205,6 +206,40 @@ async function waitForDevtoolsPort(profileDir: string, timeoutMs: number): Promi
     }
   }
   throw new Error("Timed out waiting for local browser CDP readiness.");
+}
+
+async function removeStaleDevtoolsPort(profileDir: string): Promise<void> {
+  const portFile = join(profileDir, "DevToolsActivePort");
+  let port = "";
+  try {
+    [port] = (await readFile(portFile, "utf8")).trim().split("\n");
+  } catch {
+    return;
+  }
+  if (port && await isDevtoolsPortReachable(port)) return;
+  await rm(portFile, { force: true });
+}
+
+async function isDevtoolsPortReachable(port: string): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(500) });
+    return response.ok && hasCdpWebSocketEndpoint(await response.json());
+  } catch {
+    return false;
+  }
+}
+
+function hasCdpWebSocketEndpoint(version: unknown): boolean {
+  const endpoint = typeof version === "object" && version !== null
+    ? (version as Record<string, unknown>).webSocketDebuggerUrl
+    : null;
+  if (typeof endpoint !== "string") return false;
+  try {
+    const url = new URL(endpoint);
+    return (url.protocol === "ws:" || url.protocol === "wss:") && url.hostname !== "";
+  } catch {
+    return false;
+  }
 }
 
 async function fetchVersion(port: string): Promise<Record<string, string>> {
