@@ -223,7 +223,20 @@ async function removeStaleDevtoolsPort(profileDir: string): Promise<void> {
 async function isDevtoolsPortReachable(port: string): Promise<boolean> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(500) });
-    return response.ok;
+    return response.ok && hasCdpWebSocketEndpoint(await response.json());
+  } catch {
+    return false;
+  }
+}
+
+function hasCdpWebSocketEndpoint(version: unknown): boolean {
+  const endpoint = typeof version === "object" && version !== null
+    ? (version as Record<string, unknown>).webSocketDebuggerUrl
+    : null;
+  if (typeof endpoint !== "string") return false;
+  try {
+    const url = new URL(endpoint);
+    return (url.protocol === "ws:" || url.protocol === "wss:") && url.hostname !== "";
   } catch {
     return false;
   }

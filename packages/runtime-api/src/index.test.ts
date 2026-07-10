@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -81,7 +82,7 @@ function capturingLauncher(launches: LocalProviderLaunchInput[]): LocalProviderL
 function writeFakeBrowserExecutable(dir: string): string {
   const browserPath = join(dir, "fake-browser.mjs");
   writeFileSync(browserPath, `#!/usr/bin/env node
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 
@@ -90,12 +91,15 @@ const profileDir = userDataArg?.slice("--user-data-dir=".length);
 const requestedUrl = process.argv.findLast((arg) => !arg.startsWith("--")) ?? "about:blank";
 if (!profileDir) process.exit(2);
 mkdirSync(profileDir, { recursive: true });
+if (existsSync(join(profileDir, "DevToolsActivePort"))) process.exit(4);
 if (process.env.HARBOR_FAKE_BROWSER_MARKER) writeFileSync(process.env.HARBOR_FAKE_BROWSER_MARKER, profileDir);
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   response.setHeader("content-type", "application/json");
   if (url.pathname === "/json/version") {
-    response.end(JSON.stringify({ Browser: "FakeBrowser/1.0", "Protocol-Version": "1.3" }));
+    const address = server.address();
+    const port = address && typeof address !== "string" ? address.port : 0;
+    response.end(JSON.stringify({ Browser: "FakeBrowser/1.0", "Protocol-Version": "1.3", webSocketDebuggerUrl: "ws://127.0.0.1:" + port + "/devtools/browser/fake" }));
     return;
   }
   if (url.pathname === "/json/list") {
@@ -120,6 +124,26 @@ setInterval(() => {}, 10000);
 `);
   chmodSync(browserPath, 0o700);
   return browserPath;
+}
+
+async function startNonCdpEndpoint(): Promise<{ port: number; close: () => Promise<void> }> {
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ status: "ok" }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("non-CDP test endpoint did not bind a port");
+  return {
+    port: address.port,
+    close: () => new Promise((resolve, reject) => server.close((cause) => cause ? reject(cause) : resolve()))
+  };
 }
 
 test("creates, reads, and closes a runtime session", async () => {
@@ -551,6 +575,40 @@ test("local provider preserves persistent profile dirs and removes ephemeral dir
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
     if (previousMarker === undefined) delete process.env.HARBOR_FAKE_BROWSER_MARKER;
     else process.env.HARBOR_FAKE_BROWSER_MARKER = previousMarker;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("local provider removes unavailable and non-CDP stale DevTools ports", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "harbor-stale-devtools-port-"));
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  const browserPath = writeFakeBrowserExecutable(dir);
+  const nonCdp = await startNonCdpEndpoint();
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
+  try {
+    for (const [name, port] of [["unavailable", "0"], ["non-CDP", String(nonCdp.port)]]) {
+      const profileStorageRef = `profile-storage_stale-${name}`;
+      const storageId = createHash("sha256").update(profileStorageRef).digest("hex").slice(0, 32);
+      const profileDir = join(process.env.HARBOR_PROFILE_STORAGE_ROOT, storageId);
+      mkdirSync(profileDir, { recursive: true });
+      writeFileSync(join(profileDir, "DevToolsActivePort"), `${port}\n/devtools/browser/stale\n`);
+
+      const result = await launchLocalDedicatedProvider({
+        browser_path: browserPath,
+        headless: true,
+        timeout_ms: 1000,
+        url: "about:blank",
+        profile_ref: `profile_stale-${name}`,
+        profile_storage_ref: profileStorageRef,
+        provider_ref: "provider_fake"
+      });
+      assert.equal(result.status, "ready", `${name} stale DevTools port should be removed before launch`);
+      if (result.status === "ready") await result.close();
+    }
+  } finally {
+    await nonCdp.close();
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
     rmSync(dir, { recursive: true, force: true });
   }
 });
