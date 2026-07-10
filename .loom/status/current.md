@@ -11,7 +11,7 @@
 - Review Entry: .loom/reviews/HARBOR-241.json
 - Validation Entry: pnpm typecheck; pnpm test; git diff --check
 - Closing Condition: Create and push a Harbor #241 PR with ownership constraints, current head, test evidence, and no-sensitive-material/non-write boundary; close only after real session/identity and App refresh evidence.
-- Current Checkpoint: build
+- Current Checkpoint: review
 - Current Stop: None.
 - Next Step: Review, push, and merge the corrective Harbor #241 implementation; then rebuild the packaged App and repeat the public identity synchronization E2E.
 - Blockers: None recorded.

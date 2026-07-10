@@ -3,7 +3,7 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-241
-- Current Checkpoint: build
+- Current Checkpoint: review
 - Current Stop: None.
 - Next Step: Review, push, and merge the corrective Harbor #241 implementation; then rebuild the packaged App and repeat the public identity synchronization E2E.
 - Blockers: None recorded.
