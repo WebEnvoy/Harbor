@@ -33,7 +33,7 @@ export function createHarborRuntimeHttpServer(runtime = new HarborRuntime()): Se
       const badRequest = error instanceof BadRequest;
       writeJson(response, badRequest ? 400 : 500, {
         error: badRequest ? "bad_request" : "internal_error",
-        message: error instanceof Error ? error.message : "Unhandled Harbor Runtime API error."
+        message: badRequest && error instanceof Error ? error.message : "Internal Harbor Runtime API error."
       });
     }
   });

@@ -61,6 +61,10 @@ export type {
 
 export interface RuntimeSessionRecord {
   facts: RuntimeSessionFacts;
+  identity_binding: {
+    profile_storage_ref: string | null;
+  };
+  user_held_session: boolean;
   openUrl?: (url: string) => Promise<LocalProviderPageFacts>;
   captureScreenshot?: () => Promise<LocalProviderScreenshotFacts | RuntimeErrorFact>;
   close?: () => Promise<void>;
@@ -155,6 +159,10 @@ export class RuntimeSessionStore {
     );
     this.records.set(runtime_session_ref, {
       facts,
+      identity_binding: {
+        profile_storage_ref: input.profile_storage_ref ?? null
+      },
+      user_held_session: false,
       openUrl: ready ? launch.openUrl : undefined,
       captureScreenshot: ready ? launch.captureScreenshot : undefined,
       close: ready ? launch.close : undefined
@@ -240,6 +248,7 @@ export class RuntimeSessionStore {
       updated_at: now,
       conflict_error: null
     };
+    record.user_held_session = false;
     this.viewerControls.recordHandoff(runtime_session_ref, { control_owner: "none" });
     record.facts.facts.push({ key: "session.release", source: "observed", value: owner ?? "unscoped" });
     return snapshot(record.facts);
@@ -272,6 +281,7 @@ export class RuntimeSessionStore {
       updated_at: now,
       conflict_error: null
     };
+    record.user_held_session = false;
     record.facts.current_page = { ...record.facts.current_page, status: "unavailable", observed_at: now };
     this.viewerControls.markClosed(runtime_session_ref, now);
     return snapshot(record.facts);
@@ -294,11 +304,24 @@ export class RuntimeSessionStore {
     if (!record) return;
     record.facts.control_owner = control.owner;
     record.facts.last_seen_at = control.updated_at;
+    record.facts.control_lock = {
+      owner: control.owner,
+      state: control.owner === "none" ? "released" : "held",
+      holder_ref: control.owner === "user" ? "harbor_mediated_user" : control.owner === "none" ? null : control.owner,
+      updated_at: control.updated_at,
+      conflict_error: null
+    };
+    record.user_held_session = control.owner === "user" && isInteractiveUserViewer(record.facts);
     record.facts.facts.push(
       { key: "control.owner", source: "observed", value: control.owner },
       { key: "handoff.reason", source: "observed", value: control.handoff_reason ?? "none" },
       { key: "takeover.available", source: "observed", value: String(control.takeover.available) }
     );
+  }
+
+  isTrustedUserHeldSession(runtime_session_ref: string): boolean {
+    const record = this.records.get(runtime_session_ref);
+    return !!record && record.user_held_session && isInteractiveUserViewer(record.facts);
   }
 
   getValidationRuntimeFacts(runtime_session_ref: string): ValidationRuntimeFacts | null {
@@ -355,6 +378,7 @@ export class RuntimeSessionStore {
       updated_at: now,
       conflict_error: null
     };
+    record.user_held_session = false;
     this.viewerControls.recordHandoff(record.facts.runtime_session_ref, { control_owner: owner });
     record.facts.facts.push(
       { key: "session.reuse", source: "observed", value: "same_profile_session" },
@@ -439,6 +463,12 @@ function viewerAvailabilityState(availability: RuntimeViewerEntry["availability"
   if (availability === "available") return "available";
   if (availability === "permission_denied") return "policy_denied";
   return availability === "unsupported" ? "unsupported" : "unavailable";
+}
+
+function isInteractiveUserViewer(facts: RuntimeSessionFacts): boolean {
+  return facts.viewer_entry?.availability === "available" &&
+    facts.viewer_entry.access_mode === "interactive" &&
+    facts.viewer_entry.input_capabilities.includes("keyboard_mouse");
 }
 
 function unavailablePage(requested_url: string, current_error: RuntimeErrorFact, observed_at: string): RuntimePageFacts {

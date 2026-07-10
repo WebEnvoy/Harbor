@@ -265,19 +265,30 @@ export class HarborRuntime {
   }
 
   completeManualAuthentication(runtime_session_ref: string): LocalIdentityEnvironmentPublicRecord | ManualAuthenticationCompletionUnavailable {
-    const session = this.runtimeSessions.getSession(runtime_session_ref);
+    const session = this.runtimeSessions.getRecord(runtime_session_ref);
     if (!session) return manualAuthenticationUnavailable("session_missing", runtime_session_ref);
-    if (session.lifecycle_state !== "active") return manualAuthenticationUnavailable("session_not_active", runtime_session_ref);
-    if (!session.identity_environment_ref) return manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
-    if (session.control_owner !== "user" || session.control_lock.owner !== "user" || session.control_lock.state !== "held") {
+    if (session.facts.lifecycle_state !== "active") return manualAuthenticationUnavailable("session_not_active", runtime_session_ref);
+    if (!session.facts.identity_environment_ref) return manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
+    if (
+      !this.runtimeSessions.isTrustedUserHeldSession(runtime_session_ref) ||
+      session.facts.control_owner !== "user" ||
+      session.facts.control_lock.owner !== "user" ||
+      session.facts.control_lock.state !== "held"
+    ) {
       return manualAuthenticationUnavailable("user_confirmation_required", runtime_session_ref);
     }
 
-    const managedIdentityEnvironment = this.identityEnvironments.getFacts(session.identity_environment_ref);
-    if (!managedIdentityEnvironment || managedIdentityEnvironment.execution_identity_ref !== session.execution_identity_ref) {
+    const managedIdentityEnvironment = this.identityEnvironments.getFacts(session.facts.identity_environment_ref);
+    if (
+      !managedIdentityEnvironment ||
+      managedIdentityEnvironment.identity_environment_ref !== session.facts.identity_environment_ref ||
+      managedIdentityEnvironment.execution_identity_ref !== session.facts.execution_identity_ref ||
+      managedIdentityEnvironment.profile_ref !== session.facts.profile_ref ||
+      managedIdentityEnvironment.browser_storage.profile_storage_ref !== session.identity_binding.profile_storage_ref
+    ) {
       return manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
     }
-    const identityEnvironment = this.identityEnvironments.completeManualAuthentication(session.identity_environment_ref);
+    const identityEnvironment = this.identityEnvironments.completeManualAuthentication(session.facts.identity_environment_ref);
     return identityEnvironment ?? manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
   }
 
