@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher } from "./index.js";
+import { opaqueRef } from "./refs.js";
 import { startHarborRuntimeServer } from "./server.js";
 
 test("serves readiness and provider facts as JSON", async () => {
@@ -345,6 +346,13 @@ test("records user-confirmed manual authentication for an active managed session
     const untrustedReadback = await getJson(`${first.url}/runtime/identity-environments/identity-env_manual-auth`);
     assert.equal(untrustedReadback.status.login_state, "manual_auth_required");
 
+    const callerOwned = await fetch(`${first.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
+      method: "POST",
+      headers: manualAuthHeaders()
+    });
+    assert.equal(callerOwned.status, 409);
+    assert.equal((await callerOwned.json()).failure_class, "user_confirmation_required");
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
     const response = await fetch(`${first.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
       method: "POST",
       headers: manualAuthHeaders()
@@ -735,7 +743,9 @@ test("rejects every fixture-backed allowlisted read operation without leaking pr
       url: "https://www.xiaohongshu.com/explore",
       control_owner: "user"
     });
-    runtime.completeManualAuthentication(session.runtime_session_ref);
+    assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref).status, "unavailable");
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
     runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
 
     const invalid = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
@@ -821,7 +831,9 @@ test("serves a completed local-provider read operation only with its bound publi
       url: "https://www.zhipin.com/web/geek/jobs",
       control_owner: "user"
     });
-    runtime.completeManualAuthentication(session.runtime_session_ref);
+    assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref).status, "unavailable");
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
     runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
     const response = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
@@ -842,7 +854,7 @@ test("serves a completed local-provider read operation only with its bound publi
     assert.match(response.body.public_summary_ref, /^read_result_/);
     assert.notEqual(response.body.public_summary_ref, response.body.operation_ref);
     assert.notEqual(response.body.public_summary_ref, response.body.post_check.post_check_ref);
-    assert.equal(response.body.evidence_refs.includes(response.body.public_summary_ref), true);
+    assert.equal(response.body.evidence_refs.includes(response.body.public_summary_ref), false);
     assert.equal(JSON.stringify(response.body).includes("profile-storage_read-operation-success"), false);
     assert.equal(JSON.stringify(response.body).includes("webSocketDebuggerUrl"), false);
   } finally {
@@ -888,6 +900,8 @@ test("fails closed before probing when PATCH login state or release lacks a conf
       control_owner: "user",
       reuse_existing: false
     });
+    assert.equal(runtime.completeManualAuthentication(confirmedSession.runtime_session_ref).status, "unavailable");
+    runtime.recordHandoff(confirmedSession.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
     assert.ok(runtime.completeManualAuthentication(confirmedSession.runtime_session_ref));
     runtime.recordHandoff(confirmedSession.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
     const released = await postJson(`${running.url}/runtime/sessions/${confirmedSession.runtime_session_ref}/release`, {});
@@ -937,13 +951,19 @@ const successfulBossReadLauncher: LocalProviderLauncher = async (input) => ({
   openUrl: async (url) => localReadPage(url),
   probeReadOperation: async (probe) => {
     successfulBossProbeCalls += 1;
-    return probe.operation_id === "boss_job_search"
-    ? {
+    if (probe.operation_id === "boss_job_search") {
+      const source = { kind: "network_summary", ref: opaqueRef("source") };
+      return {
         status: "completed",
         observed_at: "2026-07-11T00:00:00.000Z",
         observed_origin: "https://www.zhipin.com",
         page: localReadPage(probe.target_url),
-        source_kinds: ["network_summary"],
+        source_refs: [source],
+        evidence_ref_kinds: [
+          { kind: "snapshot_ref", ref: opaqueRef("evidence") },
+          { kind: "network_summary_ref", ref: opaqueRef("evidence") }
+        ],
+        public_summary_source_ref: source.ref,
         public_summary: {
           schema_version: "harbor-read-operation-public-summary/v0",
           operation_id: "boss_job_search",
@@ -953,13 +973,14 @@ const successfulBossReadLauncher: LocalProviderLauncher = async (input) => ({
           response_status: 200,
           source_signals: ["boss_wapi_zpgeek_read_network"]
         }
-      }
-    : {
-        status: "unavailable",
+      };
+    }
+    return {
+      status: "unavailable",
         failure_class: "provider_probe_unavailable",
       message: "The local test provider only exposes the BOSS read probe.",
       retryable: false
-      };
+    };
   },
   captureScreenshot: async () => ({
     screenshot_ref: "screenshot_test-local-read-provider",

@@ -278,11 +278,11 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       await client.send("Page.enable");
       await client.send("Runtime.enable");
       await client.send("Network.enable");
-      let operationResponseStatus: number | null = null;
+      let operationResponse: { status: number; url: string } | null = null;
       const stopObservingNetwork = client.on("Network.responseReceived", (event) => {
         const response = event.response as { url?: unknown; status?: unknown } | undefined;
         const status = typeof response?.status === "number" ? response.status : null;
-        if (status !== null && status >= 200 && status < 300 && isOperationReadNetworkUrl(input, response?.url)) operationResponseStatus = status;
+        if (status !== null && status >= 200 && status < 300 && typeof response?.url === "string") operationResponse = { status, url: response.url };
       });
       for (let attempt = 0; attempt < 20; attempt++) {
         const evaluated = await client.send("Runtime.evaluate", {
@@ -298,9 +298,10 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           challenge_like?: boolean;
           pinia_ready?: boolean;
         } } | undefined)?.value;
-        if (value?.origin && value.ready && operationResponseStatus !== null) {
+        const observedResponse = operationResponse as { status: number; url: string } | null;
+        if (value?.origin && value.ready && observedResponse !== null) {
           stopObservingNetwork();
-          return { ...value, operation_response_status: operationResponseStatus };
+          return { ...value, operation_response_status: observedResponse.status, operation_response_url: observedResponse.url };
         }
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
@@ -311,14 +312,9 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
     if (!observation) return probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts);
     const validation = validateReadOperationProbe(input, observation);
     if (validation.status === "unavailable") return probeUnavailable(validation.failure_class, validation.message, validation.retryable, pageFacts);
-    return {
-      status: "completed",
-      observed_at: new Date().toISOString(),
-      observed_origin: input.expected_origin,
-      page: pageFacts,
-      source_kinds: validation.source_kinds,
-      public_summary: validation.public_summary
-    };
+    // This adapter observes only URL/status metadata and intentionally has no
+    // safe snapshot/evidence artifact store. Do not mint substitute refs.
+    return probeUnavailable("evidence_refs_missing", "The local provider cannot safely provide the required observed evidence refs.", true, pageFacts);
   } catch (cause) {
     return probeUnavailable(
       "network_resource_unavailable",
@@ -346,6 +342,7 @@ interface ReadProbeObservation {
   challenge_like?: boolean;
   pinia_ready?: boolean;
   operation_response_status?: number;
+  operation_response_url?: string;
 }
 
 export function validateReadOperationProbe(
@@ -360,7 +357,7 @@ export function validateReadOperationProbe(
   if (!observation.ready) return { status: "unavailable", failure_class: "page_not_ready", message: "The read-operation page did not reach the expected operation surface.", retryable: true };
   if (input.operation_id === "xhs_search_notes") {
     const xhsSurface = observation.pathname === "/search_result";
-    if (!xhsSurface || !observation.pinia_ready || !isSuccessfulReadResponse(observation.operation_response_status)) {
+    if (!xhsSurface || !observation.pinia_ready || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
       return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search/note, Pinia, or operation-specific read signal is unavailable.", retryable: true };
     }
     return {
@@ -378,7 +375,7 @@ export function validateReadOperationProbe(
     };
   }
   const bossJobsSurface = observation.pathname === "/web/geek/jobs";
-  if (!bossJobsSurface || !isSuccessfulReadResponse(observation.operation_response_status)) {
+  if (!bossJobsSurface || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
     return { status: "unavailable", failure_class: "page_not_ready", message: "BOSS jobs surface or required WAPI read signal is unavailable.", retryable: true };
   }
   return {
@@ -409,9 +406,12 @@ function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: un
   try {
     const url = new URL(value);
     if (url.origin !== input.expected_origin) return false;
-    return input.operation_id === "xhs_search_notes"
-      ? url.pathname === "/api/sns/web/v1/search/notes"
-      : url.pathname.startsWith("/wapi/zpgeek/");
+    const expected = input.operation_id === "xhs_search_notes"
+      ? { pathname: "/api/sns/web/v1/search/notes", query: "keyword" }
+      : { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
+    return url.pathname === expected.pathname &&
+      url.searchParams.getAll(expected.query).length === 1 &&
+      url.searchParams.get(expected.query) === input.query;
   } catch {
     return false;
   }

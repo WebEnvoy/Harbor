@@ -494,7 +494,8 @@ export class HarborRuntime {
       site_id: admission.entry.site_id,
       operation_id: admission.entry.operation_id,
       target_url: admission.target_url,
-      expected_origin: admission.entry.allowed_origin
+      expected_origin: admission.entry.allowed_origin,
+      query: admission.request.query
     });
     if (probe.status === "unavailable") {
       return readOperationUnavailable(runtime_session_ref, probe.failure_class, {
@@ -509,9 +510,10 @@ export class HarborRuntime {
       entry: admission.entry,
       observed_origin: probe.observed_origin,
       observed_at: probe.observed_at,
-      checked_signal_kinds: probe.source_kinds,
+      source_refs: probe.source_refs,
+      evidence_ref_kinds: probe.evidence_ref_kinds,
+      public_summary_source_ref: probe.public_summary_source_ref,
       public_summary: probe.public_summary,
-      evidence_refs: []
     });
     if (typeof proof === "string") return readOperationUnavailable(runtime_session_ref, proof, requestIdentity(admission.request));
     const result = this.readOperationObservations.complete(admission.entry, proof);

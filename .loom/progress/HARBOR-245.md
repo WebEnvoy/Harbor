@@ -3,7 +3,7 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-245
-- Current Checkpoint: review finding repaired and verified
+- Current Checkpoint: independent-review P1 repair verified
 - Current Stop: Implementation and local verification are complete; do not create a PR until Loom #2026/#2015 is merged.
 - Next Step: Rebase/read back the repaired merge-gate surface, then create the Harbor #245 PR without changing scope.
 - Blockers: PR creation and shared-current carrier update are intentionally deferred until Loom #2026/#2015 is merged.
@@ -16,5 +16,5 @@
 - Plan Locator: .loom/specs/HARBOR-245/plan.md
 - Acceptance Locator: .loom/specs/HARBOR-245/implementation-contract.md
 - Validation Evidence Locator: .loom/specs/HARBOR-245/evidence-map.md
-- Latest Validation Summary: `pnpm typecheck`; `pnpm test` (53 passed); `pnpm smoke:runtime:api` (fixture-only, no real account/profile/page); and `git diff --check` passed after the review repair. Focused tests reject arbitrary same-origin publish/chat/profile paths, missing operation-specific response signals, PATCH login bypass, release bypass, fixture execution, and fabricated result/post-check/source-ref provenance; the runtime endpoint test accepts only a bound local-provider BOSS result summary with distinct opaque refs.
+- Latest Validation Summary: 2026-07-11 local worktree validation: `pnpm typecheck`; `pnpm test` (53 passed); `pnpm smoke:runtime:api` (fixture-only, no real account/profile/page); and `git diff --check` passed. Focused tests reject caller-created user control before authenticated manual-auth completion, PATCH/release bypass, fabricated source/evidence refs and summary-source binding, and BOSS/XHS responses with the wrong operation path or query; the minimal local-provider success fixture supplies distinct observed opaque source/evidence refs, while the real URL/status-only CDP probe fails closed as `evidence_refs_missing`.
 - Evidence Freshness: current local implementation evidence; merged-head live evidence remains required.

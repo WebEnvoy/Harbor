@@ -172,7 +172,8 @@ export class RuntimeSessionStore {
       identity_binding: {
         profile_storage_ref: input.profile_storage_ref ?? null
       },
-      user_held_session: controlOwner === "user" && ready && isInteractiveUserViewer(facts),
+      // HTTP session creation carries no authenticated user-handoff fact.
+      user_held_session: false,
       read_operation_user_confirmed: false,
       read_operation_user_handoff: false,
       execution_surface: ready ? launch.execution_surface ?? "unknown" : "unknown",
@@ -327,6 +328,8 @@ export class RuntimeSessionStore {
       updated_at: control.updated_at,
       conflict_error: null
     };
+    // Only the server-owned handoff path calls applyHandoff; create/lock input
+    // must never be treated as proof that a user held this session.
     record.user_held_session = control.owner === "user" && isInteractiveUserViewer(record.facts);
     record.read_operation_user_handoff = record.read_operation_user_confirmed &&
       control.previous_owner === "user" &&
@@ -438,7 +441,7 @@ export class RuntimeSessionStore {
       updated_at: now,
       conflict_error: null
     };
-    record.user_held_session = owner === "user" && isInteractiveUserViewer(record.facts);
+    record.user_held_session = false;
     record.read_operation_user_handoff = false;
     this.viewerControls.recordHandoff(record.facts.runtime_session_ref, { control_owner: owner });
     record.facts.facts.push(

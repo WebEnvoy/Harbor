@@ -131,6 +131,7 @@ export interface ReadOperationObservationRecord {
   observed_at: string;
   source_kind?: string;
   evidence_kind?: string;
+  summary_source_ref?: string;
   public_summary?: LocalProviderReadProbePublicSummary;
   post_check?: {
     status: "passed";
@@ -150,6 +151,7 @@ export interface OperationProbeEvidence {
   origin: string;
   observed_at: string;
   public_summary_ref: string;
+  public_summary_source_ref: string;
   public_summary: LocalProviderReadProbePublicSummary;
   source_refs: ReadOperationRef[];
   evidence_refs: string[];
@@ -368,40 +370,32 @@ export class ReadOperationObservationStore {
     entry: PinnedReadOperation;
     observed_origin: string;
     observed_at: string;
-    checked_signal_kinds: readonly string[];
+    source_refs: readonly ReadOperationRef[];
+    evidence_ref_kinds: readonly ReadOperationRef[];
+    public_summary_source_ref: string;
     public_summary: LocalProviderReadProbePublicSummary;
-    evidence_refs: readonly string[];
   }): OperationProbeEvidence | ReadOperationFailureClass {
     if (input.observed_origin !== input.entry.allowed_origin) return "origin_drift";
     if (!isExpectedPublicSummary(input.entry, input.public_summary)) return "public_summary_missing";
-    if (input.evidence_refs.some((ref) => !ref)) return "evidence_refs_missing";
-    const checked = new Set(input.checked_signal_kinds);
-    if (!input.entry.required_source_ref_kinds.every((kind) => checked.has(kind))) return "source_refs_missing";
-    if (checked.size !== input.checked_signal_kinds.length || [...checked].some((kind) => !input.entry.required_source_ref_kinds.includes(kind))) return "source_refs_missing";
+    if (!hasRequiredObservedRefs(input.source_refs, input.entry.required_source_ref_kinds)) return "source_refs_missing";
+    const requiredEvidenceKinds = input.entry.required_evidence_ref_kinds.filter((kind) => kind !== "post_check_ref");
+    if (!hasRequiredObservedRefs(input.evidence_ref_kinds, requiredEvidenceKinds)) return "evidence_refs_missing";
+    if (!input.source_refs.some((source) => source.ref === input.public_summary_source_ref)) return "public_summary_missing";
 
-    const source_refs = input.entry.required_source_ref_kinds.map((kind) => {
-      const ref = opaqueRef("source");
-      this.records.set(ref, observationRecord(input, "source_observation", ref, { source_kind: kind }));
-      return { kind, ref };
-    });
+    const source_refs = [...input.source_refs];
+    const evidence_ref_kinds = [...input.evidence_ref_kinds];
+    const evidence_refs = evidence_ref_kinds.map((evidence) => evidence.ref);
+    for (const source of source_refs) {
+      this.records.set(source.ref, observationRecord(input, "source_observation", source.ref, { source_kind: source.kind }));
+    }
+    for (const evidence of evidence_ref_kinds) {
+      this.records.set(evidence.ref, observationRecord(input, "operation_evidence", evidence.ref, { evidence_kind: evidence.kind }));
+    }
     const public_summary_ref = opaqueRef("read_result");
     this.records.set(public_summary_ref, observationRecord(input, "operation_result_summary", public_summary_ref, {
-      evidence_kind: "snapshot_ref",
+      summary_source_ref: input.public_summary_source_ref,
       public_summary: input.public_summary
     }));
-    const evidence_refs = [public_summary_ref, ...input.evidence_refs];
-    const evidence_ref_kinds: ReadOperationRef[] = [{ kind: "snapshot_ref", ref: public_summary_ref }];
-    if (input.entry.required_evidence_ref_kinds.includes("network_summary_ref")) {
-      const source = source_refs.find((ref) => ref.kind === "network_summary");
-      if (!source) return "source_refs_missing";
-      const ref = opaqueRef("evidence");
-      this.records.set(ref, observationRecord(input, "operation_evidence", ref, {
-        evidence_kind: "network_summary_ref",
-        source_kind: source.kind
-      }));
-      evidence_refs.push(ref);
-      evidence_ref_kinds.push({ kind: "network_summary_ref", ref });
-    }
     const post_check_ref = opaqueRef("post_check");
     const postCheck = observationRecord(input, "post_check", post_check_ref, {
       post_check: {
@@ -423,6 +417,7 @@ export class ReadOperationObservationStore {
       origin: input.observed_origin,
       observed_at: input.observed_at,
       public_summary_ref,
+      public_summary_source_ref: input.public_summary_source_ref,
       public_summary: input.public_summary,
       source_refs,
       evidence_refs,
@@ -455,7 +450,8 @@ export class ReadOperationObservationStore {
     if (
       !publicSummary ||
       publicSummary.record_type !== "operation_result_summary" ||
-      publicSummary.evidence_kind !== "snapshot_ref" ||
+      publicSummary.summary_source_ref !== proof.public_summary_source_ref ||
+      !proof.source_refs.some((source) => source.ref === proof.public_summary_source_ref) ||
       !publicSummary.public_summary ||
       !sameBinding(publicSummary, proof) ||
       !samePublicSummary(publicSummary.public_summary, proof.public_summary)
@@ -466,7 +462,7 @@ export class ReadOperationObservationStore {
         return "source_refs_missing";
       }
     }
-    for (const evidence of proof.evidence_ref_kinds.filter((ref) => ref.kind !== "snapshot_ref")) {
+    for (const evidence of proof.evidence_ref_kinds) {
       const record = this.records.get(evidence.ref);
       if (evidence.kind === "post_check_ref") {
         if (evidence.ref !== proof.post_check_ref) return "post_check_missing";
@@ -515,7 +511,7 @@ function observationRecord(
   },
   record_type: ReadOperationObservationRecord["record_type"],
   ref: string,
-  detail: Pick<ReadOperationObservationRecord, "source_kind" | "evidence_kind" | "public_summary" | "post_check">
+  detail: Pick<ReadOperationObservationRecord, "source_kind" | "evidence_kind" | "summary_source_ref" | "public_summary" | "post_check">
 ): ReadOperationObservationRecord {
   return {
     schema_version: "harbor-read-operation-observation/v0",
@@ -530,6 +526,18 @@ function observationRecord(
     ...detail,
     public_boundary: PUBLIC_BOUNDARY
   };
+}
+
+function hasRequiredObservedRefs(refs: readonly ReadOperationRef[], requiredKinds: readonly string[]): boolean {
+  const kinds = new Set(refs.map((ref) => ref.kind));
+  return refs.length === kinds.size &&
+    refs.every((ref) => isOpaqueRef(ref.ref)) &&
+    requiredKinds.every((kind) => kinds.has(kind)) &&
+    [...kinds].every((kind) => requiredKinds.includes(kind));
+}
+
+function isOpaqueRef(value: string): boolean {
+  return /^[a-z][a-z0-9_]*_[0-9a-f-]{36}$/i.test(value);
 }
 
 function parseRequest(input: unknown): AllowlistedReadOperationRequest | ReadOperationFailureClass {

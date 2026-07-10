@@ -167,6 +167,7 @@ export type AllowlistedReadOperationId = "xhs_search_notes" | "boss_job_search";
 export interface LocalProviderReadProbeInput {
   site_id: AllowlistedReadOperationSite;
   operation_id: AllowlistedReadOperationId;
+  query: string;
   target_url: string;
   expected_origin: string;
 }
@@ -181,18 +182,25 @@ export interface LocalProviderReadProbePublicSummary {
   source_signals: readonly string[];
 }
 
+export interface LocalProviderReadProbeRef {
+  kind: string;
+  ref: string;
+}
+
 export type LocalProviderReadProbeResult =
   | {
       status: "completed";
       observed_at: string;
       observed_origin: string;
       page: LocalProviderPageFacts;
-      source_kinds: string[];
+      source_refs: LocalProviderReadProbeRef[];
+      evidence_ref_kinds: LocalProviderReadProbeRef[];
+      public_summary_source_ref: string;
       public_summary: LocalProviderReadProbePublicSummary;
     }
   | {
       status: "unavailable";
-      failure_class: "origin_drift" | "not_logged_in" | "safety_challenge" | "page_not_ready" | "network_resource_unavailable" | "fixture_runtime" | "provider_probe_unavailable";
+      failure_class: "origin_drift" | "not_logged_in" | "safety_challenge" | "page_not_ready" | "network_resource_unavailable" | "evidence_refs_missing" | "fixture_runtime" | "provider_probe_unavailable";
       message: string;
       retryable: boolean;
       page?: LocalProviderPageFacts;
