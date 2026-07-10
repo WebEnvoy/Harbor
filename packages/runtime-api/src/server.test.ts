@@ -717,6 +717,89 @@ test("does not publish a confirmed login state when identity persistence fails",
   }
 });
 
+test("rejects every fixture-backed allowlisted read operation without leaking protected material", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_read-operation-fixture",
+      execution_identity_ref: "execution-identity_read-operation-fixture",
+      profile_ref: "profile_read-operation-fixture",
+      profile_storage_ref: "profile-storage_read-operation-fixture",
+      site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com", display_name: "小红书" },
+      login_state: "logged_in",
+      storage_state: "present"
+    });
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-fixture",
+      url: "https://www.xiaohongshu.com/explore",
+      control_owner: "agent",
+      holder_ref: "core-test"
+    });
+
+    const invalid = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      operation_mode: "write"
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.body.failure_class, "invalid_request");
+
+    const crossOrigin = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      url: "https://attacker.example/read"
+    });
+    assert.equal(crossOrigin.status, 400);
+    assert.equal(crossOrigin.body.failure_class, "target_origin_not_allowed");
+
+    const fixture = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      query: "AI tools"
+    });
+    assert.equal(fixture.status, 409);
+    assert.equal(fixture.body.status, "unavailable");
+    assert.equal(fixture.body.failure_class, "fixture_runtime");
+    const publicJson = JSON.stringify(fixture.body);
+    assert.equal(publicJson.includes("profile-storage_read-operation-fixture"), false);
+    assert.equal(publicJson.includes("Cookie"), false);
+    assert.equal(publicJson.includes("token"), false);
+    assert.equal(publicJson.includes("webSocketDebuggerUrl"), false);
+  } finally {
+    await running.close();
+  }
+});
+
+test("blocks an allowlisted read operation before provider execution when the managed identity needs login", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_read-operation-login",
+      execution_identity_ref: "execution-identity_read-operation-login",
+      profile_ref: "profile_read-operation-login",
+      profile_storage_ref: "profile-storage_read-operation-login",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "manual_auth_required",
+      storage_state: "present"
+    });
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-login",
+      url: "https://www.zhipin.com/",
+      control_owner: "agent"
+    });
+    const blocked = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search"
+    });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.body.failure_class, "not_logged_in");
+  } finally {
+    await running.close();
+  }
+});
+
 test("returns JSON errors for bad routes and bad methods", async () => {
   const running = await startHarborRuntimeServer({ port: 0, runtime: new HarborRuntime(createFixtureLauncher("ready")) });
   try {
@@ -746,6 +829,15 @@ async function postJson(url: string, body: unknown): Promise<any> {
   });
   assert.equal(response.status === 200 || response.status === 201, true);
   return response.json();
+}
+
+async function postReadOperation(url: string, body: unknown): Promise<{ status: number; body: any }> {
+  const response = await fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" }
+  });
+  return { status: response.status, body: await response.json() };
 }
 
 async function patchJson(url: string, body: unknown): Promise<any> {

@@ -11,6 +11,8 @@ import {
   type CreateRuntimeSessionInput,
   type LocalProviderLauncher,
   type LocalProviderPageFacts,
+  type LocalProviderReadProbeInput,
+  type LocalProviderReadProbeResult,
   type LocalProviderScreenshotFacts,
   type OpenIdentityEnvironmentSessionInput,
   type RuntimeErrorCode,
@@ -42,6 +44,8 @@ export type {
   LocalProviderLaunchInput,
   LocalProviderLaunchResult,
   LocalProviderPageFacts,
+  LocalProviderReadProbeInput,
+  LocalProviderReadProbeResult,
   LocalProviderScreenshotFacts,
   OpenIdentityEnvironmentSessionInput,
   ProviderMode,
@@ -65,7 +69,9 @@ export interface RuntimeSessionRecord {
     profile_storage_ref: string | null;
   };
   user_held_session: boolean;
+  execution_surface: "local_provider" | "fixture" | "unknown";
   openUrl?: (url: string) => Promise<LocalProviderPageFacts>;
+  probeReadOperation?: (input: LocalProviderReadProbeInput) => Promise<LocalProviderReadProbeResult>;
   captureScreenshot?: () => Promise<LocalProviderScreenshotFacts | RuntimeErrorFact>;
   close?: () => Promise<void>;
 }
@@ -163,7 +169,9 @@ export class RuntimeSessionStore {
         profile_storage_ref: input.profile_storage_ref ?? null
       },
       user_held_session: controlOwner === "user" && ready && isInteractiveUserViewer(facts),
+      execution_surface: ready ? launch.execution_surface ?? "unknown" : "unknown",
       openUrl: ready ? launch.openUrl : undefined,
+      probeReadOperation: ready ? launch.probeReadOperation : undefined,
       captureScreenshot: ready ? launch.captureScreenshot : undefined,
       close: ready ? launch.close : undefined
     });
@@ -343,6 +351,40 @@ export class RuntimeSessionStore {
   isReadable(runtime_session_ref: string): boolean {
     const lifecycle = this.records.get(runtime_session_ref)?.facts.lifecycle_state;
     return lifecycle === "active" || lifecycle === "idle";
+  }
+
+  async probeReadOperation(
+    runtime_session_ref: string,
+    input: LocalProviderReadProbeInput
+  ): Promise<LocalProviderReadProbeResult> {
+    const record = this.records.get(runtime_session_ref);
+    if (!record) {
+      return {
+        status: "unavailable",
+        failure_class: "provider_probe_unavailable",
+        message: "Runtime Session is missing.",
+        retryable: true
+      };
+    }
+    if (record.execution_surface === "fixture") {
+      return {
+        status: "unavailable",
+        failure_class: "fixture_runtime",
+        message: "Fixture launchers cannot execute allowlisted read operations.",
+        retryable: false
+      };
+    }
+    if (record.execution_surface !== "local_provider" || !record.probeReadOperation) {
+      return {
+        status: "unavailable",
+        failure_class: "provider_probe_unavailable",
+        message: "The managed local provider does not expose a read-only probe adapter.",
+        retryable: true
+      };
+    }
+    const result = await record.probeReadOperation(input);
+    if (result.page) this.applyPageFacts(record, input.target_url, result.page);
+    return result;
   }
 
   private findReusableSession(

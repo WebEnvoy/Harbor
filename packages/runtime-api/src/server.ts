@@ -131,7 +131,7 @@ async function route(
   }
 
   if (method === "GET" && parts[0] === "runtime" && parts[1] === "evidence" && parts[2]) {
-    writeJson(response, 200, runtime.getEvidence(parts[2]));
+    writeJson(response, 200, runtime.getPublicEvidence(parts[2]));
     return;
   }
 
@@ -155,6 +155,7 @@ function readinessBody(): object {
       "/runtime/identity-environment-sessions",
       "/runtime/sessions/{runtime_session_ref}",
       "/runtime/sessions/{runtime_session_ref}/manual-authentication-completed",
+      "/runtime/sessions/{runtime_session_ref}/read-operations",
       "/runtime/sessions/{runtime_session_ref}/site-resource-facts",
       "/runtime/sessions/{runtime_session_ref}/write-precheck-facts",
       "/runtime/evidence/{evidence_ref}"
@@ -223,6 +224,11 @@ async function routeSession(
     writeJson(response, 200, runtime.getSessionWritePrecheckFacts(runtimeSessionRef, await readJson<WritePrecheckInput>(request, {})));
     return;
   }
+  if (action === "read-operations" && method === "POST") {
+    const result = await runtime.executeAllowlistedReadOperation(runtimeSessionRef, await readJson<unknown>(request));
+    writeJson(response, readOperationStatusCode(result), result);
+    return;
+  }
   if (action === "manual-authentication-completed" && method === "POST") {
     const authorization = manualAuthenticationAuthorizer.authorize(request);
     if (!authorization.authorized) {
@@ -272,6 +278,13 @@ function siteResourceFactsInput(url: URL): SiteResourceFactsInput {
     site_id: url.searchParams.get("site_id") ?? undefined,
     task_kind: url.searchParams.get("task_kind") ?? undefined
   };
+}
+
+function readOperationStatusCode(result: { status: string; failure_class?: string }): number {
+  if (result.status === "completed") return 201;
+  if (result.failure_class === "session_missing") return 404;
+  if (["invalid_request", "operation_not_allowlisted", "allowlist_pin_invalid", "target_url_invalid", "target_origin_not_allowed"].includes(result.failure_class ?? "")) return 400;
+  return 409;
 }
 
 async function readJson<T>(request: IncomingMessage, fallback?: T): Promise<T> {

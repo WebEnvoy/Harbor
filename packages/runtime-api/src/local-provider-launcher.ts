@@ -15,6 +15,8 @@ import type {
   LocalProviderLauncher,
   LocalProviderLaunchResult,
   LocalProviderPageFacts,
+  LocalProviderReadProbeInput,
+  LocalProviderReadProbeResult,
   LocalProviderScreenshotFacts,
   RuntimeErrorCode,
   RuntimeErrorFact,
@@ -50,6 +52,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     const evidence_ref = opaqueRef("validation");
     return {
       status: "ready",
+      execution_surface: "local_provider",
       cdp_ref: opaqueRef("cdp"),
       viewer_entry: viewerEntry(input.headless),
       page,
@@ -64,6 +67,11 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         const nextPage = await openProviderUrl(port, url);
         currentUrl = nextPage.current_url ?? url;
         return nextPage;
+      },
+      probeReadOperation: async (probe) => {
+        const result = await probeProviderReadOperation(port, probe);
+        if (result.page?.current_url) currentUrl = result.page.current_url;
+        return result;
       },
       captureScreenshot: () => captureProviderScreenshot(port, currentUrl),
       close: () => closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent)
@@ -89,6 +97,7 @@ export function createFixtureLauncher(status: "ready" | "unavailable" | "profile
     const page = readyPage(input.url, `Fixture page for ${input.url}`);
     return {
       status: "ready",
+      execution_surface: "fixture",
       cdp_ref: opaqueRef("cdp"),
       viewer_entry: viewerEntry(input.headless),
       page,
@@ -256,6 +265,105 @@ async function openProviderUrl(port: string, url: string): Promise<LocalProvider
   } catch (cause) {
     return unavailablePageFacts("url_unreachable", url, cause);
   }
+}
+
+async function probeProviderReadOperation(port: string, input: LocalProviderReadProbeInput): Promise<LocalProviderReadProbeResult> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(input.target_url)}`, { method: "PUT" });
+    if (!response.ok) throw new Error(`CDP read-operation navigation failed: ${response.status}`);
+    const page = await response.json() as CdpPageTarget;
+    if (!page.webSocketDebuggerUrl) throw new Error("Read-operation page has no CDP websocket.");
+    const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
+      await client.send("Page.enable");
+      await client.send("Runtime.enable");
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const evaluated = await client.send("Runtime.evaluate", {
+          expression: readProbeExpression(input.site_id),
+          returnByValue: true
+        });
+        const value = (evaluated.result as { value?: {
+          origin?: string;
+          pathname?: string;
+          ready?: boolean;
+          rendered_surface?: boolean;
+          login_like?: boolean;
+          challenge_like?: boolean;
+          pinia_ready?: boolean;
+          same_origin_fetch_ready?: boolean;
+          wapi_zpgeek_ready?: boolean;
+        } } | undefined)?.value;
+        if (value?.origin && value.ready) return value;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return null;
+    });
+    const pageFacts = await readTargetPageFacts(page, input.target_url);
+    if (!observation) return probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts);
+    const validation = validateReadOperationProbe(input, observation);
+    if (validation.status === "unavailable") return probeUnavailable(validation.failure_class, validation.message, validation.retryable, pageFacts);
+    return {
+      status: "completed",
+      observed_at: new Date().toISOString(),
+      observed_origin: input.expected_origin,
+      page: pageFacts,
+      source_kinds: validation.source_kinds
+    };
+  } catch (cause) {
+    return probeUnavailable(
+      "network_resource_unavailable",
+      cause instanceof Error ? cause.message : "The provider read-only probe failed.",
+      true
+    );
+  }
+}
+
+function probeUnavailable(
+  failure_class: Extract<LocalProviderReadProbeResult, { status: "unavailable" }>["failure_class"],
+  message: string,
+  retryable: boolean,
+  page?: LocalProviderPageFacts
+): LocalProviderReadProbeResult {
+  return { status: "unavailable", failure_class, message, retryable, page };
+}
+
+interface ReadProbeObservation {
+  origin?: string;
+  pathname?: string;
+  ready?: boolean;
+  rendered_surface?: boolean;
+  login_like?: boolean;
+  challenge_like?: boolean;
+  pinia_ready?: boolean;
+  same_origin_fetch_ready?: boolean;
+  wapi_zpgeek_ready?: boolean;
+}
+
+export function validateReadOperationProbe(
+  input: LocalProviderReadProbeInput,
+  observation: ReadProbeObservation
+):
+  | { status: "completed"; source_kinds: string[] }
+  | { status: "unavailable"; failure_class: Extract<LocalProviderReadProbeResult, { status: "unavailable" }>["failure_class"]; message: string; retryable: boolean } {
+  if (observation.origin !== input.expected_origin) return { status: "unavailable", failure_class: "origin_drift", message: "The read-operation page left the pinned allowed origin.", retryable: false };
+  if (observation.challenge_like) return { status: "unavailable", failure_class: "safety_challenge", message: "The read-operation page shows a verification or safety challenge.", retryable: false };
+  if (observation.login_like) return { status: "unavailable", failure_class: "not_logged_in", message: "The read-operation page requires a manual login refresh.", retryable: true };
+  if (!observation.ready || !observation.rendered_surface) return { status: "unavailable", failure_class: "page_not_ready", message: "The read-operation page has no rendered read surface.", retryable: true };
+  if (input.operation_id === "xhs_search_notes") {
+    const xhsSurface = observation.pathname === "/search_result" || /^\/explore\/[^/]+/.test(observation.pathname ?? "");
+    if (!xhsSurface || !observation.pinia_ready || !observation.same_origin_fetch_ready) {
+      return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search/note, Pinia, or same-origin read signal is unavailable.", retryable: true };
+    }
+    return { status: "completed", source_kinds: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"] };
+  }
+  const bossJobsSurface = observation.pathname === "/web/geek/jobs";
+  if (!bossJobsSurface || !observation.wapi_zpgeek_ready) {
+    return { status: "unavailable", failure_class: "page_not_ready", message: "BOSS jobs surface or required WAPI read signal is unavailable.", retryable: true };
+  }
+  return { status: "completed", source_kinds: ["network_summary"] };
+}
+
+function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"]): string {
+  return "(() => { const text = (location.pathname + ' ' + document.title).toLowerCase(); const body = document.body; const resources = performance.getEntriesByType('resource'); const sameOriginFetch = resources.some((entry) => { try { const url = new URL(entry.name); return url.origin === location.origin && (entry.initiatorType === 'fetch' || entry.initiatorType === 'xmlhttprequest'); } catch { return false; } }); const wapiZpgeek = resources.some((entry) => { try { const url = new URL(entry.name); return url.origin === 'https://www.zhipin.com' && url.pathname.startsWith('/wapi/zpgeek/') && (entry.initiatorType === 'fetch' || entry.initiatorType === 'xmlhttprequest'); } catch { return false; } }); return { origin: location.origin, pathname: location.pathname, ready: document.readyState === 'interactive' || document.readyState === 'complete', rendered_surface: Boolean(body && body.childElementCount > 0 && body.innerText.trim().length > 0), login_like: /login|signin|sign-in|登录|登陆/.test(text) || Boolean(document.querySelector('input[type=password]')), challenge_like: /captcha|challenge|verify|verification|security|安全|验证|校验/.test(text), pinia_ready: Boolean(window.__PINIA__ || window.__pinia), same_origin_fetch_ready: sameOriginFetch, wapi_zpgeek_ready: wapiZpgeek }; })()";
 }
 
 async function readPageFacts(port: string, requested_url: string): Promise<LocalProviderPageFacts> {

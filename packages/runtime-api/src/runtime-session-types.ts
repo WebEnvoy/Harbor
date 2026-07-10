@@ -161,6 +161,32 @@ export interface LocalProviderPageFacts {
   facts: RuntimeFact[];
 }
 
+export type AllowlistedReadOperationSite = "xiaohongshu" | "boss";
+export type AllowlistedReadOperationId = "xhs_search_notes" | "boss_job_search";
+
+export interface LocalProviderReadProbeInput {
+  site_id: AllowlistedReadOperationSite;
+  operation_id: AllowlistedReadOperationId;
+  target_url: string;
+  expected_origin: string;
+}
+
+export type LocalProviderReadProbeResult =
+  | {
+      status: "completed";
+      observed_at: string;
+      observed_origin: string;
+      page: LocalProviderPageFacts;
+      source_kinds: string[];
+    }
+  | {
+      status: "unavailable";
+      failure_class: "origin_drift" | "not_logged_in" | "safety_challenge" | "page_not_ready" | "network_resource_unavailable" | "fixture_runtime" | "provider_probe_unavailable";
+      message: string;
+      retryable: boolean;
+      page?: LocalProviderPageFacts;
+    };
+
 export type LocalProviderLaunchResult =
   | {
       status: "ready";
@@ -168,7 +194,9 @@ export type LocalProviderLaunchResult =
       viewer_entry: RuntimeViewerEntry;
       page: LocalProviderPageFacts;
       facts: RuntimeFact[];
+      execution_surface?: "local_provider" | "fixture";
       openUrl: (url: string) => Promise<LocalProviderPageFacts>;
+      probeReadOperation?: (input: LocalProviderReadProbeInput) => Promise<LocalProviderReadProbeResult>;
       captureScreenshot: () => Promise<LocalProviderScreenshotFacts | RuntimeErrorFact>;
       close: () => Promise<void>;
     }

@@ -39,6 +39,17 @@ import {
 import { opaqueRef } from "./refs.js";
 import { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-provider-launcher.js";
 import {
+  admitAllowlistedReadOperation,
+  HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA,
+  LODE_262_ALLOWLIST_PIN,
+  ReadOperationObservationStore,
+  readOperationUnavailable,
+  type CompletedReadOperation,
+  type ReadOperationFailureClass,
+  type ReadOperationObservationRecord,
+  type ReadOperationUnavailable
+} from "./read-operation.js";
+import {
   createSiteResourceFacts,
   HARBOR_SITE_RESOURCE_FACTS_SCHEMA,
   missingSiteRuntimeSession,
@@ -61,6 +72,7 @@ import {
   type OpenIdentityEnvironmentSessionInput,
   type RuntimeSessionControlInput,
   type RuntimeSessionFacts,
+  type RuntimeSessionRecord,
   type RuntimeSessionUnavailable,
   type ValidationRuntimeFacts
 } from "./runtime-session.js";
@@ -97,6 +109,7 @@ export {
   HARBOR_IDENTITY_PROVIDER_BINDING_SCHEMA
 } from "./provider-management.js";
 export { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-provider-launcher.js";
+export { HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA, LODE_262_ALLOWLIST_PIN } from "./read-operation.js";
 export { HARBOR_SITE_RESOURCE_FACTS_SCHEMA } from "./site-runtime-facts.js";
 export { HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA, HARBOR_WRITE_PRECHECK_FACTS_SCHEMA } from "./runtime-fixtures.js";
 export { HARBOR_RUNTIME_FACTS_SCHEMA, HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA } from "./runtime-session.js";
@@ -136,6 +149,14 @@ export type {
   SiteResourceFactsUnavailable,
   SiteRuntimeId
 } from "./site-runtime-facts.js";
+export type {
+  AllowlistedReadOperationRequest,
+  CompletedReadOperation,
+  ReadOperationFailureClass,
+  ReadOperationObservationRecord,
+  ReadOperationRef,
+  ReadOperationUnavailable
+} from "./read-operation.js";
 export type {
   FormInputStateField,
   InputExportPolicy,
@@ -247,6 +268,7 @@ export type {
 
 export class HarborRuntime {
   private readonly pageScenes = new PageSceneStore();
+  private readonly readOperationObservations = new ReadOperationObservationStore();
   private readonly viewerControls = new ViewerControlStore();
   private readonly identityEnvironments: LocalIdentityEnvironmentManager;
   private readonly runtimeSessions: RuntimeSessionStore;
@@ -420,6 +442,85 @@ export class HarborRuntime {
     return result;
   }
 
+  async executeAllowlistedReadOperation(
+    runtime_session_ref: string,
+    input: unknown
+  ): Promise<CompletedReadOperation | ReadOperationUnavailable> {
+    const admission = admitAllowlistedReadOperation(input);
+    if (typeof admission === "string") return readOperationUnavailable(runtime_session_ref, admission);
+
+    const session = this.runtimeSessions.getRecord(runtime_session_ref);
+    if (!session) return readOperationUnavailable(runtime_session_ref, "session_missing", requestIdentity(admission.request));
+    const managedIdentity = session.facts.identity_environment_ref
+      ? this.identityEnvironments.getFacts(session.facts.identity_environment_ref)
+      : null;
+    if (!managedIdentity || !sameManagedIdentity(session, managedIdentity)) {
+      return readOperationUnavailable(runtime_session_ref, "session_unmanaged", requestIdentity(admission.request));
+    }
+    if (
+      managedIdentity.site_binding.site_id !== admission.entry.site_id ||
+      managedIdentity.site_binding.origin !== admission.entry.allowed_origin
+    ) {
+      return readOperationUnavailable(runtime_session_ref, "target_origin_not_allowed", requestIdentity(admission.request));
+    }
+    if (
+      (session.facts.lifecycle_state !== "active" && session.facts.lifecycle_state !== "idle") ||
+      session.facts.availability.cdp !== "available" ||
+      session.facts.current_error
+    ) {
+      return readOperationUnavailable(runtime_session_ref, "session_not_ready", requestIdentity(admission.request));
+    }
+    if (session.facts.control_owner === "user" && session.facts.control_lock.state === "held") {
+      return readOperationUnavailable(runtime_session_ref, "session_user_controlled", requestIdentity(admission.request));
+    }
+    if (managedIdentity.login_state.state !== "logged_in" || managedIdentity.login_state.recovery_required) {
+      return readOperationUnavailable(runtime_session_ref, "not_logged_in", requestIdentity(admission.request));
+    }
+    if (isChallengeLike(session.facts.current_page.current_url, session.facts.current_page.title)) {
+      return readOperationUnavailable(runtime_session_ref, "safety_challenge", requestIdentity(admission.request));
+    }
+
+    const probe = await this.runtimeSessions.probeReadOperation(runtime_session_ref, {
+      site_id: admission.entry.site_id,
+      operation_id: admission.entry.operation_id,
+      target_url: admission.target_url,
+      expected_origin: admission.entry.allowed_origin
+    });
+    if (probe.status === "unavailable") {
+      return readOperationUnavailable(runtime_session_ref, probe.failure_class, {
+        ...requestIdentity(admission.request),
+        retryable: probe.retryable
+      });
+    }
+
+    const capture = await this.captureLiveSnapshot(runtime_session_ref, {
+      summary: "Managed local provider completed an allowlisted read-only page probe; raw page material remains private.",
+      source_locator: `runtime-session://${runtime_session_ref}/read-operations`,
+      elements: [{
+        label: "Allowlisted read operation post-check",
+        role: "status",
+        locator_hint: "harbor://allowlisted-read-operation/post-check"
+      }]
+    });
+    if (capture.status !== "captured") {
+      return readOperationUnavailable(runtime_session_ref, "evidence_refs_missing", requestIdentity(admission.request));
+    }
+    const proof = this.readOperationObservations.capture({
+      operation_ref: opaqueRef("read_operation"),
+      runtime_session_ref,
+      entry: admission.entry,
+      observed_origin: probe.observed_origin,
+      observed_at: probe.observed_at,
+      checked_signal_kinds: probe.source_kinds,
+      snapshot_ref: capture.snapshot_ref,
+      evidence_refs: capture.evidence_refs
+    });
+    if (typeof proof === "string") return readOperationUnavailable(runtime_session_ref, proof, requestIdentity(admission.request));
+    const result = this.readOperationObservations.complete(admission.entry, proof);
+    if (typeof result === "string") return readOperationUnavailable(runtime_session_ref, result, requestIdentity(admission.request));
+    return result;
+  }
+
   getSnapshot(snapshot_ref: string): SnapshotRecord | PageSceneUnavailable {
     return this.pageScenes.getSnapshot(snapshot_ref, (runtime_session_ref) => this.runtimeSessions.isReadable(runtime_session_ref));
   }
@@ -430,6 +531,12 @@ export class HarborRuntime {
 
   getEvidence(evidence_ref: string): EvidenceRecord | PageSceneUnavailable {
     return this.pageScenes.getEvidence(evidence_ref);
+  }
+
+  getPublicEvidence(evidence_ref: string): EvidenceRecord | ReadOperationObservationRecord | PageSceneUnavailable {
+    const sceneEvidence = this.getEvidence(evidence_ref);
+    if (!("status" in sceneEvidence)) return sceneEvidence;
+    return this.readOperationObservations.get(evidence_ref) ?? sceneEvidence;
   }
 
   expireEvidence(evidence_ref: string): EvidenceRecord | PageSceneUnavailable {
@@ -725,4 +832,20 @@ function screenshotArtifact(screenshot: { screenshot_ref: string; mime_type: "im
     byte_length: screenshot.byte_length,
     sha256: screenshot.sha256
   };
+}
+
+function sameManagedIdentity(session: RuntimeSessionRecord, identity: LocalIdentityEnvironmentFacts): boolean {
+  return session.facts.identity_environment_ref === identity.identity_environment_ref &&
+    session.facts.execution_identity_ref === identity.execution_identity_ref &&
+    session.facts.profile_ref === identity.profile_ref &&
+    session.identity_binding.profile_storage_ref === identity.browser_storage.profile_storage_ref;
+}
+
+function requestIdentity(input: { site_id: string; operation_id: string }): { site_id: string; operation_id: string } {
+  return { site_id: input.site_id, operation_id: input.operation_id };
+}
+
+function isChallengeLike(url?: string | null, title?: string | null): boolean {
+  const text = `${url ?? ""} ${title ?? ""}`.toLowerCase();
+  return /captcha|challenge|verify|verification|security|安全|验证|校验/.test(text);
 }
