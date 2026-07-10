@@ -331,6 +331,8 @@ const USER_CONFIRMED_MANAGED_SESSION_REASON = "user_confirmed_managed_session";
 function readiness(facts: LocalIdentityEnvironmentFacts, consistency: IdentityConsistencyFacts): LocalIdentityEnvironmentReadiness {
   if (facts.login_state.recovery_required) return "needs_auth";
   if (consistency.readiness.state === "blocked") return "blocked";
+  // A user-confirmed login resolves the authentication gate, not provider limitations.
+  if (facts.login_state.reason === USER_CONFIRMED_MANAGED_SESSION_REASON && facts.login_state.manual_authentication_state === "completed") return "ready";
   return consistency.readiness.state === "ready" ? "ready" : "unknown";
 }
 
