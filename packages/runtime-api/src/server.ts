@@ -141,6 +141,7 @@ function readinessBody(): object {
       "/runtime/identity-environments/{identity_environment_ref}",
       "/runtime/identity-environment-sessions",
       "/runtime/sessions/{runtime_session_ref}",
+      "/runtime/sessions/{runtime_session_ref}/manual-authentication-completed",
       "/runtime/sessions/{runtime_session_ref}/site-resource-facts",
       "/runtime/sessions/{runtime_session_ref}/write-precheck-facts",
       "/runtime/evidence/{evidence_ref}"
@@ -204,6 +205,11 @@ async function routeSession(
   }
   if (action === "write-precheck-facts" && method === "POST") {
     writeJson(response, 200, runtime.getSessionWritePrecheckFacts(runtimeSessionRef, await readJson<WritePrecheckInput>(request, {})));
+    return;
+  }
+  if (action === "manual-authentication-completed" && method === "POST") {
+    const result = runtime.completeManualAuthentication(runtimeSessionRef);
+    writeJson(response, result.status === "unavailable" ? result.failure_class === "session_missing" ? 404 : 409 : 200, result);
     return;
   }
   if (method !== "POST") {

@@ -259,6 +259,145 @@ test("persists identity environment public records for the local runtime API", a
   }
 });
 
+test("records user-confirmed manual authentication for an active managed session and persists the public record", async () => {
+  const persistence_path = join(mkdtempSync(join(tmpdir(), "harbor-manual-auth-")), "identity-environments.json");
+  const first = await startHarborRuntimeServer({ port: 0, runtime: new HarborRuntime(createFixtureLauncher("ready"), { persistence_path }) });
+  try {
+    await postJson(`${first.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_manual-auth",
+      execution_identity_ref: "execution-identity_manual-auth",
+      profile_ref: "profile_manual-auth",
+      profile_storage_ref: "profile-storage_manual-auth-sensitive",
+      cookie_jar_ref: "cookie-jar_manual-auth-sensitive",
+      site: {
+        site_id: "boss",
+        origin: "https://www.zhipin.com",
+        display_name: "BOSS",
+        account_ref: "account_manual-auth"
+      },
+      login_state: "manual_auth_required",
+      manual_authentication_state: "required",
+      storage_state: "present"
+    });
+    const session = await postJson(`${first.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_manual-auth",
+      url: "https://example.test/manual-authentication",
+      control_owner: "user"
+    });
+
+    const response = await fetch(`${first.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    assert.equal(response.status, 200);
+    const completed = await response.json();
+    assert.equal(completed.identity_environment_ref, "identity-env_manual-auth");
+    assert.equal(completed.status.login_state, "logged_in");
+    assert.equal(completed.status.manual_authentication_state, "completed");
+    assert.equal(completed.status.recovery_required, false);
+    assert.equal(completed.public_boundary.raw_material, "not_exposed");
+    const publicJson = JSON.stringify(completed);
+    assert.equal(publicJson.includes("profile-storage_manual-auth-sensitive"), false);
+    assert.equal(publicJson.includes("cookie-jar_manual-auth-sensitive"), false);
+    assert.equal(completed.public_boundary.not_exposed.includes("password"), true);
+    assert.equal(completed.public_boundary.not_exposed.includes("verification_code"), true);
+
+    const readback = await getJson(`${first.url}/runtime/identity-environments/identity-env_manual-auth`);
+    assert.equal(readback.status.login_state, "logged_in");
+    assert.equal(readback.status.manual_authentication_state, "completed");
+    assert.equal(readback.status.recovery_required, false);
+  } finally {
+    await first.close();
+  }
+
+  const second = await startHarborRuntimeServer({ port: 0, runtime: new HarborRuntime(createFixtureLauncher("ready"), { persistence_path }) });
+  try {
+    const persisted = await getJson(`${second.url}/runtime/identity-environments/identity-env_manual-auth`);
+    assert.equal(persisted.status.login_state, "logged_in");
+    assert.equal(persisted.status.manual_authentication_state, "completed");
+    assert.equal(persisted.status.recovery_required, false);
+  } finally {
+    await second.close();
+  }
+});
+
+test("rejects missing, unmanaged, closed, and failed sessions without changing identity state", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_manual-auth-reject",
+      execution_identity_ref: "execution-identity_manual-auth-reject",
+      profile_ref: "profile_manual-auth-reject",
+      site: {
+        site_id: "boss",
+        origin: "https://www.zhipin.com",
+        display_name: "BOSS"
+      },
+      login_state: "manual_auth_required",
+      manual_authentication_state: "required",
+      storage_state: "present"
+    });
+
+    const missing = await fetch(`${running.url}/runtime/sessions/session_missing/manual-authentication-completed`, { method: "POST" });
+    assert.equal(missing.status, 404);
+    assert.equal((await missing.json()).failure_class, "session_missing");
+
+    const unmanaged = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment: {
+        identity_environment_ref: "identity-env_inline-unmanaged",
+        execution_identity_ref: "execution-identity_inline-unmanaged",
+        profile_ref: "profile_inline-unmanaged",
+        site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+        login_state: "manual_auth_required",
+        storage_state: "present"
+      },
+      url: "https://example.test/unmanaged"
+    });
+    const unmanagedResponse = await fetch(`${running.url}/runtime/sessions/${unmanaged.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    assert.equal(unmanagedResponse.status, 409);
+    assert.equal((await unmanagedResponse.json()).failure_class, "identity_environment_unmanaged");
+
+    const closed = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_manual-auth-reject",
+      url: "https://example.test/closed"
+    });
+    await postJson(`${running.url}/runtime/sessions/${closed.runtime_session_ref}/stop`, { control_owner: "agent" });
+    const closedResponse = await fetch(`${running.url}/runtime/sessions/${closed.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+    assert.equal(closedResponse.status, 409);
+    assert.equal((await closedResponse.json()).failure_class, "session_not_active");
+
+    const failedRuntime = new HarborRuntime(createFixtureLauncher("unavailable"));
+    failedRuntime.createLocalIdentityEnvironment({
+      identity_environment_ref: "identity-env_failed",
+      execution_identity_ref: "execution-identity_failed",
+      profile_ref: "profile_failed",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "manual_auth_required",
+      storage_state: "present"
+    });
+    const failedServer = await startHarborRuntimeServer({ port: 0, runtime: failedRuntime });
+    try {
+      const failed = await postJson(`${failedServer.url}/runtime/identity-environment-sessions`, {
+        identity_environment_ref: "identity-env_failed",
+        url: "https://example.test/failed"
+      });
+      assert.equal(failed.lifecycle_state, "failed");
+      const failedResponse = await fetch(`${failedServer.url}/runtime/sessions/${failed.runtime_session_ref}/manual-authentication-completed`, { method: "POST" });
+      assert.equal(failedResponse.status, 409);
+      assert.equal((await failedResponse.json()).failure_class, "session_not_active");
+      const failedReadback = await getJson(`${failedServer.url}/runtime/identity-environments/identity-env_failed`);
+      assert.equal(failedReadback.status.login_state, "manual_auth_required");
+    } finally {
+      await failedServer.close();
+    }
+
+    const unchanged = await getJson(`${running.url}/runtime/identity-environments/identity-env_manual-auth-reject`);
+    assert.equal(unchanged.status.login_state, "manual_auth_required");
+    assert.equal(unchanged.status.manual_authentication_state, "required");
+    assert.equal(unchanged.status.recovery_required, true);
+  } finally {
+    await running.close();
+  }
+});
+
 test("returns JSON errors for bad routes and bad methods", async () => {
   const running = await startHarborRuntimeServer({ port: 0, runtime: new HarborRuntime(createFixtureLauncher("ready")) });
   try {

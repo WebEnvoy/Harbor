@@ -1,0 +1,52 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "item_id": "HARBOR-241",
+  "branch": "work/harbor-241-manual-auth-sync",
+  "delegations": [
+    {
+      "scope": "Harbor Runtime API endpoint and fixture tests",
+      "result": "integrated and read back by the main controller"
+    }
+  ],
+  "ownership_constraints": {
+    "write_ownership": [
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/server.ts",
+      "packages/runtime-api/src/server.test.ts",
+      ".loom/** for HARBOR-241"
+    ],
+    "forbidden_targets": [
+      "App/Core/Lode code",
+      "cookies, credentials, verification codes, profile storage, DOM, or raw evidence",
+      "login automation and external writes"
+    ],
+    "shared_carrier_policy": "The main controller exclusively owns the HARBOR-241 Loom carriers."
+  },
+  "ownership_contract": {
+    "write_ownership": [
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/server.ts",
+      "packages/runtime-api/src/server.test.ts",
+      ".loom/** for HARBOR-241"
+    ],
+    "non_goals": [
+      "App/Core/Lode code",
+      "cookies, credentials, verification codes, profile storage, DOM, or raw evidence",
+      "login automation and external writes"
+    ],
+    "integration_target": [
+      ".loom/progress/HARBOR-241.md",
+      "Harbor #241 PR"
+    ]
+  },
+  "validation": {
+    "passed": [
+      "pnpm typecheck",
+      "node --test dist/packages/runtime-api/src/server.test.js",
+      "pnpm test",
+      "git diff --check"
+    ],
+    "live_evidence": "not_run; implementation has not been merged and App does not yet expose the user-confirmation intent"
+  },
+  "safety_boundary": "User confirmation only; no Cookie, DOM, credential, profile storage, or external-site write access."
+}

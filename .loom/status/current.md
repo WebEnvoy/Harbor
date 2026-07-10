@@ -2,34 +2,34 @@
 
 ## Derived Fact Chain View
 
-- Item ID: HARBOR-219
-- Goal: Repair Harbor #219 managed identity session behavior so App/Core can use Harbor owner API refs for persistent local browser profiles without exposing raw profile paths or sensitive browser material.
-- Scope: Covers Harbor #219 under parent Harbor #218, with ownership constrained to runtime API managed identity session launch inputs, local provider profile storage mapping, public identity ref redaction, viewer/headless defaults, privacy-preserving tests, fixture-only API smoke, and HARBOR-219 carriers.
-- Execution Path: work/harbor-219-persistent-profile-session
+- Item ID: HARBOR-241
+- Goal: 同步用户确认的受控会话认证状态，使 App 可消费 Harbor public identity fact。
+- Scope: Harbor runtime API、identity environment manager、session-bound user-confirmed authentication intent、对应测试和 HARBOR-241 carriers。
+- Execution Path: work/harbor-241-manual-auth-sync
 - Workspace Entry: .
-- Recovery Entry: .loom/progress/HARBOR-219.md
-- Review Entry: .loom/reviews/HARBOR-219.json
-- Validation Entry: pnpm typecheck; pnpm test; pnpm smoke:runtime; pnpm smoke:runtime:api; git diff --check; loom fact-chain --target . --json; loom verify --target . --json; loom suite validate --target . --item HARBOR-219 --json; loom suite carrier validate --target . --item HARBOR-219 --json; loom suite evidence validate --target . --item HARBOR-219 --json
-- Closing Condition: PR created and pushed for Harbor #219 with PR body listing covered and non-covered issues; no issue closeout in this worker batch.
-- Current Checkpoint: merge
-- Current Stop: PR #239 is open for branch `work/harbor-219-persistent-profile-session`. The Harbor side of the managed identity/session correction has been committed and pushed: managed identity `profile_storage_ref` reaches the local provider as internal protected material, public/direct identity facts redact raw profile storage refs, user-owned sessions default to visible `headless:false`, persistent profile directories are stable and permission-tightened, persistent profile dirs are preserved after close, and ephemeral profile dirs are removed. This is local contract evidence only; it does not close Harbor #218/#219 live E2E scope.
-- Next Step: Consume hosted PR checks for #239 and perform controlled merge only after `loom-pr-merge-gate` passes. Do not treat fixture smoke or fake-browser tests as live App/Core E2E evidence.
-- Blockers: None
-- Latest Validation Summary: 2026-07-09T18:29Z UTC local validation passed on branch `work/harbor-219-persistent-profile-session` before commit: `pnpm typecheck`, `pnpm test`, `pnpm smoke:runtime:api`, detection-only provider readback with `node --input-type=module -e "import('./dist/packages/runtime-api/src/index.js').then(({detectBrowserProviders})=>console.log(JSON.stringify(detectBrowserProviders(),null,2)))"`, cross-repo App `WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session npm run smoke:packaged:runtime`, cross-repo App `WEBENVOY_HARBOR_RUNTIME_SOURCE_DIR=/Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-219-persistent-profile-session npm run smoke:packaged:readonly`, `git diff --check`, `jq empty` for HARBOR-219 review/build evidence JSON, `loom fact-chain --target . --json`, `loom suite carrier validate --target . --item HARBOR-219 --json`, and `loom suite evidence validate --target . --item HARBOR-219 --json`. Evidence boundary: Harbor tests use captured launcher, fixture launcher, or fake browser process only; direct/public identity facts redact raw profile storage refs while managed session launch still receives the internal protected ref; provider detection reports CloakBrowser missing and official Chrome installed/launchable without launching a real browser. No real Xiaohongshu/BOSS account, browser profile, Cookie, production page action, submit, publish, send, hosted browser, marketplace, bulk collection, full account cloud hosting, or risk-control bypass occurred.
-- Recovery Boundary: Revert branch `work/harbor-219-persistent-profile-session`; no App/Core/Lode code changes, real account/profile/Cookie/production page action, submit, publish, send, hosted browser, marketplace, bulk collection, or risk-bypass claim occurred.
-- Current Lane: Harbor #219 managed persistent profile session contract.
+- Recovery Entry: .loom/progress/HARBOR-241.md
+- Review Entry: .loom/reviews/HARBOR-241.json
+- Validation Entry: pnpm typecheck; pnpm test; git diff --check
+- Closing Condition: 创建并推送绑定 Harbor #241 的 PR；关闭前需有真实 session/identity 回读和 App 刷新证据。
+- Current Checkpoint: admission
+- Current Stop: The session-bound Harbor #241 implementation and fixture validation are ready for PR creation. The user-completed manual Xiaohongshu login remains pending a merged endpoint and a separate App consumer intent.
+- Next Step: Commit, push, and open the single Harbor #241 implementation PR; do not call the real endpoint or change live identity state before the PR is reviewed and merged.
+- Blockers: None recorded.
+- Latest Validation Summary: 2026-07-10 local validation on `work/harbor-241-manual-auth-sync`: `pnpm install --offline --frozen-lockfile`, `pnpm typecheck`, `node --test dist/packages/runtime-api/src/server.test.js`, `pnpm test`, and `git diff --check` passed. Fixture tests only; no Cookie, DOM, page content, or live identity state was read or changed.
+- Recovery Boundary: Do not update real identity state until the endpoint is merged and an App-visible user-confirmation path exists. No Cookie, password, verification-code, DOM, or page payload may be read or stored.
+- Current Lane: Harbor #241 manual authentication state synchronization.
 
 ## Runtime Evidence
 
-- Run Entry: fixture_and_fake_browser_contract_smoke_no_live_site
-- Logs Entry: command output from `pnpm test`; `pnpm smoke:runtime:api`; App `smoke:packaged:runtime`; App `smoke:packaged:readonly`
-- Diagnostics Entry: packages/runtime-api/src/runtime-session.ts; packages/runtime-api/src/local-provider-launcher.ts; packages/runtime-api/src/index.test.ts
-- Verification Entry: .loom/progress/HARBOR-219.md
-- Lane Entry: HARBOR-219
+- Run Entry: user-completed manual QR authentication is awaiting a Harbor session-bound public state synchronization intent.
+- Logs Entry: current Harbor public session and identity endpoint readback; implementation validation pending.
+- Diagnostics Entry: packages/runtime-api/src/server.ts; packages/runtime-api/src/index.ts; packages/runtime-api/src/identity-environment-manager.ts
+- Verification Entry: .loom/progress/HARBOR-241.md
+- Lane Entry: HARBOR-241
 
 ## Sources
 
-- Static Truth: .loom/work-items/HARBOR-219.md
-- Dynamic Truth: .loom/progress/HARBOR-219.md
+- Static Truth: .loom/work-items/HARBOR-241.md
+- Dynamic Truth: .loom/progress/HARBOR-241.md
 - Locator Truth: .loom/bootstrap/init-result.json
-- Fact Chain CLI: loom fact-chain --target . --item HARBOR-219 --json
+- Fact Chain CLI: loom fact-chain --target . --item HARBOR-241 --json
