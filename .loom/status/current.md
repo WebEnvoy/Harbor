@@ -11,9 +11,9 @@
 - Review Entry: .loom/reviews/HARBOR-241.json
 - Validation Entry: pnpm typecheck; pnpm test; git diff --check
 - Closing Condition: Create and push a Harbor #241 PR with ownership constraints, current head, test evidence, and no-sensitive-material/non-write boundary; close only after real session/identity and App refresh evidence.
-- Current Checkpoint: admission
-- Current Stop: The session-bound Harbor #241 implementation and fixture validation are ready for PR creation. The user-completed manual Xiaohongshu login remains pending a merged endpoint and a separate App consumer intent.
-- Next Step: Commit, push, and open the single Harbor #241 implementation PR; do not call the real endpoint or change live identity state before the PR is reviewed and merged.
+- Current Checkpoint: merge
+- Current Stop: Harbor PR #242 has current-head controller review and awaits hosted merge-gate consumption. App #236 remains the downstream consumer; live identity synchronization must wait for both merges.
+- Next Step: Wait for the hosted required checks, merge Harbor #242 through the controlled path, then merge App #278 and verify the public identity state in packaged App E2E.
 - Blockers: None recorded.
 - Latest Validation Summary: 2026-07-10 local validation on `work/harbor-241-manual-auth-sync`: `pnpm install --offline --frozen-lockfile`, `pnpm typecheck`, focused Runtime API tests, `pnpm test` (39 passed), and `git diff --check` passed. Review corrections enforce same-identity session reuse, user-held session control, atomic persistence before public mutation, and public user-confirmed provenance. Fixture tests only; no Cookie, DOM, page content, or live identity state was read or changed.
 - Recovery Boundary: Do not update real identity state until the endpoint is merged and an App-visible user-confirmation path exists. No Cookie, password, verification-code, DOM, or page payload may be read or stored.
