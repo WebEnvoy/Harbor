@@ -8,6 +8,7 @@
 ## Boundary
 
 - The endpoint records only a user-confirmed completion fact for the exact active managed session.
+- `GET /runtime/sessions/{runtime_session_ref}` and its `/runtime/identity-environment-sessions/{runtime_session_ref}` alias return the canonical redacted 404 owner response for an unknown ref (`session_missing`) or a registered session whose `current_error.code` is `session_lost`. The response includes `schema_version`, `status`, `failure_class`, `runtime_session_ref`, `retryable`, public top-level `message`, and the public `current_error`; `message` equals `current_error.message`. All other session facts, including closed sessions, are unchanged.
 - `POST /runtime/sessions/{runtime_session_ref}/manual-authentication-completed` alone requires a startup-configured `HARBOR_MANUAL_AUTH_SUPERVISOR_TOKEN`: an unconfigured or invalid configuration fails closed with `manual_auth_authorization_unavailable`; missing, malformed, duplicate, or unequal credentials return `manual_auth_authorization_required` before any session lookup.
 - The token is fixed-format base64url, compared with `timingSafeEqual`, accepted only through one `Authorization: Bearer` header, and never persisted, emitted, logged, or added to evidence. The completion request accepts no query parameters and requires an empty body.
 - It does not inspect or claim proof from cookies, page content, URLs, titles, screenshots, or site responses.

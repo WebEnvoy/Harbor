@@ -1,9 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import {
   HarborRuntime,
+  HARBOR_RUNTIME_FACTS_SCHEMA,
   type LocalIdentityEnvironmentStateUpdate,
   type ManagedLocalIdentityEnvironmentInput,
   type OpenIdentityEnvironmentSessionInput,
+  type RuntimeErrorFact,
   type RuntimeSessionControlInput,
   type SiteResourceFactsInput,
   type WritePrecheckInput
@@ -207,7 +209,9 @@ async function routeSession(
   response: ServerResponse
 ): Promise<void> {
   if (!action && method === "GET") {
-    writeJson(response, 200, runtime.getSession(runtimeSessionRef) ?? { status: "unavailable", failure_class: "session_missing" });
+    const session = runtime.getSession(runtimeSessionRef);
+    const unavailable = sessionReadUnavailable(runtimeSessionRef, session?.current_error);
+    writeJson(response, unavailable ? 404 : 200, unavailable ?? session);
     return;
   }
   if (action === "site-resource-facts" && method === "GET") {
@@ -242,6 +246,25 @@ async function routeSession(
   else if (action === "stop") writeJson(response, 200, await runtime.stopSession(runtimeSessionRef, body));
   else if (action === "snapshot") writeJson(response, 201, await runtime.captureLiveSnapshot(runtimeSessionRef));
   else writeJson(response, 404, { error: "not_found", path: `/runtime/sessions/${runtimeSessionRef}/${action}` });
+}
+
+function sessionReadUnavailable(runtimeSessionRef: string, currentError: RuntimeErrorFact | null | undefined): object | null {
+  if (currentError?.code !== "session_lost" && currentError !== undefined) return null;
+  const failure_class = currentError ? "session_lost" : "session_missing";
+  const publicError = currentError ?? {
+    code: "session_lost" as const,
+    message: "Runtime Session is missing.",
+    retryable: true
+  };
+  return {
+    schema_version: HARBOR_RUNTIME_FACTS_SCHEMA,
+    status: "unavailable",
+    failure_class,
+    runtime_session_ref: runtimeSessionRef,
+    retryable: publicError.retryable,
+    message: publicError.message,
+    current_error: publicError
+  };
 }
 
 function siteResourceFactsInput(url: URL): SiteResourceFactsInput {

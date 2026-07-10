@@ -129,6 +129,9 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
     const stopped = await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/stop`, { control_owner: "agent" });
     assert.equal(stopped.lifecycle_state, "closed");
 
+    const closedReadback = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}`);
+    assert.equal(closedReadback.lifecycle_state, "closed");
+
     const aliasReadback = await getJson(`${running.url}/runtime/identity-environment-sessions/${session.runtime_session_ref}`);
     assert.equal(aliasReadback.runtime_session_ref, session.runtime_session_ref);
 
@@ -143,6 +146,55 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
     assert.equal(nestedIdentityPath.status, 404);
   } finally {
     await running.close();
+  }
+});
+
+test("returns canonical public 404 session owner responses", async () => {
+  const missingRuntime = new HarborRuntime(createFixtureLauncher("ready"));
+  const missingServer = await startHarborRuntimeServer({ port: 0, runtime: missingRuntime });
+  try {
+    for (const path of ["sessions", "identity-environment-sessions"]) {
+      const response = await fetch(`${missingServer.url}/runtime/${path}/session_missing`);
+      assert.equal(response.status, 404);
+      assert.deepEqual(await response.json(), {
+        schema_version: "harbor-runtime-facts/v0",
+        status: "unavailable",
+        failure_class: "session_missing",
+        runtime_session_ref: "session_missing",
+        retryable: true,
+        message: "Runtime Session is missing.",
+        current_error: {
+          code: "session_lost",
+          message: "Runtime Session is missing.",
+          retryable: true
+        }
+      });
+    }
+  } finally {
+    await missingServer.close();
+  }
+
+  const lostRuntime = new HarborRuntime(createFixtureLauncher("session_lost"));
+  const lost = await lostRuntime.createSession();
+  const lostServer = await startHarborRuntimeServer({ port: 0, runtime: lostRuntime });
+  try {
+    for (const path of ["sessions", "identity-environment-sessions"]) {
+      const response = await fetch(`${lostServer.url}/runtime/${path}/${lost.runtime_session_ref}`);
+      assert.equal(response.status, 404);
+      const body = await response.json();
+      assert.equal(body.schema_version, "harbor-runtime-facts/v0");
+      assert.equal(body.status, "unavailable");
+      assert.equal(body.failure_class, "session_lost");
+      assert.equal(body.runtime_session_ref, lost.runtime_session_ref);
+      assert.equal(body.retryable, true);
+      assert.equal(body.message, lost.current_error?.message);
+      assert.deepEqual(body.current_error, lost.current_error);
+      assert.equal(JSON.stringify(body).includes("profile_ref"), false);
+      assert.equal(JSON.stringify(body).includes("cdp_ref"), false);
+      assert.equal(JSON.stringify(body).includes("raw_"), false);
+    }
+  } finally {
+    await lostServer.close();
   }
 });
 
