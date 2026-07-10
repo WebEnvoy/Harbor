@@ -269,12 +269,11 @@ export class HarborRuntime {
     if (!session) return manualAuthenticationUnavailable("session_missing", runtime_session_ref);
     if (session.lifecycle_state !== "active") return manualAuthenticationUnavailable("session_not_active", runtime_session_ref);
     if (!session.identity_environment_ref) return manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
+    if (session.control_owner !== "user" || session.control_lock.owner !== "user" || session.control_lock.state !== "held") {
+      return manualAuthenticationUnavailable("user_confirmation_required", runtime_session_ref);
+    }
 
-    const identityEnvironment = this.identityEnvironments.update(session.identity_environment_ref, {
-      login_state: "logged_in",
-      manual_authentication_state: "completed",
-      login_state_reason: "User confirmed manual authentication completed in this active Harbor-managed session."
-    });
+    const identityEnvironment = this.identityEnvironments.completeManualAuthentication(session.identity_environment_ref);
     return identityEnvironment ?? manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
   }
 
@@ -666,7 +665,7 @@ export class HarborRuntime {
 
 export interface ManualAuthenticationCompletionUnavailable {
   status: "unavailable";
-  failure_class: "session_missing" | "session_not_active" | "identity_environment_unmanaged";
+  failure_class: "session_missing" | "session_not_active" | "identity_environment_unmanaged" | "user_confirmation_required";
   runtime_session_ref: string;
   retryable: false;
   public_boundary: {

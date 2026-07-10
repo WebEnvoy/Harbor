@@ -77,8 +77,8 @@
   "validation": {
     "passed": [
       "pnpm typecheck",
-      "node --test dist/packages/runtime-api/src/server.test.js",
-      "pnpm test",
+      "focused Runtime API confirmation tests",
+      "pnpm test (39 passed)",
       "git diff --check"
     ],
     "live_evidence": "not_run; implementation has not been merged and App does not yet expose the user-confirmation intent"
