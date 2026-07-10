@@ -15,6 +15,7 @@ import {
   type LocalProviderLauncher,
   type LocalProviderLaunchInput
 } from "./index.js";
+import { classifyLaunchFailure } from "./provider-management.js";
 
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const cloakPath = "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium";
@@ -227,6 +228,8 @@ test("explains provider install and launch failure diagnostics", () => {
     failure_class: "launch_args_incompatible"
   });
   assert.equal(args.suggested_action.includes("启动参数"), true);
+
+  assert.equal(classifyLaunchFailure(new Error("fetch failed")), "cdp_unavailable");
 });
 
 test("returns local identity environment facts without protected material", () => {
