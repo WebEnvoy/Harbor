@@ -403,21 +403,12 @@ function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"]): s
 
 function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: unknown): boolean {
   if (typeof value !== "string") return false;
-  try {
-    const url = new URL(value);
-    if (url.origin !== input.expected_origin) return false;
-    const expected = input.operation_id === "xhs_search_notes"
-      ? { pathname: "/api/sns/web/v1/search/notes", query: "keyword" }
-      : { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
-    const queryEntries = [...url.searchParams];
-    return url.pathname === expected.pathname &&
-      !url.hash &&
-      queryEntries.length === 1 &&
-      queryEntries[0]![0] === expected.query &&
-      queryEntries[0]![1] === input.query;
-  } catch {
-    return false;
-  }
+  const expected = input.operation_id === "xhs_search_notes"
+    ? { pathname: "/api/sns/web/v1/search/notes", query: "keyword" }
+    : { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
+  const canonical = new URL(expected.pathname, input.expected_origin);
+  canonical.searchParams.set(expected.query, input.query);
+  return value === canonical.href;
 }
 
 function readOperationPageFacts(targetUrl: string): LocalProviderPageFacts {

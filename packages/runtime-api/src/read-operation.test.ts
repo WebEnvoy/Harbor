@@ -164,11 +164,17 @@ test("fails closed when the live probe lacks an operation-specific surface or re
   for (const [input, ready, url] of [
     [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI&extra=1"],
     [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI#fragment"],
+    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI#"],
     [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI&keyword=AI"],
+    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI&"],
+    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI&&"],
     [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes"],
     [bossInput, readyBoss, "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=AI&extra=1"],
     [bossInput, readyBoss, "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=AI#fragment"],
+    [bossInput, readyBoss, "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=AI#"],
     [bossInput, readyBoss, "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=AI&query=AI"],
+    [bossInput, readyBoss, "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=AI&"],
+    [bossInput, readyBoss, "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=AI&&"],
     [bossInput, readyBoss, "https://www.zhipin.com/wapi/zpgeek/search/joblist.json"]
   ] as const) {
     assert.equal(validateReadOperationProbe(input, { ...ready, operation_response_url: url }).status, "unavailable");
