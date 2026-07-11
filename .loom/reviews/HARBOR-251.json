@@ -1,0 +1,51 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-251",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Current-head semantic review found no P0-P3 after query/city/WAPI/login/challenge findings were fixed; the only delta after product head 0369054 is validated evidence-map and approved spec-review carrier metadata.",
+  "reviewer": "codex-main-controller",
+  "authored_at": "2026-07-11T15:57:25Z",
+  "reviewed_head": "35f90d60e451ed9dc29798b12a8e797cb9b21281",
+  "reviewed_validation_summary": "2026-07-11: BOSS admission/probe/WAPI summary tests passed; `pnpm typecheck`, full `pnpm test` (63/63), and `git diff --check` passed. Tests cover query/city drift, login wall, challenge, SPA readiness, business code, empty 2xx shell, bounded summary, and network-summary ref binding. No production browser/account/page action occurred.",
+  "reviewed_validation_summary_hash": "a89867de466ef641a4bad7d28c985a2d1aed2727aea4c9ecbc64853f33d860c3",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-251.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-251.md",
+    "recovery_entry": ".loom/progress/HARBOR-251.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "budget_risk": {
+      "schema_version": "loom-execution-budget-risk/v1",
+      "status": "not_applicable",
+      "enforcement": "advisory",
+      "highest_risk": "none",
+      "risk_dimensions": [],
+      "summary": "execution budget is not_applicable; budget risk remains advisory and non-blocking",
+      "budget_summary": "execution budget is not collected for this invocation.",
+      "adapter_evidence_locator": "",
+      "provenance": {
+        "source": "github_host"
+      }
+    },
+    "engine_adapter": null,
+    "engine_evidence": null,
+    "normalized_findings": null,
+    "suite_evidence_validation": "not_applicable",
+    "suite_carrier_validation": "not_applicable",
+    "suite_evidence_map": null,
+    "suite_consistency_analysis": null,
+    "suite_task_carriers": [],
+    "suite_evidence_consumed_contracts": [],
+    "suite_carrier_consumed_contracts": []
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Authored implementation review approved the current head for merge checkpoint consumption."
+  }
+}
