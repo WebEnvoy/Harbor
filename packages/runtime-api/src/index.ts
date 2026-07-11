@@ -37,6 +37,10 @@ import {
   type IdentityEnvironmentProviderBindingInput
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
+import {
+  isManualAuthenticationAuthorizationGrant,
+  type ManualAuthenticationAuthorizationGrant
+} from "./manual-authentication-authorization.js";
 import { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-provider-launcher.js";
 import {
   admitAllowlistedReadOperation,
@@ -290,13 +294,24 @@ export class HarborRuntime {
     return this.runtimeSessions.getSession(runtime_session_ref);
   }
 
-  completeManualAuthentication(runtime_session_ref: string): LocalIdentityEnvironmentPublicRecord | ManualAuthenticationCompletionUnavailable {
+  completeManualAuthentication(
+    runtime_session_ref: string,
+    grant?: ManualAuthenticationAuthorizationGrant
+  ): LocalIdentityEnvironmentPublicRecord | ManualAuthenticationCompletionUnavailable {
+    return this.completeBoundManualAuthentication(runtime_session_ref, isManualAuthenticationAuthorizationGrant(grant));
+  }
+
+  private completeBoundManualAuthentication(
+    runtime_session_ref: string,
+    allowLocalProviderUserLock: boolean
+  ): LocalIdentityEnvironmentPublicRecord | ManualAuthenticationCompletionUnavailable {
     const session = this.runtimeSessions.getRecord(runtime_session_ref);
     if (!session) return manualAuthenticationUnavailable("session_missing", runtime_session_ref);
     if (session.facts.lifecycle_state !== "active") return manualAuthenticationUnavailable("session_not_active", runtime_session_ref);
     if (!session.facts.identity_environment_ref) return manualAuthenticationUnavailable("identity_environment_unmanaged", runtime_session_ref);
     if (
-      !this.runtimeSessions.isTrustedUserHeldSession(runtime_session_ref) ||
+      (!this.runtimeSessions.isTrustedUserHeldSession(runtime_session_ref) &&
+        !(allowLocalProviderUserLock && this.runtimeSessions.isSupervisorConfirmableLocalProviderUserSession(runtime_session_ref))) ||
       session.facts.control_owner !== "user" ||
       session.facts.control_lock.owner !== "user" ||
       session.facts.control_lock.state !== "held"

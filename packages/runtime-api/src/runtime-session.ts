@@ -73,6 +73,7 @@ export interface RuntimeSessionRecord {
   };
   user_held_session: boolean;
   read_operation_user_confirmed: boolean;
+  read_operation_user_release_pending: boolean;
   read_operation_user_handoff: boolean;
   execution_surface: "local_provider" | "fixture" | "unknown";
   openUrl?: (url: string) => Promise<LocalProviderPageFacts>;
@@ -176,6 +177,7 @@ export class RuntimeSessionStore {
       // HTTP session creation carries no authenticated user-handoff fact.
       user_held_session: false,
       read_operation_user_confirmed: false,
+      read_operation_user_release_pending: false,
       read_operation_user_handoff: false,
       execution_surface: ready ? launch.execution_surface ?? "unknown" : "unknown",
       openUrl: ready ? launch.openUrl : undefined,
@@ -253,6 +255,10 @@ export class RuntimeSessionStore {
     const owner = input.control_owner;
     if (owner && record.facts.control_lock.owner !== owner && record.facts.control_lock.state === "held") return lockConflict(record, owner);
 
+    const confirmedUserRelease = record.read_operation_user_confirmed &&
+      record.facts.control_owner === "user" &&
+      record.facts.control_lock.owner === "user" &&
+      record.facts.control_lock.state === "held";
     const now = new Date().toISOString();
     record.facts.lifecycle_state = "idle";
     record.facts.last_seen_at = now;
@@ -265,6 +271,7 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = false;
+    record.read_operation_user_release_pending = confirmedUserRelease;
     record.read_operation_user_handoff = false;
     this.viewerControls.recordHandoff(runtime_session_ref, { control_owner: "none" });
     record.facts.facts.push({ key: "session.release", source: "observed", value: owner ?? "unscoped" });
@@ -299,6 +306,7 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = false;
+    record.read_operation_user_release_pending = false;
     record.read_operation_user_handoff = false;
     record.facts.current_page = { ...record.facts.current_page, status: "unavailable", observed_at: now };
     this.viewerControls.markClosed(runtime_session_ref, now);
@@ -332,6 +340,7 @@ export class RuntimeSessionStore {
     // Only the server-owned handoff path calls applyHandoff; create/lock input
     // must never be treated as proof that a user held this session.
     record.user_held_session = control.owner === "user" && isInteractiveUserViewer(record.facts);
+    record.read_operation_user_release_pending = false;
     record.read_operation_user_handoff = record.read_operation_user_confirmed &&
       control.previous_owner === "user" &&
       (control.owner === "agent" || control.owner === "core_task");
@@ -347,10 +356,17 @@ export class RuntimeSessionStore {
     return !!record && record.user_held_session && isInteractiveUserViewer(record.facts);
   }
 
+  isSupervisorConfirmableLocalProviderUserSession(runtime_session_ref: string): boolean {
+    const record = this.records.get(runtime_session_ref);
+    return !!record && hasHeldUserLock(record) && record.execution_surface === "local_provider";
+  }
+
   markReadOperationUserConfirmed(runtime_session_ref: string): void {
     const record = this.records.get(runtime_session_ref);
-    if (!record || !record.user_held_session || record.facts.control_owner !== "user") return;
+    if (!record || (!this.isTrustedUserHeldSession(runtime_session_ref) && !this.isSupervisorConfirmableLocalProviderUserSession(runtime_session_ref))) return;
+    record.user_held_session = true;
     record.read_operation_user_confirmed = true;
+    record.read_operation_user_release_pending = false;
     record.read_operation_user_handoff = false;
   }
 
@@ -444,7 +460,9 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = false;
-    record.read_operation_user_handoff = false;
+    record.read_operation_user_handoff = record.read_operation_user_release_pending &&
+      (owner === "agent" || owner === "core_task");
+    record.read_operation_user_release_pending = false;
     this.viewerControls.recordHandoff(record.facts.runtime_session_ref, { control_owner: owner });
     record.facts.facts.push(
       { key: "session.reuse", source: "observed", value: "same_profile_session" },
@@ -535,6 +553,12 @@ function isInteractiveUserViewer(facts: RuntimeSessionFacts): boolean {
   return facts.viewer_entry?.availability === "available" &&
     facts.viewer_entry.access_mode === "interactive" &&
     facts.viewer_entry.input_capabilities.includes("keyboard_mouse");
+}
+
+function hasHeldUserLock(record: RuntimeSessionRecord): boolean {
+  return record.facts.control_owner === "user" &&
+    record.facts.control_lock.owner === "user" &&
+    record.facts.control_lock.state === "held";
 }
 
 function unavailablePage(requested_url: string, current_error: RuntimeErrorFact, observed_at: string): RuntimePageFacts {

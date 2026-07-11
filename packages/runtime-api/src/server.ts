@@ -238,7 +238,7 @@ async function routeSession(
     const requestUrl = new URL(request.url ?? "/", "http://harbor.local");
     if (requestUrl.search) throw new BadRequest("Manual authentication completion does not accept query parameters.");
     await requireEmptyRequestBody(request);
-    const result = runtime.completeManualAuthentication(runtimeSessionRef);
+    const result = runtime.completeManualAuthentication(runtimeSessionRef, authorization.grant);
     writeJson(response, result.status === "unavailable" ? result.failure_class === "session_missing" ? 404 : 409 : 200, result);
     return;
   }

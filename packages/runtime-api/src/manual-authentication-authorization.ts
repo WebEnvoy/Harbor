@@ -3,9 +3,14 @@ import type { IncomingMessage } from "node:http";
 
 const SUPERVISOR_TOKEN_BYTES = 32;
 const SUPERVISOR_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const authorizationGrants = new WeakSet<object>();
+
+export interface ManualAuthenticationAuthorizationGrant {
+  readonly kind: "manual_authentication_supervisor_grant";
+}
 
 export type ManualAuthenticationAuthorization =
-  | { authorized: true }
+  | { authorized: true; grant: ManualAuthenticationAuthorizationGrant }
   | {
     authorized: false;
     status_code: 403 | 503;
@@ -36,8 +41,14 @@ export class ManualAuthenticationAuthorizer {
         failure_class: "manual_auth_authorization_required"
       };
     }
-    return { authorized: true };
+    const grant: ManualAuthenticationAuthorizationGrant = { kind: "manual_authentication_supervisor_grant" };
+    authorizationGrants.add(grant);
+    return { authorized: true, grant };
   }
+}
+
+export function isManualAuthenticationAuthorizationGrant(value: unknown): value is ManualAuthenticationAuthorizationGrant {
+  return typeof value === "object" && value !== null && authorizationGrants.has(value);
 }
 
 function bearerToken(request: IncomingMessage): Buffer | null {

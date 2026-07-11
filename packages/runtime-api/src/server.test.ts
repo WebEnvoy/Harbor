@@ -396,6 +396,85 @@ test("records user-confirmed manual authentication for an active managed session
   }
 });
 
+test("confirms a user-held local provider without a viewer and hands the released session to Core once", async () => {
+  const runtime = new HarborRuntime(unsupportedViewerLauncher("local_provider"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_local-provider-auth"));
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_local-provider-auth",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "user"
+    });
+    assert.equal(session.viewer_entry.availability, "unsupported");
+    assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref).status, "unavailable");
+    assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref, {
+      kind: "manual_authentication_supervisor_grant"
+    }).status, "unavailable");
+
+    const confirmed = await fetch(`${running.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
+      method: "POST",
+      headers: manualAuthHeaders()
+    });
+    assert.equal(confirmed.status, 200);
+    await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "user" });
+
+    const reused = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_local-provider-auth",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "core_task",
+      reuse_existing: true
+    });
+    assert.equal(reused.runtime_session_ref, session.runtime_session_ref);
+    const admitted = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(admitted.body.failure_class, "evidence_refs_missing");
+
+    await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "core_task" });
+    await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_local-provider-auth",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "core_task",
+      reuse_existing: true
+    });
+    const consumed = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(consumed.body.failure_class, "session_user_controlled");
+  } finally {
+    await running.close();
+  }
+});
+
+test("rejects direct user confirmation for fixture, unknown, and non-user local-provider sessions", async () => {
+  for (const [surface, owner] of [["fixture", "user"], [undefined, "user"], ["local_provider", "agent"]] as const) {
+    const runtime = new HarborRuntime(unsupportedViewerLauncher(surface));
+    const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
+    try {
+      const identityEnvironmentRef = `identity-env_rejected-${surface ?? "unknown"}-${owner}`;
+      await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment(identityEnvironmentRef));
+      const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+        identity_environment_ref: identityEnvironmentRef,
+        url: "https://www.zhipin.com/",
+        control_owner: owner
+      });
+      const response = await fetch(`${running.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
+        method: "POST",
+        headers: manualAuthHeaders()
+      });
+      assert.equal(response.status, 409);
+      assert.equal((await response.json()).failure_class, "user_confirmation_required");
+    } finally {
+      await running.close();
+    }
+  }
+});
+
 test("fails closed before session lookup and requires one valid fixed-format supervisor credential", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const unavailable = await startHarborRuntimeServer({ port: 0, runtime });
@@ -1104,6 +1183,26 @@ function manualAuthenticationEnvironment(identity_environment_ref: string): Reco
     site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
     login_state: "manual_auth_required",
     storage_state: "present"
+  };
+}
+
+function unsupportedViewerLauncher(execution_surface: "local_provider" | "fixture" | undefined): LocalProviderLauncher {
+  const fixture = createFixtureLauncher("ready");
+  return async (input) => {
+    const launch = await fixture(input);
+    if (launch.status !== "ready") return launch;
+    const { execution_surface: _fixtureSurface, ...ready } = launch;
+    return {
+      ...ready,
+      ...(execution_surface ? { execution_surface } : {}),
+      viewer_entry: {
+        availability: "unsupported",
+        access_mode: "none",
+        transport: "not_applicable",
+        input_capabilities: [],
+        unavailable_reason: "unsupported"
+      }
+    };
   };
 }
 
