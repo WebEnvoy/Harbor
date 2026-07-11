@@ -11,13 +11,13 @@
 - Review Entry: .loom/reviews/HARBOR-241.json
 - Validation Entry: pnpm typecheck; pnpm test; git diff --check
 - Closing Condition: Create and push a Harbor #241 PR with ownership constraints, current head, test evidence, and no-sensitive-material/non-write boundary; close only after real session/identity and App refresh evidence.
-- Current Checkpoint: implementation
+- Current Checkpoint: build
 - Current Stop: None.
-- Next Step: Push the HARBOR-241 HTTP contract correction and wait for Loom #2026 before creating the PR or refreshing the review record.
+- Next Step: Create current-head semantic review and update PR #246 metadata before rerunning the hosted merge gate.
 - Blockers: None recorded.
-- Latest Validation Summary: 2026-07-10T23:34Z on `work/harbor-241-auth-readiness`: focused `node --test dist/packages/runtime-api/src/server.test.js` (14 passed), `pnpm typecheck`, `pnpm test` (45 passed), `pnpm smoke:runtime:api`, and `git diff --check` passed. GET runtime-session and identity-environment-session aliases now expose only the canonical owner 404 for missing or lost sessions, including a public top-level `message` equal to `current_error.message`; closed and other session facts remain unchanged.
+- Latest Validation Summary: 2026-07-11T01:08Z on `work/harbor-241-auth-readiness` at `c6c487e79f619e85cf3514696a1bffaee40fffc4`: `pnpm typecheck`, `pnpm test` (45 passed), `pnpm smoke:runtime:api`, `git diff --check`, and Loom full-suite validations passed. This carrier recovery performs contract/runtime smoke only; no browser, account, profile, production page, or external action was used.
 - Recovery Boundary: Do not read or store Cookie, password, verification code, DOM, page payload, or raw profile material. Do not submit, publish, send, bypass risk controls, use hosted browser, marketplace, or bulk collection.
-- Current Lane: Harbor #241 user-held manual-authentication synchronization correction.
+- Current Lane: Harbor #241 current-head carrier recovery for PR #246.
 
 ## Runtime Evidence
 
