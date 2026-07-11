@@ -10,7 +10,7 @@
 - Recovery Entry: .loom/progress/HARBOR-241.md
 - Review Entry: .loom/reviews/HARBOR-241.json
 - Validation Entry: pnpm typecheck; pnpm test; git diff --check
-- Closing Condition: Create and push a Harbor #241 PR with ownership constraints, current head, test evidence, and no-sensitive-material/non-write boundary; close only after real session/identity and App refresh evidence.
+- Closing Condition: PR #246 has merged; close after its post-merge packaged-App authentication E2E is recorded in the recovery entry and this carrier-only retire lane reaches `main`.
 
 ## Associated Artifacts
 

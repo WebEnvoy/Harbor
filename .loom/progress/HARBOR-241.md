@@ -3,11 +3,11 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-241
-- Current Checkpoint: merge
-- Current Stop: PR #246 is awaiting its required hosted merge-gate readback at the current reviewed head.
-- Next Step: Read back all required hosted checks, then perform the controlled merge; post-merge authentication E2E remains separate and required before issue closeout.
+- Current Checkpoint: closed_out
+- Current Stop: PR #246 merged into `main`; the post-merge packaged-App authentication E2E has passed against the merged Harbor runtime.
+- Next Step: Merge this carrier-only retire lane, then write the post-merge closeout comments and close Harbor #241 and #247.
 - Blockers: None recorded.
-- Latest Validation Summary: 2026-07-11T02:15Z on work/harbor-241-auth-readiness at 4d50dcddd61198841d554b86c4f559452a1d81f5: npm view @mc-and-his-agents/loom@0.28.1 version, pnpm typecheck, pnpm test (45 passed), pnpm smoke:runtime:api, loom doctor, loom verify, full-suite validation, loom pr metadata-render, and git diff --check passed. HARBOR-247 changes only the pinned installed Loom consumer and its repository PR metadata contract from v0.28.0 compatibility to published v0.28.1; no browser, account, profile, production page, or external action was used.
+- Latest Validation Summary: PR #246 implementation head `bfd7534960a7c4859e8ca0a23db27dcdd86ed6d1` merged into `main` as `39cbe3f006adecf90ab5ee47da312842b95aa153` at 2026-07-11T02:31:52Z; all required `Loom strong governance` checks passed in run `29136454283`. At 2026-07-11T07:53Z, App head `bd679d7e6c231ba36ca6635ad7cbabeed24a43be` rebuilt its packaged Core `b6815950f4f19252e7f15d4d82b6ba789feb0e3a` and merged Harbor `39cbe3f006adecf90ab5ee47da312842b95aa153` runtimes. Computer Use refreshed and then restarted the App for `identity-env-live-xhs-chrome-20260710`; the Harbor public fact remained `login_state=logged_in`, `manual_authentication_state=completed`, and `recovery_required=false`. Local readback also returned Core and Harbor `status=ready`. This evidence records only public status and redacted refs; it did not open a production page, read credentials/Cookie/profile material, or submit, publish, send, or perform a task.
 - Recovery Boundary: Do not read or store Cookie, password, verification code, DOM, page payload, or raw profile material. Do not submit, publish, send, bypass risk controls, use hosted browser, marketplace, or bulk collection.
 - Current Lane: Harbor #241/#247 hosted merge-gate consumption for PR #246.
 
@@ -19,3 +19,13 @@
 - Validation Evidence Locator: .loom/specs/HARBOR-241/evidence-map.md
 - Handoff Notes Locator: .loom/specs/HARBOR-241/task-carrier.md
 - Evidence Freshness: current
+
+## Terminal Closeout Metadata
+
+- Terminal State: closed_out
+- Issue: 241
+- PR: 246
+- Merge Commit: 39cbe3f006adecf90ab5ee47da312842b95aa153
+- Target Branch: main
+- Closed At: 2026-07-11T02:31:52Z
+- Evidence Locator: https://github.com/WebEnvoy/Harbor/pull/246
