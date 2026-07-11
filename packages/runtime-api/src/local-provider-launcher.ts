@@ -409,9 +409,12 @@ function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: un
     const expected = input.operation_id === "xhs_search_notes"
       ? { pathname: "/api/sns/web/v1/search/notes", query: "keyword" }
       : { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
+    const queryEntries = [...url.searchParams];
     return url.pathname === expected.pathname &&
-      url.searchParams.getAll(expected.query).length === 1 &&
-      url.searchParams.get(expected.query) === input.query;
+      !url.hash &&
+      queryEntries.length === 1 &&
+      queryEntries[0]![0] === expected.query &&
+      queryEntries[0]![1] === input.query;
   } catch {
     return false;
   }
