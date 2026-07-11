@@ -11,9 +11,9 @@
 - Review Entry: .loom/reviews/HARBOR-251.json
 - Validation Entry: pnpm typecheck; targeted tests; pnpm test; git diff --check
 - Closing Condition: Create and push a ready PR covering #251; do not merge or close issues.
-- Current Checkpoint: build
-- Current Stop: Canonical BOSS target and probe regressions pass locally.
-- Next Step: Review the scoped diff, commit, push, and create a ready PR.
+- Current Checkpoint: pre-review
+- Current Stop: Ready PR #253 is open with the scoped implementation and local validation.
+- Next Step: Consume current-head review and hosted checks outside this implementation lane; do not merge or close issues here.
 - Blockers: None recorded.
 - Latest Validation Summary: 2026-07-11: directed BOSS admission/probe tests passed (7 tests) and directed runtime auth/read-operation tests passed (6 tests); `pnpm typecheck`, full `pnpm test` (61/61), and `git diff --check` passed. No production browser/account/page action occurred.
 - Recovery Boundary: No production operation, automatic login, external write, batch collection, or sensitive material access.

@@ -3,9 +3,9 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-251
-- Current Checkpoint: build
-- Current Stop: Canonical BOSS target and probe regressions pass locally.
-- Next Step: Review the scoped diff, commit, push, and create a ready PR.
+- Current Checkpoint: pre-review
+- Current Stop: Ready PR #253 is open with the scoped implementation and local validation.
+- Next Step: Consume current-head review and hosted checks outside this implementation lane; do not merge or close issues here.
 - Blockers: None recorded.
 - Recovery Boundary: No production operation, automatic login, external write, batch collection, or sensitive material access.
 - Current Lane: Harbor #251 BOSS one-shot read operation.
