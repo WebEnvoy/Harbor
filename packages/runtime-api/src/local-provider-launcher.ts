@@ -480,15 +480,21 @@ function isSuccessfulReadResponse(status: unknown): status is number {
   return typeof status === "number" && Number.isInteger(status) && status >= 200 && status < 300;
 }
 
-function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"]): string {
-  return "(() => ({ origin: location.origin, pathname: location.pathname, ready: true, pinia_ready: Boolean(window.__PINIA__ || window.__pinia) }))()";
+export function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"]): string {
+  return "(() => ({ origin: location.origin, pathname: location.pathname, ready: true, pinia_ready: Boolean(window.__PINIA__ || window.__pinia || document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$pinia) }))()";
 }
 
 function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: unknown): boolean {
   if (typeof value !== "string") return false;
-  const expected = input.operation_id === "xhs_search_notes"
-    ? { pathname: "/api/sns/web/v1/search/notes", query: "keyword" }
-    : { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
+  if (input.operation_id === "xhs_search_notes") {
+    try {
+      const observed = new URL(value);
+      return observed.origin === "https://so.xiaohongshu.com" && observed.pathname === "/api/sns/web/v2/search/notes";
+    } catch {
+      return false;
+    }
+  }
+  const expected = { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
   const canonical = new URL(expected.pathname, input.expected_origin);
   canonical.searchParams.set(expected.query, input.query);
   return value === canonical.href;
