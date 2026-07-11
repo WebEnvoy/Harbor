@@ -287,10 +287,10 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         if (!requestId) return;
         if (shouldBlockReadOperationDocumentNavigation(resourceType, url, input.expected_origin)) {
           blockedRedirect = true;
-          void client.send("Fetch.failRequest", { requestId, errorReason: "Aborted" });
+          void client.send("Fetch.failRequest", { requestId, errorReason: "Aborted" }).catch(() => undefined);
           return;
         }
-        void client.send("Fetch.continueRequest", { requestId });
+        void client.send("Fetch.continueRequest", { requestId }).catch(() => undefined);
       });
       await client.send("Page.navigate", { url: input.target_url });
       let operationResponse: { status: number; url: string } | null = null;
