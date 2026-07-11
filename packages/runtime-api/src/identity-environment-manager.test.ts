@@ -33,7 +33,7 @@ test("user confirmation clears only the authentication gate for a restricted Chr
   });
   assert.equal(created.status.readiness, "needs_auth");
 
-  const completed = manager.completeManualAuthentication(created.identity_environment_ref);
+  const completed = manager.completeManualAuthentication(created.identity_environment_ref, "session_chrome-manual-auth");
   assert.ok(completed);
   assert.equal(completed.status.readiness, "ready");
   assert.equal(completed.status.login_state, "logged_in");

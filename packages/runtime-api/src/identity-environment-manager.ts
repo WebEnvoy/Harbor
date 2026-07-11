@@ -59,6 +59,7 @@ export interface StoredLocalIdentityEnvironmentRecord {
     local_secret_ref: string | null;
   };
   imported_from: string | null;
+  user_confirmed_session_ref: string | null;
 }
 
 export interface LocalIdentityEnvironmentPublicRecord {
@@ -133,15 +134,19 @@ export class LocalIdentityEnvironmentManager {
     return this.updateRecord(identity_environment_ref, input);
   }
 
-  completeManualAuthentication(identity_environment_ref: string): LocalIdentityEnvironmentPublicRecord | null {
+  completeManualAuthentication(identity_environment_ref: string, runtime_session_ref: string): LocalIdentityEnvironmentPublicRecord | null {
     return this.updateRecord(identity_environment_ref, {
       login_state: "logged_in",
       manual_authentication_state: "completed",
       login_state_reason: USER_CONFIRMED_MANAGED_SESSION_REASON
-    });
+    }, runtime_session_ref);
   }
 
-  private updateRecord(identity_environment_ref: string, input: LocalIdentityEnvironmentStateUpdate): LocalIdentityEnvironmentPublicRecord | null {
+  private updateRecord(
+    identity_environment_ref: string,
+    input: LocalIdentityEnvironmentStateUpdate,
+    user_confirmed_session_ref: string | null = null
+  ): LocalIdentityEnvironmentPublicRecord | null {
     assertNoSensitiveMaterialInput(input);
     const current = this.records.get(identity_environment_ref);
     if (!current) return null;
@@ -178,7 +183,8 @@ export class LocalIdentityEnvironmentManager {
         profile_storage_ref: input.profile_storage_ref ?? current.local_material_refs.profile_storage_ref,
         cookie_jar_ref: input.cookie_jar_ref ?? current.local_material_refs.cookie_jar_ref,
         browser_storage_ref: input.browser_storage_ref ?? current.local_material_refs.browser_storage_ref
-      }
+      },
+      user_confirmed_session_ref
     };
     const nextRecords = new Map(this.records);
     nextRecords.set(identity_environment_ref, record);
@@ -199,6 +205,16 @@ export class LocalIdentityEnvironmentManager {
   getFacts(identity_environment_ref: string): LocalIdentityEnvironmentFacts | null {
     const record = this.records.get(identity_environment_ref);
     return record ? internalSessionFacts(record) : null;
+  }
+
+  hasUserConfirmedManagedSession(identity_environment_ref: string, runtime_session_ref: string): boolean {
+    const record = this.records.get(identity_environment_ref);
+    const login = record?.identity_environment.login_state;
+    return record?.user_confirmed_session_ref === runtime_session_ref &&
+      login?.state === "logged_in" &&
+      login.reason === USER_CONFIRMED_MANAGED_SESSION_REASON &&
+      login.manual_authentication_state === "completed" &&
+      !login.recovery_required;
   }
 
   delete(identity_environment_ref: string): LocalIdentityEnvironmentPublicRecord | null {
@@ -233,7 +249,8 @@ export class LocalIdentityEnvironmentManager {
         keychain_ref: facts.credential_recovery.keychain_ref,
         local_secret_ref: facts.credential_recovery.local_secret_ref
       },
-      imported_from: input.imported_from ?? null
+      imported_from: input.imported_from ?? null,
+      user_confirmed_session_ref: null
     };
     this.records.set(facts.identity_environment_ref, record);
     this.persist();
@@ -246,7 +263,10 @@ export class LocalIdentityEnvironmentManager {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as { records?: StoredLocalIdentityEnvironmentRecord[] };
     for (const record of parsed.records ?? []) {
       if (record.schema_version === HARBOR_LOCAL_IDENTITY_ENVIRONMENT_STORE_SCHEMA && record.identity_environment.schema_version === HARBOR_LOCAL_IDENTITY_ENVIRONMENT_SCHEMA) {
-        this.records.set(record.identity_environment.identity_environment_ref, record);
+        this.records.set(record.identity_environment.identity_environment_ref, {
+          ...record,
+          user_confirmed_session_ref: record.user_confirmed_session_ref ?? null
+        });
       }
     }
   }

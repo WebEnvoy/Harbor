@@ -161,6 +161,51 @@ export interface LocalProviderPageFacts {
   facts: RuntimeFact[];
 }
 
+export type AllowlistedReadOperationSite = "xiaohongshu" | "boss";
+export type AllowlistedReadOperationId = "xhs_search_notes" | "boss_job_search";
+
+export interface LocalProviderReadProbeInput {
+  site_id: AllowlistedReadOperationSite;
+  operation_id: AllowlistedReadOperationId;
+  query: string;
+  target_url: string;
+  expected_origin: string;
+}
+
+export interface LocalProviderReadProbePublicSummary {
+  schema_version: "harbor-read-operation-public-summary/v0";
+  operation_id: AllowlistedReadOperationId;
+  result_kind: "xiaohongshu_search_notes_surface" | "boss_job_search_surface";
+  surface: "search_result" | "web_geek_jobs";
+  result_state: "operation_read_response_observed";
+  response_status: number;
+  source_signals: readonly string[];
+}
+
+export interface LocalProviderReadProbeRef {
+  kind: string;
+  ref: string;
+}
+
+export type LocalProviderReadProbeResult =
+  | {
+      status: "completed";
+      observed_at: string;
+      observed_origin: string;
+      page: LocalProviderPageFacts;
+      source_refs: LocalProviderReadProbeRef[];
+      evidence_ref_kinds: LocalProviderReadProbeRef[];
+      public_summary_source_ref: string;
+      public_summary: LocalProviderReadProbePublicSummary;
+    }
+  | {
+      status: "unavailable";
+      failure_class: "origin_drift" | "not_logged_in" | "safety_challenge" | "page_not_ready" | "network_resource_unavailable" | "evidence_refs_missing" | "fixture_runtime" | "provider_probe_unavailable";
+      message: string;
+      retryable: boolean;
+      page?: LocalProviderPageFacts;
+    };
+
 export type LocalProviderLaunchResult =
   | {
       status: "ready";
@@ -168,7 +213,9 @@ export type LocalProviderLaunchResult =
       viewer_entry: RuntimeViewerEntry;
       page: LocalProviderPageFacts;
       facts: RuntimeFact[];
+      execution_surface?: "local_provider" | "fixture";
       openUrl: (url: string) => Promise<LocalProviderPageFacts>;
+      probeReadOperation?: (input: LocalProviderReadProbeInput) => Promise<LocalProviderReadProbeResult>;
       captureScreenshot: () => Promise<LocalProviderScreenshotFacts | RuntimeErrorFact>;
       close: () => Promise<void>;
     }

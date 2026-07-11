@@ -11,6 +11,9 @@ import {
   type CreateRuntimeSessionInput,
   type LocalProviderLauncher,
   type LocalProviderPageFacts,
+  type LocalProviderReadProbeInput,
+  type LocalProviderReadProbePublicSummary,
+  type LocalProviderReadProbeResult,
   type LocalProviderScreenshotFacts,
   type OpenIdentityEnvironmentSessionInput,
   type RuntimeErrorCode,
@@ -23,6 +26,7 @@ import {
   type RuntimeViewerEntry,
   type ValidationRuntimeFacts
 } from "./runtime-session-types.js";
+import { isTrustedLocalProviderReadProbe } from "./read-operation-probe-trust.js";
 import type {
   ControlOwner,
   ControlOwnerFacts,
@@ -42,6 +46,9 @@ export type {
   LocalProviderLaunchInput,
   LocalProviderLaunchResult,
   LocalProviderPageFacts,
+  LocalProviderReadProbeInput,
+  LocalProviderReadProbePublicSummary,
+  LocalProviderReadProbeResult,
   LocalProviderScreenshotFacts,
   OpenIdentityEnvironmentSessionInput,
   ProviderMode,
@@ -65,7 +72,11 @@ export interface RuntimeSessionRecord {
     profile_storage_ref: string | null;
   };
   user_held_session: boolean;
+  read_operation_user_confirmed: boolean;
+  read_operation_user_handoff: boolean;
+  execution_surface: "local_provider" | "fixture" | "unknown";
   openUrl?: (url: string) => Promise<LocalProviderPageFacts>;
+  probeReadOperation?: (input: LocalProviderReadProbeInput) => Promise<LocalProviderReadProbeResult>;
   captureScreenshot?: () => Promise<LocalProviderScreenshotFacts | RuntimeErrorFact>;
   close?: () => Promise<void>;
 }
@@ -162,8 +173,13 @@ export class RuntimeSessionStore {
       identity_binding: {
         profile_storage_ref: input.profile_storage_ref ?? null
       },
-      user_held_session: controlOwner === "user" && ready && isInteractiveUserViewer(facts),
+      // HTTP session creation carries no authenticated user-handoff fact.
+      user_held_session: false,
+      read_operation_user_confirmed: false,
+      read_operation_user_handoff: false,
+      execution_surface: ready ? launch.execution_surface ?? "unknown" : "unknown",
       openUrl: ready ? launch.openUrl : undefined,
+      probeReadOperation: ready ? launch.probeReadOperation : undefined,
       captureScreenshot: ready ? launch.captureScreenshot : undefined,
       close: ready ? launch.close : undefined
     });
@@ -249,6 +265,7 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = false;
+    record.read_operation_user_handoff = false;
     this.viewerControls.recordHandoff(runtime_session_ref, { control_owner: "none" });
     record.facts.facts.push({ key: "session.release", source: "observed", value: owner ?? "unscoped" });
     return snapshot(record.facts);
@@ -282,6 +299,7 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = false;
+    record.read_operation_user_handoff = false;
     record.facts.current_page = { ...record.facts.current_page, status: "unavailable", observed_at: now };
     this.viewerControls.markClosed(runtime_session_ref, now);
     return snapshot(record.facts);
@@ -299,7 +317,7 @@ export class RuntimeSessionStore {
     );
   }
 
-  applyHandoff(runtime_session_ref: string, control: Pick<ControlOwnerFacts, "owner" | "handoff_reason" | "takeover" | "updated_at">): void {
+  applyHandoff(runtime_session_ref: string, control: Pick<ControlOwnerFacts, "owner" | "previous_owner" | "handoff_reason" | "takeover" | "updated_at">): void {
     const record = this.records.get(runtime_session_ref);
     if (!record) return;
     record.facts.control_owner = control.owner;
@@ -311,7 +329,12 @@ export class RuntimeSessionStore {
       updated_at: control.updated_at,
       conflict_error: null
     };
+    // Only the server-owned handoff path calls applyHandoff; create/lock input
+    // must never be treated as proof that a user held this session.
     record.user_held_session = control.owner === "user" && isInteractiveUserViewer(record.facts);
+    record.read_operation_user_handoff = record.read_operation_user_confirmed &&
+      control.previous_owner === "user" &&
+      (control.owner === "agent" || control.owner === "core_task");
     record.facts.facts.push(
       { key: "control.owner", source: "observed", value: control.owner },
       { key: "handoff.reason", source: "observed", value: control.handoff_reason ?? "none" },
@@ -322,6 +345,13 @@ export class RuntimeSessionStore {
   isTrustedUserHeldSession(runtime_session_ref: string): boolean {
     const record = this.records.get(runtime_session_ref);
     return !!record && record.user_held_session && isInteractiveUserViewer(record.facts);
+  }
+
+  markReadOperationUserConfirmed(runtime_session_ref: string): void {
+    const record = this.records.get(runtime_session_ref);
+    if (!record || !record.user_held_session || record.facts.control_owner !== "user") return;
+    record.read_operation_user_confirmed = true;
+    record.read_operation_user_handoff = false;
   }
 
   getValidationRuntimeFacts(runtime_session_ref: string): ValidationRuntimeFacts | null {
@@ -343,6 +373,41 @@ export class RuntimeSessionStore {
   isReadable(runtime_session_ref: string): boolean {
     const lifecycle = this.records.get(runtime_session_ref)?.facts.lifecycle_state;
     return lifecycle === "active" || lifecycle === "idle";
+  }
+
+  async probeReadOperation(
+    runtime_session_ref: string,
+    input: LocalProviderReadProbeInput
+  ): Promise<LocalProviderReadProbeResult> {
+    const record = this.records.get(runtime_session_ref);
+    if (!record) {
+      return {
+        status: "unavailable",
+        failure_class: "provider_probe_unavailable",
+        message: "Runtime Session is missing.",
+        retryable: true
+      };
+    }
+    if (record.execution_surface === "fixture") {
+      return {
+        status: "unavailable",
+        failure_class: "fixture_runtime",
+        message: "Fixture launchers cannot execute allowlisted read operations.",
+        retryable: false
+      };
+    }
+    const probeReadOperation = record.probeReadOperation;
+    if (record.execution_surface !== "local_provider" || !isTrustedLocalProviderReadProbe(probeReadOperation)) {
+      return {
+        status: "unavailable",
+        failure_class: "evidence_refs_missing",
+        message: "The managed local provider does not expose a trusted read-only probe adapter.",
+        retryable: false
+      };
+    }
+    const result = await probeReadOperation(input);
+    if (result.page) this.applyPageFacts(record, input.target_url, result.page);
+    return result;
   }
 
   private findReusableSession(
@@ -378,7 +443,8 @@ export class RuntimeSessionStore {
       updated_at: now,
       conflict_error: null
     };
-    record.user_held_session = owner === "user" && isInteractiveUserViewer(record.facts);
+    record.user_held_session = false;
+    record.read_operation_user_handoff = false;
     this.viewerControls.recordHandoff(record.facts.runtime_session_ref, { control_owner: owner });
     record.facts.facts.push(
       { key: "session.reuse", source: "observed", value: "same_profile_session" },

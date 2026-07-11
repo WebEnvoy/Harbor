@@ -4,7 +4,9 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createFixtureLauncher, HarborRuntime } from "./index.js";
+import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher } from "./index.js";
+import { trustLocalProviderReadProbe, type ReadOperationProbe } from "./read-operation-probe-trust.js";
+import { opaqueRef } from "./refs.js";
 import { startHarborRuntimeServer } from "./server.js";
 
 test("serves readiness and provider facts as JSON", async () => {
@@ -345,6 +347,13 @@ test("records user-confirmed manual authentication for an active managed session
     const untrustedReadback = await getJson(`${first.url}/runtime/identity-environments/identity-env_manual-auth`);
     assert.equal(untrustedReadback.status.login_state, "manual_auth_required");
 
+    const callerOwned = await fetch(`${first.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
+      method: "POST",
+      headers: manualAuthHeaders()
+    });
+    assert.equal(callerOwned.status, 409);
+    assert.equal((await callerOwned.json()).failure_class, "user_confirmation_required");
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
     const response = await fetch(`${first.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
       method: "POST",
       headers: manualAuthHeaders()
@@ -717,6 +726,234 @@ test("does not publish a confirmed login state when identity persistence fails",
   }
 });
 
+test("rejects every fixture-backed allowlisted read operation without leaking protected material", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_read-operation-fixture",
+      execution_identity_ref: "execution-identity_read-operation-fixture",
+      profile_ref: "profile_read-operation-fixture",
+      profile_storage_ref: "profile-storage_read-operation-fixture",
+      site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com", display_name: "小红书" },
+      login_state: "logged_in",
+      storage_state: "present"
+    });
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-fixture",
+      url: "https://www.xiaohongshu.com/explore",
+      control_owner: "user"
+    });
+    assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref).status, "unavailable");
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
+
+    const invalid = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      operation_mode: "write"
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.body.failure_class, "invalid_request");
+
+    const crossOrigin = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      query: "AI tools",
+      url: "https://attacker.example/read"
+    });
+    assert.equal(crossOrigin.status, 400);
+    assert.equal(crossOrigin.body.failure_class, "target_origin_not_allowed");
+
+    const fixture = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      query: "AI tools"
+    });
+    assert.equal(fixture.status, 409);
+    assert.equal(fixture.body.status, "unavailable");
+    assert.equal(fixture.body.failure_class, "fixture_runtime");
+    const publicJson = JSON.stringify(fixture.body);
+    assert.equal(publicJson.includes("profile-storage_read-operation-fixture"), false);
+    assert.equal(publicJson.includes("Cookie"), false);
+    assert.equal(publicJson.includes("token"), false);
+    assert.equal(publicJson.includes("webSocketDebuggerUrl"), false);
+  } finally {
+    await running.close();
+  }
+});
+
+test("blocks an allowlisted read operation before provider execution when the managed identity needs login", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_read-operation-login",
+      execution_identity_ref: "execution-identity_read-operation-login",
+      profile_ref: "profile_read-operation-login",
+      profile_storage_ref: "profile-storage_read-operation-login",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "manual_auth_required",
+      storage_state: "present"
+    });
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-login",
+      url: "https://www.zhipin.com/",
+      control_owner: "agent"
+    });
+    const blocked = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.body.failure_class, "not_logged_in");
+  } finally {
+    await running.close();
+  }
+});
+
+test("rejects an injected local-provider probe rather than minting a completed read operation", async () => {
+  const runtime = new HarborRuntime(successfulBossReadLauncher);
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_read-operation-success",
+      execution_identity_ref: "execution-identity_read-operation-success",
+      profile_ref: "profile_read-operation-success",
+      profile_storage_ref: "profile-storage_read-operation-success",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "logged_in",
+      storage_state: "present"
+    });
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-success",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "user"
+    });
+    assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref).status, "unavailable");
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
+    const response = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(response.status, 409);
+    assert.equal(response.body.status, "unavailable");
+    assert.equal(response.body.failure_class, "evidence_refs_missing");
+    assert.equal(successfulBossProbeCalls, 0);
+  } finally {
+    await running.close();
+  }
+});
+
+test("fails closed when session control is released while a trusted read probe is pending", async () => {
+  const deferredProbe: { finish?: () => void } = {};
+  let markProbeStarted!: () => void;
+  const probeStarted = new Promise<void>((resolve) => { markProbeStarted = resolve; });
+  const probe = trustLocalProviderReadProbe((input) => new Promise((resolve) => {
+    markProbeStarted();
+    deferredProbe.finish = () => resolve(completedBossReadProbe(input));
+  }));
+  const runtime = new HarborRuntime(createBossReadLauncher(probe));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_read-operation-race",
+      execution_identity_ref: "execution-identity_read-operation-race",
+      profile_ref: "profile_read-operation-race",
+      profile_storage_ref: "profile-storage_read-operation-race",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "logged_in",
+      storage_state: "present"
+    });
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-race",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "user"
+    });
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
+
+    const pendingRead = postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    await probeStarted;
+    runtime.releaseSession(session.runtime_session_ref, { control_owner: "agent" });
+    assert.ok(deferredProbe.finish);
+    deferredProbe.finish();
+
+    const response = await pendingRead;
+    assert.equal(response.status, 409);
+    assert.equal(response.body.failure_class, "session_user_controlled");
+  } finally {
+    await running.close();
+  }
+});
+
+test("fails closed before probing when PATCH login state or release lacks a confirmed held controller", async () => {
+  successfulBossProbeCalls = 0;
+  const runtime = new HarborRuntime(successfulBossReadLauncher);
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_read-operation-bypass",
+      execution_identity_ref: "execution-identity_read-operation-bypass",
+      profile_ref: "profile_read-operation-bypass",
+      profile_storage_ref: "profile-storage_read-operation-bypass",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "manual_auth_required",
+      storage_state: "present"
+    });
+    const patchedSession = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-bypass",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "agent"
+    });
+    const patched = await patchJson(`${running.url}/runtime/identity-environments/identity-env_read-operation-bypass`, {
+      login_state: "logged_in",
+      manual_authentication_state: "completed"
+    });
+    assert.equal(patched.status.authentication_provenance, "unknown");
+    const patchedRead = await postReadOperation(`${running.url}/runtime/sessions/${patchedSession.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(patchedRead.status, 409);
+    assert.equal(patchedRead.body.failure_class, "not_logged_in");
+
+    const confirmedSession = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-bypass",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "user",
+      reuse_existing: false
+    });
+    assert.equal(runtime.completeManualAuthentication(confirmedSession.runtime_session_ref).status, "unavailable");
+    runtime.recordHandoff(confirmedSession.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    assert.ok(runtime.completeManualAuthentication(confirmedSession.runtime_session_ref));
+    runtime.recordHandoff(confirmedSession.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
+    const released = await postJson(`${running.url}/runtime/sessions/${confirmedSession.runtime_session_ref}/release`, {});
+    assert.equal(released.control_owner, "none");
+    const releasedRead = await postReadOperation(`${running.url}/runtime/sessions/${confirmedSession.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(releasedRead.status, 409);
+    assert.equal(releasedRead.body.failure_class, "session_user_controlled");
+    assert.equal(successfulBossProbeCalls, 0);
+  } finally {
+    await running.close();
+  }
+});
+
 test("returns JSON errors for bad routes and bad methods", async () => {
   const running = await startHarborRuntimeServer({ port: 0, runtime: new HarborRuntime(createFixtureLauncher("ready")) });
   try {
@@ -732,6 +969,80 @@ test("returns JSON errors for bad routes and bad methods", async () => {
   }
 });
 
+let successfulBossProbeCalls = 0;
+
+const successfulBossReadLauncher = createBossReadLauncher(async (probe) => {
+  successfulBossProbeCalls += 1;
+  if (probe.operation_id === "boss_job_search") return completedBossReadProbe(probe);
+  return {
+    status: "unavailable",
+    failure_class: "provider_probe_unavailable",
+    message: "The local test provider only exposes the BOSS read probe.",
+    retryable: false
+  };
+});
+
+function createBossReadLauncher(probeReadOperation: ReadOperationProbe): LocalProviderLauncher {
+  return async (input) => ({
+  status: "ready",
+  execution_surface: "local_provider",
+  cdp_ref: "cdp_test-local-read-provider",
+  viewer_entry: {
+    availability: "available",
+    access_mode: "interactive",
+    transport: "local_window",
+    input_capabilities: ["keyboard_mouse"]
+  },
+  page: localReadPage(input.url),
+  facts: [],
+  openUrl: async (url) => localReadPage(url),
+  probeReadOperation,
+  captureScreenshot: async () => ({
+    screenshot_ref: "screenshot_test-local-read-provider",
+    mime_type: "image/png",
+    byte_length: 0,
+    sha256: "0".repeat(64),
+    captured_at: "2026-07-11T00:00:00.000Z",
+    facts: []
+  }),
+  close: async () => {}
+  });
+}
+
+function completedBossReadProbe(probe: Parameters<ReadOperationProbe>[0]): Awaited<ReturnType<ReadOperationProbe>> {
+  const source = { kind: "network_summary", ref: opaqueRef("source") };
+  return {
+    status: "completed",
+    observed_at: "2026-07-11T00:00:00.000Z",
+    observed_origin: "https://www.zhipin.com",
+    page: localReadPage(probe.target_url),
+    source_refs: [source],
+    evidence_ref_kinds: [
+      { kind: "snapshot_ref", ref: opaqueRef("evidence") },
+      { kind: "network_summary_ref", ref: opaqueRef("evidence") }
+    ],
+    public_summary_source_ref: source.ref,
+    public_summary: {
+      schema_version: "harbor-read-operation-public-summary/v0",
+      operation_id: "boss_job_search",
+      result_kind: "boss_job_search_surface",
+      surface: "web_geek_jobs",
+      result_state: "operation_read_response_observed",
+      response_status: 200,
+      source_signals: ["boss_wapi_zpgeek_read_network"]
+    }
+  };
+}
+
+function localReadPage(url: string) {
+  return {
+    current_url: url,
+    title: "Local read provider",
+    status: "ready" as const,
+    facts: []
+  };
+}
+
 async function getJson(url: string): Promise<any> {
   const response = await fetch(url);
   assert.equal(response.status, 200);
@@ -746,6 +1057,15 @@ async function postJson(url: string, body: unknown): Promise<any> {
   });
   assert.equal(response.status === 200 || response.status === 201, true);
   return response.json();
+}
+
+async function postReadOperation(url: string, body: unknown): Promise<{ status: number; body: any }> {
+  const response = await fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" }
+  });
+  return { status: response.status, body: await response.json() };
 }
 
 async function patchJson(url: string, body: unknown): Promise<any> {

@@ -1,0 +1,51 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-245",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Code review at current head: independent P1 findings were repaired. The concrete probe registers the exact response observer before navigation, rechecks session authority after the awaited probe, rejects forged probes, and closes its temporary target. Full tests pass; no sensitive material or external write behavior is introduced.",
+  "reviewer": "codex-main-controller",
+  "authored_at": "2026-07-11T08:42:18Z",
+  "reviewed_head": "d126938544088e9caf15fc7dbf8a19b44f22fcd2",
+  "reviewed_validation_summary": "2026-07-11 on `work/harbor-245-allowlisted-read-operations`: `pnpm typecheck`, `pnpm build`, focused read-operation/server tests (25 passed), full `pnpm test` (56 passed), `pnpm smoke:runtime:api`, and `git diff --check` passed. The repaired path observes only the exact allowlisted response from before navigation, rechecks session authority after the awaited probe, and closes its temporary CDP target. Fixture smoke used no real account, profile, or production page; merged-head live evidence remains required before issue closeout.",
+  "reviewed_validation_summary_hash": "034f4d203a528f18dcb414561b50d6a64b1cba90cd72bc753902fcb665362c78",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-245.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": [],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-245.md",
+    "recovery_entry": ".loom/progress/HARBOR-245.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "budget_risk": {
+      "schema_version": "loom-execution-budget-risk/v1",
+      "status": "not_applicable",
+      "enforcement": "advisory",
+      "highest_risk": "none",
+      "risk_dimensions": [],
+      "summary": "execution budget is not_applicable; budget risk remains advisory and non-blocking",
+      "budget_summary": "execution budget is not collected for this invocation.",
+      "adapter_evidence_locator": "",
+      "provenance": {
+        "source": "github_host"
+      }
+    },
+    "engine_adapter": null,
+    "engine_evidence": null,
+    "normalized_findings": null,
+    "suite_evidence_validation": "not_applicable",
+    "suite_carrier_validation": "not_applicable",
+    "suite_evidence_map": null,
+    "suite_consistency_analysis": null,
+    "suite_task_carriers": [],
+    "suite_evidence_consumed_contracts": [],
+    "suite_carrier_consumed_contracts": []
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Authored implementation review approved the current head for merge checkpoint consumption."
+  }
+}

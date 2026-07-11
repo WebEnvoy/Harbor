@@ -10,18 +10,22 @@ import {
   type IdentityEnvironmentProviderBinding
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
+import { trustLocalProviderReadProbe } from "./read-operation-probe-trust.js";
 import type {
   LocalProviderLaunchInput,
   LocalProviderLauncher,
   LocalProviderLaunchResult,
   LocalProviderPageFacts,
+  LocalProviderReadProbeInput,
+  LocalProviderReadProbeResult,
+  LocalProviderReadProbePublicSummary,
   LocalProviderScreenshotFacts,
   RuntimeErrorCode,
   RuntimeErrorFact,
   RuntimeFact
 } from "./runtime-session-types.js";
 
-type CdpPageTarget = { type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
+type CdpPageTarget = { id?: string; type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
 
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
@@ -50,6 +54,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     const evidence_ref = opaqueRef("validation");
     return {
       status: "ready",
+      execution_surface: "local_provider",
       cdp_ref: opaqueRef("cdp"),
       viewer_entry: viewerEntry(input.headless),
       page,
@@ -65,6 +70,11 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         currentUrl = nextPage.current_url ?? url;
         return nextPage;
       },
+      probeReadOperation: trustLocalProviderReadProbe(async (probe) => {
+        const result = await probeProviderReadOperation(port, probe);
+        if (result.page?.current_url) currentUrl = result.page.current_url;
+        return result;
+      }),
       captureScreenshot: () => captureProviderScreenshot(port, currentUrl),
       close: () => closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent)
     };
@@ -89,6 +99,7 @@ export function createFixtureLauncher(status: "ready" | "unavailable" | "profile
     const page = readyPage(input.url, `Fixture page for ${input.url}`);
     return {
       status: "ready",
+      execution_surface: "fixture",
       cdp_ref: opaqueRef("cdp"),
       viewer_entry: viewerEntry(input.headless),
       page,
@@ -258,6 +269,245 @@ async function openProviderUrl(port: string, url: string): Promise<LocalProvider
   }
 }
 
+async function probeProviderReadOperation(port: string, input: LocalProviderReadProbeInput): Promise<LocalProviderReadProbeResult> {
+  try {
+    const page = await createBlankProviderPage(port);
+    if (!page.id || !page.webSocketDebuggerUrl) throw new Error("Read-operation page has no target id or CDP websocket.");
+    const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
+      await client.send("Page.enable");
+      await client.send("Runtime.enable");
+      await client.send("Network.enable");
+      await client.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
+      let blockedRedirect = false;
+      const stopIntercepting = client.on("Fetch.requestPaused", (event) => {
+        const requestId = typeof event.requestId === "string" ? event.requestId : "";
+        const resourceType = event.resourceType;
+        const request = event.request as { url?: unknown } | undefined;
+        const url = typeof request?.url === "string" ? request.url : "";
+        if (!requestId) return;
+        if (shouldBlockReadOperationDocumentNavigation(resourceType, url, input.expected_origin)) {
+          blockedRedirect = true;
+          void client.send("Fetch.failRequest", { requestId, errorReason: "Aborted" }).catch(() => undefined);
+          return;
+        }
+        void client.send("Fetch.continueRequest", { requestId }).catch(() => undefined);
+      });
+      let operationResponse: { status: number; url: string } | null = null;
+      const stopObservingNetwork = client.on("Network.responseReceived", (event) => {
+        const response = event.response as { url?: unknown; status?: unknown } | undefined;
+        const status = typeof response?.status === "number" ? response.status : null;
+        if (
+          status !== null &&
+          status >= 200 &&
+          status < 300 &&
+          isOperationReadNetworkUrl(input, response?.url)
+        ) operationResponse = { status, url: response!.url as string };
+      });
+      await client.send("Page.navigate", { url: input.target_url });
+      for (let attempt = 0; attempt < 20; attempt++) {
+        if (blockedRedirect) {
+          stopObservingNetwork();
+          stopIntercepting();
+          return { blocked_redirect: true };
+        }
+        const evaluated = await client.send("Runtime.evaluate", {
+          expression: readProbeExpression(input.site_id),
+          returnByValue: true
+        });
+        const value = (evaluated.result as { value?: {
+          origin?: string;
+          pathname?: string;
+          ready?: boolean;
+          rendered_surface?: boolean;
+          login_like?: boolean;
+          challenge_like?: boolean;
+          pinia_ready?: boolean;
+        } } | undefined)?.value;
+        const observedResponse = operationResponse as { status: number; url: string } | null;
+        if (value?.origin && value.ready && observedResponse !== null) {
+          stopObservingNetwork();
+          stopIntercepting();
+          const validation = validateReadOperationProbe(input, { ...value, operation_response_status: observedResponse.status, operation_response_url: observedResponse.url });
+          if (validation.status === "unavailable") return { validation };
+          const screenshot = await captureProbeScreenshot(client);
+          return screenshot ? {
+            validation,
+            screenshot_ref: screenshot.screenshot_ref
+          } : { evidence_missing: true };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      stopObservingNetwork();
+      stopIntercepting();
+      return null;
+    }).finally(() => closeProviderPage(port, page.id!));
+    const pageFacts = readOperationPageFacts(input.target_url);
+    if (!observation) return probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts);
+    if (observation.blocked_redirect) return probeUnavailable("origin_drift", "A cross-origin document redirect was blocked before navigation.", false, pageFacts);
+    if (observation.evidence_missing) return probeUnavailable("evidence_refs_missing", "The local provider could not capture required refs-only evidence.", true, pageFacts);
+    const validation = observation.validation;
+    if (!validation || validation.status === "unavailable") {
+      return probeUnavailable(validation?.failure_class ?? "page_not_ready", validation?.message ?? "The read-operation page did not reach a ready state.", validation?.retryable ?? true, pageFacts);
+    }
+    const source_refs = validation.source_kinds.map((kind) => ({ kind, ref: opaqueRef("source") }));
+    const evidence_ref_kinds = [
+      { kind: "snapshot_ref", ref: observation.screenshot_ref! },
+      ...(input.operation_id === "boss_job_search" ? [{ kind: "network_summary_ref", ref: opaqueRef("evidence") }] : [])
+    ];
+    return {
+      status: "completed",
+      observed_at: new Date().toISOString(),
+      observed_origin: input.expected_origin,
+      page: pageFacts,
+      source_refs,
+      evidence_ref_kinds,
+      public_summary_source_ref: source_refs.find((source) => source.kind === "network_summary")?.ref ?? source_refs[0]!.ref,
+      public_summary: validation.public_summary
+    };
+  } catch (cause) {
+    return probeUnavailable(
+      "network_resource_unavailable",
+      cause instanceof Error ? cause.message : "The provider read-only probe failed.",
+      true
+    );
+  }
+}
+
+function probeUnavailable(
+  failure_class: Extract<LocalProviderReadProbeResult, { status: "unavailable" }>["failure_class"],
+  message: string,
+  retryable: boolean,
+  page?: LocalProviderPageFacts
+): LocalProviderReadProbeResult {
+  return { status: "unavailable", failure_class, message, retryable, page };
+}
+
+interface ReadProbeObservation {
+  origin?: string;
+  pathname?: string;
+  ready?: boolean;
+  rendered_surface?: boolean;
+  login_like?: boolean;
+  challenge_like?: boolean;
+  pinia_ready?: boolean;
+  operation_response_status?: number;
+  operation_response_url?: string;
+  blocked_redirect?: boolean;
+  evidence_missing?: boolean;
+  screenshot_ref?: string;
+  validation?: ReturnType<typeof validateReadOperationProbe>;
+}
+
+async function createBlankProviderPage(port: string): Promise<CdpPageTarget> {
+  const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent("about:blank")}`, { method: "PUT" });
+  if (!response.ok) throw new Error(`CDP read-operation target creation failed: ${response.status}`);
+  return await response.json() as CdpPageTarget;
+}
+
+async function closeProviderPage(port: string, targetId: string): Promise<void> {
+  const response = await fetch(`http://127.0.0.1:${port}/json/close/${encodeURIComponent(targetId)}`);
+  if (!response.ok) throw new Error(`CDP read-operation target cleanup failed: ${response.status}`);
+}
+
+export function shouldBlockReadOperationDocumentNavigation(resourceType: unknown, value: string, expectedOrigin: string): boolean {
+  if (resourceType !== "Document") return false;
+  try {
+    return new URL(value).origin !== expectedOrigin;
+  } catch {
+    return true;
+  }
+}
+
+async function captureProbeScreenshot(client: CdpClient): Promise<LocalProviderScreenshotFacts | null> {
+  try {
+    const result = await client.send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
+    const data = typeof result.data === "string" ? result.data : "";
+    return data ? screenshotFacts(Buffer.from(data, "base64")) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function validateReadOperationProbe(
+  input: LocalProviderReadProbeInput,
+  observation: ReadProbeObservation
+):
+  | { status: "completed"; source_kinds: string[]; public_summary: LocalProviderReadProbePublicSummary }
+  | { status: "unavailable"; failure_class: Extract<LocalProviderReadProbeResult, { status: "unavailable" }>["failure_class"]; message: string; retryable: boolean } {
+  if (observation.origin !== input.expected_origin) return { status: "unavailable", failure_class: "origin_drift", message: "The read-operation page left the pinned allowed origin.", retryable: false };
+  if (observation.challenge_like) return { status: "unavailable", failure_class: "safety_challenge", message: "The read-operation page shows a verification or safety challenge.", retryable: false };
+  if (observation.login_like) return { status: "unavailable", failure_class: "not_logged_in", message: "The read-operation page requires a manual login refresh.", retryable: true };
+  if (!observation.ready) return { status: "unavailable", failure_class: "page_not_ready", message: "The read-operation page did not reach the expected operation surface.", retryable: true };
+  if (input.operation_id === "xhs_search_notes") {
+    const xhsSurface = observation.pathname === "/search_result";
+    if (!xhsSurface || !observation.pinia_ready || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
+      return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search/note, Pinia, or operation-specific read signal is unavailable.", retryable: true };
+    }
+    return {
+      status: "completed",
+      source_kinds: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"],
+      public_summary: {
+        schema_version: "harbor-read-operation-public-summary/v0",
+        operation_id: "xhs_search_notes",
+        result_kind: "xiaohongshu_search_notes_surface",
+        surface: "search_result",
+        result_state: "operation_read_response_observed",
+        response_status: observation.operation_response_status,
+        source_signals: ["pinia_store", "xhs_search_read_network"]
+      }
+    };
+  }
+  const bossJobsSurface = observation.pathname === "/web/geek/jobs";
+  if (!bossJobsSurface || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
+    return { status: "unavailable", failure_class: "page_not_ready", message: "BOSS jobs surface or required WAPI read signal is unavailable.", retryable: true };
+  }
+  return {
+    status: "completed",
+    source_kinds: ["network_summary"],
+    public_summary: {
+      schema_version: "harbor-read-operation-public-summary/v0",
+      operation_id: "boss_job_search",
+      result_kind: "boss_job_search_surface",
+      surface: "web_geek_jobs",
+      result_state: "operation_read_response_observed",
+      response_status: observation.operation_response_status,
+      source_signals: ["boss_wapi_zpgeek_read_network"]
+    }
+  };
+}
+
+function isSuccessfulReadResponse(status: unknown): status is number {
+  return typeof status === "number" && Number.isInteger(status) && status >= 200 && status < 300;
+}
+
+function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"]): string {
+  return "(() => ({ origin: location.origin, pathname: location.pathname, ready: true, pinia_ready: Boolean(window.__PINIA__ || window.__pinia) }))()";
+}
+
+function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const expected = input.operation_id === "xhs_search_notes"
+    ? { pathname: "/api/sns/web/v1/search/notes", query: "keyword" }
+    : { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
+  const canonical = new URL(expected.pathname, input.expected_origin);
+  canonical.searchParams.set(expected.query, input.query);
+  return value === canonical.href;
+}
+
+function readOperationPageFacts(targetUrl: string): LocalProviderPageFacts {
+  const evidence_ref = opaqueRef("validation");
+  return {
+    current_url: targetUrl,
+    title: null,
+    status: "ready",
+    facts: [
+      { key: "page.current_url", source: "observed", value: targetUrl, evidence_ref },
+      { key: "page.title", source: "observed", value: "not_read", evidence_ref },
+      { key: "page.status", source: "validation_evidence", value: "operation_probe_ready", evidence_ref }
+    ]
+  };
+}
+
 async function readPageFacts(port: string, requested_url: string): Promise<LocalProviderPageFacts> {
   try {
     const page = selectPage(await pageTargets(port), requested_url);
@@ -347,29 +597,54 @@ async function withCdp<T>(webSocketUrl: string, callback: (client: CdpClient) =>
 
 class CdpClient {
   private nextId = 1;
+  private readonly pending = new Map<number, {
+    resolve: (result: Record<string, unknown>) => void;
+    reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  private readonly listeners = new Map<string, Set<(params: Record<string, unknown>) => void>>();
 
-  constructor(private readonly ws: WebSocket) {}
+  constructor(private readonly ws: WebSocket) {
+    ws.addEventListener("message", this.handleMessage);
+  }
+
+  on(method: string, listener: (params: Record<string, unknown>) => void): () => void {
+    const listeners = this.listeners.get(method) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(method, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) this.listeners.delete(method);
+    };
+  }
 
   send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.ws.removeEventListener("message", onMessage);
+        this.pending.delete(id);
         reject(new Error(`CDP command timed out: ${method}`));
       }, 20000);
-      const onMessage = (event: MessageEvent) => {
-        const text = typeof event.data === "string" ? event.data : Buffer.from(event.data as ArrayBuffer).toString("utf8");
-        const payload = JSON.parse(text) as { id?: number; result?: Record<string, unknown>; error?: { message?: string } };
-        if (payload.id !== id) return;
-        clearTimeout(timer);
-        this.ws.removeEventListener("message", onMessage);
-        if (payload.error) reject(new Error(payload.error.message ?? `CDP command failed: ${method}`));
-        else resolve(payload.result ?? {});
-      };
-      this.ws.addEventListener("message", onMessage);
+      this.pending.set(id, { resolve, reject, timer });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
+
+  private readonly handleMessage = (event: MessageEvent) => {
+    const text = typeof event.data === "string" ? event.data : Buffer.from(event.data as ArrayBuffer).toString("utf8");
+    const payload = JSON.parse(text) as { id?: number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown>; error?: { message?: string } };
+    if (payload.id !== undefined) {
+      const pending = this.pending.get(payload.id);
+      if (!pending) return;
+      this.pending.delete(payload.id);
+      clearTimeout(pending.timer);
+      if (payload.error) pending.reject(new Error(payload.error.message ?? "CDP command failed."));
+      else pending.resolve(payload.result ?? {});
+      return;
+    }
+    if (!payload.method) return;
+    for (const listener of this.listeners.get(payload.method) ?? []) listener(payload.params ?? {});
+  };
 }
 
 function fixtureScreenshot(seed: string): LocalProviderScreenshotFacts {
