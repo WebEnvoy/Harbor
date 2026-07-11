@@ -168,6 +168,7 @@ export interface LocalProviderReadProbeInput {
   site_id: AllowlistedReadOperationSite;
   operation_id: AllowlistedReadOperationId;
   query: string;
+  city_code?: string;
   target_url: string;
   expected_origin: string;
 }
@@ -179,6 +180,10 @@ export interface LocalProviderReadProbePublicSummary {
   surface: "search_result" | "web_geek_jobs";
   result_state: "operation_read_response_observed";
   response_status: number;
+  query?: string;
+  city_code?: string;
+  business_code?: number;
+  job_count?: number;
   source_signals: readonly string[];
 }
 
@@ -200,7 +205,7 @@ export type LocalProviderReadProbeResult =
     }
   | {
       status: "unavailable";
-      failure_class: "origin_drift" | "not_logged_in" | "safety_challenge" | "page_not_ready" | "network_resource_unavailable" | "evidence_refs_missing" | "fixture_runtime" | "provider_probe_unavailable";
+      failure_class: "origin_drift" | "not_logged_in" | "safety_challenge" | "page_not_ready" | "network_resource_unavailable" | "evidence_refs_missing" | "fixture_runtime" | "provider_probe_unavailable" | "permission_denied" | "city_unresolved" | "empty_result" | "site_changed";
       message: string;
       retryable: boolean;
       page?: LocalProviderPageFacts;

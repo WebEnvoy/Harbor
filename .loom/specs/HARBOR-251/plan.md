@@ -8,7 +8,7 @@
 
 ## Acceptance Mapping
 
-- AC-001 -> automated: `read-operation.test.ts` canonical BOSS target assertion.
-- AC-002 -> automated: `read-operation.test.ts` exact path/origin/WAPI rejection assertions.
-- AC-003 -> automated: `server.test.ts` completed response privacy and refs-only assertions.
+- AC-001 -> automated: `read-operation.test.ts` canonical BOSS query/city target and city validation assertions.
+- AC-002 -> automated: `read-operation.test.ts` exact path/origin/page/WAPI, cross-query/city, login, challenge, and SPA readiness assertions.
+- AC-003 -> automated: `read-operation.test.ts` WAPI business-code/job-list reduction and network-summary binding assertions plus `server.test.ts` refs-only runtime assertions.
 - AC-004 -> structural and full regression: scoped diff review plus `pnpm test`.

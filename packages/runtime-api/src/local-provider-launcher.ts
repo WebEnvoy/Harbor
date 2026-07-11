@@ -293,17 +293,18 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         void client.send("Fetch.continueRequest", { requestId }).catch(() => undefined);
       });
       let navigationStarted = false;
-      let operationResponse: { status: number; url: string } | null = null;
+      let operationResponse: { requestId: string; status: number; url: string } | null = null;
       const stopObservingNetwork = client.on("Network.responseReceived", (event) => {
         const response = event.response as { url?: unknown; status?: unknown } | undefined;
         const status = typeof response?.status === "number" ? response.status : null;
+        const requestId = typeof event.requestId === "string" ? event.requestId : "";
         if (
           navigationStarted &&
           status !== null &&
           status >= 200 &&
           status < 300 &&
-          isOperationReadNetworkUrl(input, response?.url)
-        ) operationResponse = { status, url: response!.url as string };
+          requestId && isOperationReadNetworkUrl(input, response?.url)
+        ) operationResponse = { requestId, status, url: response!.url as string };
       });
       navigationStarted = true;
       await client.send("Page.navigate", { url: input.target_url });
@@ -314,7 +315,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           return { blocked_redirect: true };
         }
         const evaluated = await client.send("Runtime.evaluate", {
-          expression: readProbeExpression(input.site_id, input.query),
+          expression: readProbeExpression(input.site_id, input.query, input.city_code),
           returnByValue: true
         });
         const value = (evaluated.result as { value?: {
@@ -327,11 +328,24 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           challenge_like?: boolean;
           pinia_ready?: boolean;
         } } | undefined)?.value;
-        const observedResponse = operationResponse as { status: number; url: string } | null;
+        const observedResponse = operationResponse as { requestId: string; status: number; url: string } | null;
+        if (value?.origin && (value.challenge_like || value.login_like)) {
+          stopObservingNetwork();
+          stopIntercepting();
+          return { validation: validateReadOperationProbe(input, value) };
+        }
         if (value?.origin && value.ready && observedResponse !== null) {
           stopObservingNetwork();
           stopIntercepting();
-          const validation = validateReadOperationProbe(input, { ...value, operation_response_status: observedResponse.status, operation_response_url: observedResponse.url });
+          const bossResponse = input.operation_id === "boss_job_search"
+            ? await readBossJobSearchResponseSummary(client, observedResponse.requestId)
+            : null;
+          const validation = validateReadOperationProbe(input, {
+            ...value,
+            operation_response_status: observedResponse.status,
+            operation_response_url: observedResponse.url,
+            boss_response: bossResponse
+          });
           if (validation.status === "unavailable") return { validation };
           const screenshot = await captureProbeScreenshot(client);
           return screenshot ? {
@@ -397,6 +411,7 @@ interface ReadProbeObservation {
   pinia_ready?: boolean;
   operation_response_status?: number;
   operation_response_url?: string;
+  boss_response?: BossJobSearchResponseSummary | BossJobSearchResponseFailure | null;
   blocked_redirect?: boolean;
   evidence_missing?: boolean;
   screenshot_ref?: string;
@@ -463,9 +478,14 @@ export function validateReadOperationProbe(
     };
   }
   const bossJobsSurface = observation.pathname === "/web/geek/job";
-  if (!bossJobsSurface || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
+  if (!hasExactPublicQuery(observation.search, "city", input.city_code ?? "")) {
+    return { status: "unavailable", failure_class: "city_unresolved", message: "BOSS search city does not match the admitted city code.", retryable: true };
+  }
+  if (!bossJobsSurface || !hasExactBossSearch(observation.search, input.query, input.city_code ?? "") || !observation.rendered_surface || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
     return { status: "unavailable", failure_class: "page_not_ready", message: "BOSS jobs surface or required WAPI read signal is unavailable.", retryable: true };
   }
+  if (!observation.boss_response) return { status: "unavailable", failure_class: "site_changed", message: "BOSS WAPI response summary is unavailable.", retryable: true };
+  if (observation.boss_response.status === "unavailable") return observation.boss_response;
   return {
     status: "completed",
     source_kinds: ["network_summary"],
@@ -476,6 +496,10 @@ export function validateReadOperationProbe(
       surface: "web_geek_jobs",
       result_state: "operation_read_response_observed",
       response_status: observation.operation_response_status,
+      query: input.query,
+      city_code: input.city_code,
+      business_code: observation.boss_response.business_code,
+      job_count: observation.boss_response.job_count,
       source_signals: ["boss_wapi_zpgeek_read_network"]
     }
   };
@@ -485,7 +509,22 @@ function isSuccessfulReadResponse(status: unknown): status is number {
   return typeof status === "number" && Number.isInteger(status) && status >= 200 && status < 300;
 }
 
-export function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"], query: string): string {
+export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id"], query: string, cityCode?: string): string {
+  if (siteId === "boss") return `(() => {
+    const text = (document.body?.innerText || "").slice(0, 2000);
+    const challenge = /验证码|安全验证|访问异常|captcha|verify/i.test(text) || Boolean(document.querySelector('[class*="captcha"], [class*="verify"]'));
+    const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/web/user/') || Boolean(document.querySelector('.login-dialog, [class*="login"] form'));
+    const app = document.querySelector('#wrap, #app, .job-search-wrapper');
+    return {
+      origin: location.origin,
+      pathname: location.pathname,
+      search: location.search,
+      ready: document.readyState !== 'loading' && Boolean(app),
+      rendered_surface: Boolean(document.querySelector('.job-list-box, .job-card-wrapper, [ka^="search_list_"]')),
+      login_like: login,
+      challenge_like: challenge
+    };
+  })()`;
   return `(() => {
     const expectedQuery = ${JSON.stringify(query)};
     const pinia = window.__PINIA__ || window.__pinia || document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$pinia;
@@ -507,6 +546,14 @@ function hasExactPublicQuery(search: unknown, key: string, expected: string): bo
   return values.length === 1 && values[0] === expected;
 }
 
+function hasExactBossSearch(search: unknown, query: string, cityCode: string): boolean {
+  if (typeof search !== "string") return false;
+  const params = new URLSearchParams(search);
+  return [...params.keys()].join(",") === "query,city" &&
+    params.getAll("query").length === 1 && params.get("query") === query &&
+    params.getAll("city").length === 1 && params.get("city") === cityCode;
+}
+
 function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: unknown): boolean {
   if (typeof value !== "string") return false;
   if (input.operation_id === "xhs_search_notes") {
@@ -520,7 +567,58 @@ function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: un
   const expected = { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
   const canonical = new URL(expected.pathname, input.expected_origin);
   canonical.searchParams.set(expected.query, input.query);
+  canonical.searchParams.set("city", input.city_code ?? "");
   return value === canonical.href;
+}
+
+interface BossJobSearchResponseSummary {
+  status: "completed";
+  business_code: 0;
+  job_count: number;
+}
+
+type BossJobSearchResponseFailure = {
+  status: "unavailable";
+  failure_class: "permission_denied" | "empty_result" | "site_changed" | "network_resource_unavailable";
+  message: string;
+  retryable: boolean;
+};
+
+const MAX_BOSS_RESPONSE_BYTES = 512 * 1024;
+
+async function readBossJobSearchResponseSummary(client: CdpClient, requestId: string): Promise<BossJobSearchResponseSummary | BossJobSearchResponseFailure> {
+  try {
+    const response = await client.send("Network.getResponseBody", { requestId });
+    const encoded = typeof response.body === "string" ? response.body : "";
+    const bytes = response.base64Encoded === true ? Buffer.from(encoded, "base64") : Buffer.from(encoded, "utf8");
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_BOSS_RESPONSE_BYTES) return bossResponseFailure("network_resource_unavailable", "BOSS WAPI response is empty or exceeds the summary read limit.", true);
+    return summarizeBossJobSearchResponse(bytes.toString("utf8"));
+  } catch {
+    return bossResponseFailure("network_resource_unavailable", "BOSS WAPI response summary could not be read.", true);
+  }
+}
+
+export function summarizeBossJobSearchResponse(body: string): BossJobSearchResponseSummary | BossJobSearchResponseFailure {
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    return bossResponseFailure("site_changed", "BOSS WAPI response is not valid JSON.", true);
+  }
+  if (!isPlainRecord(value) || value.code !== 0) return bossResponseFailure("permission_denied", "BOSS WAPI rejected the read request.", false);
+  const zpData = isPlainRecord(value.zpData) ? value.zpData : null;
+  if (!zpData || !Array.isArray(zpData.jobList)) return bossResponseFailure("site_changed", "BOSS WAPI job list shape is unavailable.", true);
+  const jobCount = zpData.jobList.filter(isPlainRecord).length;
+  if (jobCount === 0) return bossResponseFailure("empty_result", "BOSS WAPI returned no jobs for the bound query and city.", false);
+  return { status: "completed", business_code: 0, job_count: jobCount };
+}
+
+function bossResponseFailure(failure_class: BossJobSearchResponseFailure["failure_class"], message: string, retryable: boolean): BossJobSearchResponseFailure {
+  return { status: "unavailable", failure_class, message, retryable };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readOperationPageFacts(targetUrl: string): LocalProviderPageFacts {

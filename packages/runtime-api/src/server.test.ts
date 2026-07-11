@@ -449,7 +449,8 @@ test("confirms a user-held local provider without a viewer and hands the release
     const admitted = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
-      query: "AI tools"
+      query: "AI tools",
+      city_code: "101010100"
     });
     assert.equal(admitted.body.failure_class, "evidence_refs_missing");
 
@@ -463,7 +464,8 @@ test("confirms a user-held local provider without a viewer and hands the release
     const consumed = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
-      query: "AI tools"
+      query: "AI tools",
+      city_code: "101010100"
     });
     assert.equal(consumed.body.failure_class, "session_user_controlled");
   } finally {
@@ -591,7 +593,7 @@ test("requires the supervisor bearer for Core control routes", async () => {
     const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, request);
     for (const [path, body] of [
       [`/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "core_task" }],
-      [`/runtime/sessions/${session.runtime_session_ref}/read-operations`, { site_id: "boss", operation_id: "boss_job_search", query: "AI" }]
+      [`/runtime/sessions/${session.runtime_session_ref}/read-operations`, { site_id: "boss", operation_id: "boss_job_search", query: "AI", city_code: "101010100" }]
     ] as const) {
       const response = await fetch(`${running.url}${path}`, {
         method: "POST",
@@ -947,7 +949,8 @@ test("blocks an allowlisted read operation before provider execution when the ma
     const blocked = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
-      query: "AI tools"
+      query: "AI tools",
+      city_code: "101010100"
     });
     assert.equal(blocked.status, 409);
     assert.equal(blocked.body.failure_class, "not_logged_in");
@@ -981,7 +984,8 @@ test("rejects an injected local-provider probe rather than minting a completed r
     const response = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
-      query: "AI tools"
+      query: "AI tools",
+      city_code: "101010100"
     });
     assert.equal(response.status, 409);
     assert.equal(response.body.status, "unavailable");
@@ -1024,7 +1028,8 @@ test("fails closed when session control is released while a trusted read probe i
     const pendingRead = postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
-      query: "AI tools"
+      query: "AI tools",
+      city_code: "101010100"
     });
     await probeStarted;
     runtime.releaseSession(session.runtime_session_ref, { control_owner: "core_task" });
@@ -1066,7 +1071,8 @@ test("fails closed before probing when PATCH login state or release lacks a conf
     const patchedRead = await postReadOperation(`${running.url}/runtime/sessions/${patchedSession.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
-      query: "AI tools"
+      query: "AI tools",
+      city_code: "101010100"
     });
     assert.equal(patchedRead.status, 409);
     assert.equal(patchedRead.body.failure_class, "not_logged_in");
@@ -1086,7 +1092,8 @@ test("fails closed before probing when PATCH login state or release lacks a conf
     const releasedRead = await postReadOperation(`${running.url}/runtime/sessions/${confirmedSession.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
-      query: "AI tools"
+      query: "AI tools",
+      city_code: "101010100"
     });
     assert.equal(releasedRead.status, 409);
     assert.equal(releasedRead.body.failure_class, "session_user_controlled");
@@ -1171,6 +1178,10 @@ function completedBossReadProbe(probe: Parameters<ReadOperationProbe>[0]): Await
       surface: "web_geek_jobs",
       result_state: "operation_read_response_observed",
       response_status: 200,
+      query: probe.query,
+      city_code: probe.city_code,
+      business_code: 0,
+      job_count: 2,
       source_signals: ["boss_wapi_zpgeek_read_network"]
     }
   };
