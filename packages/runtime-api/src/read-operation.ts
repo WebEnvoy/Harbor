@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { opaqueRef } from "./refs.js";
+import type { DetailReadFailureClass } from "./detail-read-target.js";
 import type { AllowlistedReadOperationId, AllowlistedReadOperationSite, LocalProviderReadProbePublicSummary } from "./runtime-session-types.js";
 
 export const HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA = "harbor-allowlisted-read-operation/v0";
@@ -45,13 +46,15 @@ export type ReadOperationFailureClass =
   | "public_summary_missing"
   | "source_refs_missing"
   | "evidence_refs_missing"
-  | "post_check_missing";
+  | "post_check_missing"
+  | DetailReadFailureClass;
 
 export interface AllowlistedReadOperationRequest {
   site_id: AllowlistedReadOperationSite;
   operation_id: AllowlistedReadOperationId;
-  query: string;
+  query?: string;
   city_code?: string;
+  detail_ref?: string;
   url?: string;
 }
 
@@ -286,14 +289,59 @@ const PINNED_READ_OPERATIONS: readonly PinnedReadOperation[] = [
   }
 ];
 
+// HARBOR-252 freezes this provisional consumer boundary while Lode #268 remains
+// open. It is intentionally separate from the immutable Lode #262 search pin.
+const DETAIL_READ_OPERATIONS: readonly PinnedReadOperation[] = [
+  {
+    site_id: "xiaohongshu",
+    operation_id: "xhs_read_note_detail",
+    package_ref: "lode://site-capability/xiaohongshu/read-note-detail@0.1.0",
+    lock_ref: "lode://lock/site-capability/xiaohongshu/read-note-detail@0.1.0",
+    version: "0.1.0",
+    operation_mode: "read",
+    lifecycle: "proposed",
+    allowed_origin: "https://www.xiaohongshu.com",
+    target_schema: { pathname: "/explore/{opaque}", public_query_parameter: "keyword" },
+    resource_requirement_id: "xiaohongshu.read-note-detail.resources",
+    required_harbor_fact_keys: ["identity.user_logged_in.confirmed", "page.note_detail.ready", "safety.challenge.absent"],
+    failure_mapping_id: "xiaohongshu.read-note-detail.failure-mapping",
+    required_failure_classes: ["not_logged_in", "safety_challenge", "page_not_ready", "site_changed", "empty_result"],
+    required_source_ref_kinds: ["detail_page_summary"],
+    required_evidence_ref_kinds: ["snapshot_ref", "post_check_ref"],
+    post_check_id: "xiaohongshu.read-note-detail.post-check",
+    required_post_check_fields: ["status", "reason", "source_refs", "evidence_refs"]
+  },
+  {
+    site_id: "boss",
+    operation_id: "boss_read_job_detail",
+    package_ref: "lode://site-capability/boss/read-job-detail@0.1.0",
+    lock_ref: "lode://lock/site-capability/boss/read-job-detail@0.1.0",
+    version: "0.1.0",
+    operation_mode: "read",
+    lifecycle: "proposed",
+    allowed_origin: "https://www.zhipin.com",
+    target_schema: { pathname: "/job_detail/{opaque}.html", public_query_parameter: "query" },
+    resource_requirement_id: "boss.read-job-detail.resources",
+    required_harbor_fact_keys: ["identity.boss_geek_logged_in.confirmed", "page.job_detail.ready", "safety.challenge.absent"],
+    failure_mapping_id: "boss.read-job-detail.failure-mapping",
+    required_failure_classes: ["not_logged_in", "safety_challenge", "page_not_ready", "site_changed", "empty_result"],
+    required_source_ref_kinds: ["detail_page_summary"],
+    required_evidence_ref_kinds: ["snapshot_ref", "post_check_ref"],
+    post_check_id: "boss.read-job-detail.post-check",
+    required_post_check_fields: ["status", "reason", "source_refs", "evidence_refs"]
+  }
+];
+
 export function admitAllowlistedReadOperation(input: unknown): AdmittedReadOperation | ReadOperationFailureClass {
-  const pinFailure = validatePinnedAllowlist();
-  if (pinFailure) return pinFailure;
   const request = parseRequest(input);
   if (typeof request === "string") return request;
-  const entry = PINNED_READ_OPERATIONS.find((candidate) => candidate.site_id === request.site_id && candidate.operation_id === request.operation_id);
+  const detailEntry = DETAIL_READ_OPERATIONS.find((candidate) => candidate.site_id === request.site_id && candidate.operation_id === request.operation_id);
+  const pinFailure = detailEntry ? null : validatePinnedAllowlist();
+  if (pinFailure) return pinFailure;
+  const entry = detailEntry ?? PINNED_READ_OPERATIONS.find((candidate) => candidate.site_id === request.site_id && candidate.operation_id === request.operation_id);
   if (!entry) return "operation_not_allowlisted";
   if (entry.operation_mode !== "read" || entry.lifecycle !== "proposed") return "allowlist_pin_invalid";
+  if (detailEntry) return { status: "admitted", request, entry, target_url: "" };
   const target = resolveTargetUrl(request, entry);
   if (typeof target === "string") return target;
   return { status: "admitted", request, entry, target_url: target.target_url };
@@ -508,6 +556,7 @@ function samePublicSummary(left: LocalProviderReadProbePublicSummary, right: Loc
     left.surface === right.surface &&
     left.result_state === right.result_state &&
     left.response_status === right.response_status &&
+    sameStrings(left.detail_refs ?? [], right.detail_refs ?? []) &&
     sameStrings(left.source_signals, right.source_signals);
 }
 
@@ -552,18 +601,21 @@ function isOpaqueRef(value: string): boolean {
 
 function parseRequest(input: unknown): AllowlistedReadOperationRequest | ReadOperationFailureClass {
   if (!isRecord(input)) return "invalid_request";
-  const allowedKeys = new Set(["site_id", "operation_id", "query", "city_code", "url"]);
+  const allowedKeys = new Set(["site_id", "operation_id", "query", "city_code", "detail_ref", "url"]);
   if (Object.keys(input).some((key) => !allowedKeys.has(key))) return "invalid_request";
   if (!isSiteId(input.site_id) || !isOperationId(input.operation_id)) return "invalid_request";
-  if (!isPublicText(input.query) || input.query.length > 256) return "invalid_request";
+  const detail = input.operation_id === "xhs_read_note_detail" || input.operation_id === "boss_read_job_detail";
+  if (detail ? !isPublicText(input.detail_ref) : (!isPublicText(input.query) || input.query.length > 256)) return "invalid_request";
+  if (detail && (input.query !== undefined || input.city_code !== undefined || input.url !== undefined)) return "invalid_request";
   if (input.operation_id === "boss_job_search" && (typeof input.city_code !== "string" || !/^\d{6,32}$/.test(input.city_code))) return "city_unresolved";
   if (input.operation_id !== "boss_job_search" && input.city_code !== undefined) return "invalid_request";
   if (input.url !== undefined && (!isPublicText(input.url) || input.url.length > 2048)) return "invalid_request";
   return {
     site_id: input.site_id,
     operation_id: input.operation_id,
-    query: input.query,
+    query: typeof input.query === "string" ? input.query : undefined,
     city_code: typeof input.city_code === "string" ? input.city_code : undefined,
+    detail_ref: typeof input.detail_ref === "string" ? input.detail_ref : undefined,
     url: input.url
   };
 }
@@ -589,7 +641,7 @@ function resolveTargetUrl(
 
 function deriveTargetUrl(request: AllowlistedReadOperationRequest, entry: PinnedReadOperation): string {
   const url = new URL(entry.target_schema.pathname, entry.allowed_origin);
-  url.searchParams.set(entry.target_schema.public_query_parameter, request.query);
+  url.searchParams.set(entry.target_schema.public_query_parameter, request.query!);
   if (entry.target_schema.public_city_parameter) url.searchParams.set(entry.target_schema.public_city_parameter, request.city_code!);
   return url.toString();
 }
@@ -645,6 +697,14 @@ function isExpectedPublicSummary(entry: PinnedReadOperation, summary: LocalProvi
       summary.surface === "search_result" &&
       sameStrings(summary.source_signals, ["pinia_store", "xhs_search_read_network"]);
   }
+  if (entry.operation_id === "xhs_read_note_detail") {
+    return summary.result_kind === "xiaohongshu_note_detail_surface" && summary.surface === "note_detail" &&
+      sameStrings(summary.source_signals, ["xhs_note_detail_document"]);
+  }
+  if (entry.operation_id === "boss_read_job_detail") {
+    return summary.result_kind === "boss_job_detail_surface" && summary.surface === "job_detail" &&
+      sameStrings(summary.source_signals, ["boss_job_detail_document"]);
+  }
   return summary.result_kind === "boss_job_search_surface" &&
     summary.surface === "web_geek_jobs" &&
     typeof summary.query === "string" && summary.query.length > 0 &&
@@ -690,7 +750,7 @@ function isSiteId(value: unknown): value is AllowlistedReadOperationSite {
 }
 
 function isOperationId(value: unknown): value is AllowlistedReadOperationId {
-  return value === "xhs_search_notes" || value === "boss_job_search";
+  return value === "xhs_search_notes" || value === "boss_job_search" || value === "xhs_read_note_detail" || value === "boss_read_job_detail";
 }
 
 function canonicalJson(value: unknown): string {

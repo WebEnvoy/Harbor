@@ -162,13 +162,14 @@ export interface LocalProviderPageFacts {
 }
 
 export type AllowlistedReadOperationSite = "xiaohongshu" | "boss";
-export type AllowlistedReadOperationId = "xhs_search_notes" | "boss_job_search";
+export type AllowlistedReadOperationId = "xhs_search_notes" | "boss_job_search" | "xhs_read_note_detail" | "boss_read_job_detail";
 
 export interface LocalProviderReadProbeInput {
   site_id: AllowlistedReadOperationSite;
   operation_id: AllowlistedReadOperationId;
-  query: string;
+  query?: string;
   city_code?: string;
+  detail_ref?: string;
   target_url: string;
   expected_origin: string;
 }
@@ -176,15 +177,20 @@ export interface LocalProviderReadProbeInput {
 export interface LocalProviderReadProbePublicSummary {
   schema_version: "harbor-read-operation-public-summary/v0";
   operation_id: AllowlistedReadOperationId;
-  result_kind: "xiaohongshu_search_notes_surface" | "boss_job_search_surface";
-  surface: "search_result" | "web_geek_jobs";
+  result_kind: "xiaohongshu_search_notes_surface" | "boss_job_search_surface" | "xiaohongshu_note_detail_surface" | "boss_job_detail_surface";
+  surface: "search_result" | "web_geek_jobs" | "note_detail" | "job_detail";
   result_state: "operation_read_response_observed";
   response_status: number;
   query?: string;
   city_code?: string;
   business_code?: number;
   job_count?: number;
+  detail_refs?: readonly string[];
   source_signals: readonly string[];
+}
+
+export interface LocalProviderReadProbeDetailTarget {
+  canonical_url: string;
 }
 
 export interface LocalProviderReadProbeRef {
@@ -202,6 +208,7 @@ export type LocalProviderReadProbeResult =
       evidence_ref_kinds: LocalProviderReadProbeRef[];
       public_summary_source_ref: string;
       public_summary: LocalProviderReadProbePublicSummary;
+      detail_targets?: LocalProviderReadProbeDetailTarget[];
     }
   | {
       status: "unavailable";

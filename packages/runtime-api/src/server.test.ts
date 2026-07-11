@@ -1103,6 +1103,86 @@ test("fails closed before probing when PATCH login state or release lacks a conf
   }
 });
 
+test("consumes a BOSS detail ref only once from the same real-search session", async () => {
+  const probe = trustLocalProviderReadProbe(async (input) => {
+    if (input.operation_id === "boss_job_search") return {
+      ...completedBossReadProbe(input),
+      detail_targets: [{ canonical_url: "https://www.zhipin.com/job_detail/AbC_123.html" }]
+    };
+    if (input.operation_id === "boss_read_job_detail") {
+      const source = { kind: "detail_page_summary", ref: opaqueRef("source") };
+      return {
+        status: "completed",
+        observed_at: "2026-07-12T00:00:00.000Z",
+        observed_origin: "https://www.zhipin.com",
+        page: localReadPage(input.target_url),
+        source_refs: [source],
+        evidence_ref_kinds: [{ kind: "snapshot_ref", ref: opaqueRef("evidence") }],
+        public_summary_source_ref: source.ref,
+        public_summary: {
+          schema_version: "harbor-read-operation-public-summary/v0",
+          operation_id: "boss_read_job_detail",
+          result_kind: "boss_job_detail_surface",
+          surface: "job_detail",
+          result_state: "operation_read_response_observed",
+          response_status: 200,
+          source_signals: ["boss_job_detail_document"]
+        }
+      };
+    }
+    throw new Error("Unexpected operation.");
+  });
+  const runtime = new HarborRuntime(createBossReadLauncher(probe));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_boss-detail",
+      execution_identity_ref: "execution-identity_boss-detail",
+      profile_ref: "profile_boss-detail",
+      profile_storage_ref: "profile-storage_boss-detail",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "logged_in",
+      storage_state: "present"
+    });
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_boss-detail",
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "user"
+    });
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "core_task", handoff_reason: "user_requested" });
+
+    const search = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_job_search", query: "AI", city_code: "101010100"
+    });
+    assert.equal(search.status, 201);
+    const [detailRef] = search.body.public_summary.detail_refs;
+    assert.match(detailRef, /^detail_/);
+    assert.equal(JSON.stringify(search.body).includes("AbC_123"), false);
+
+    const detail = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: detailRef
+    });
+    assert.equal(detail.status, 201);
+    assert.equal(detail.body.public_summary.result_kind, "boss_job_detail_surface");
+    assert.equal(JSON.stringify(detail.body).includes("job_detail/"), false);
+
+    const repeated = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: detailRef
+    });
+    assert.equal(repeated.status, 409);
+    assert.equal(repeated.body.failure_class, "detail_ref_consumed");
+    const directUrl = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: detailRef, url: "https://www.zhipin.com/job_detail/AbC_123.html"
+    });
+    assert.equal(directUrl.status, 400);
+    assert.equal(directUrl.body.failure_class, "invalid_request");
+  } finally {
+    await running.close();
+  }
+});
+
 test("returns JSON errors for bad routes and bad methods", async () => {
   const running = await startHarborRuntimeServer({ port: 0, runtime: new HarborRuntime(createFixtureLauncher("ready")) });
   try {

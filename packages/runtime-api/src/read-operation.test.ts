@@ -41,6 +41,13 @@ test("admits only the two pinned read-only operation identities", () => {
 
   assert.equal(admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_publish_note", query: "AI tools" }), "invalid_request");
   assert.equal(admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", operation_mode: "write" }), "invalid_request");
+
+  const noteDetail = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: opaqueRef("detail") });
+  assert.equal(typeof noteDetail === "string", false);
+  const jobDetail = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail") });
+  assert.equal(typeof jobDetail === "string", false);
+  assert.equal(admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail"), url: "https://www.zhipin.com/job_detail/forged.html" }), "invalid_request");
+  assert.equal(admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", query: "forged-id" }), "invalid_request");
 });
 
 test("fails closed for invalid target URLs and cross-origin requests", () => {
@@ -96,7 +103,8 @@ test("correlates the official Vue Pinia search store without exposing store cont
     pathname: "/search_result",
     search: `?keyword=${encodeURIComponent(query)}`,
     ready: true,
-    pinia_ready: true
+    pinia_ready: true,
+    detail_urls: []
   });
   assert.equal(JSON.stringify(result).includes("not_returned"), false);
 
@@ -282,6 +290,30 @@ test("fails closed when the live probe lacks an operation-specific surface or re
   ] as const) {
     assert.equal(validateReadOperationProbe(input, { ...ready, operation_response_url: url }).status, "unavailable");
   }
+});
+
+test("validates both detail surfaces against the exact search-bound target", () => {
+  const xhsInput = {
+    site_id: "xiaohongshu" as const,
+    operation_id: "xhs_read_note_detail" as const,
+    detail_ref: opaqueRef("detail"),
+    target_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+    expected_origin: "https://www.xiaohongshu.com"
+  };
+  const ready = {
+    origin: "https://www.xiaohongshu.com",
+    pathname: "/explore/0123456789abcdef01234567",
+    ready: true,
+    rendered_surface: true,
+    operation_response_status: 200,
+    operation_response_url: xhsInput.target_url
+  };
+  assert.equal(validateReadOperationProbe(xhsInput, ready).status, "completed");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pathname: "/explore/aaaaaaaaaaaaaaaaaaaaaaaa" })), "site_changed");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, rendered_surface: false })), "empty_result");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, operation_response_url: "https://evil.example/detail" })), "site_changed");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, login_like: true })), "not_logged_in");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, challenge_like: true })), "safety_challenge");
 });
 
 test("summarizes only a successful BOSS WAPI job list and fails closed for empty 2xx shells", () => {
