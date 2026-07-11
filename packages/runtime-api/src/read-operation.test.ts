@@ -64,20 +64,31 @@ test("blocks cross-origin document redirects before navigation while allowing sa
   assert.equal(shouldBlockReadOperationDocumentNavigation("Script", "https://cdn.example/app.js", "https://www.xiaohongshu.com"), false);
 });
 
-test("detects Pinia from the Vue app without exposing store contents", () => {
+test("detects a populated Vue Pinia store without exposing store contents", () => {
   const evaluate = new Function("window", "document", "location", `return ${readProbeExpression("xiaohongshu")}`);
-  const pinia = { private: "not_returned" };
+  const pinia = { _s: new Map([["search", { private: "not_returned" }]]) };
   const result = evaluate({}, { querySelector: () => ({ __vue_app__: { config: { globalProperties: { $pinia: pinia } } } }) }, {
     origin: "https://www.xiaohongshu.com",
-    pathname: "/search_result"
+    pathname: "/search_result",
+    search: "?keyword=AI"
   });
   assert.deepEqual(result, {
     origin: "https://www.xiaohongshu.com",
     pathname: "/search_result",
+    search: "?keyword=AI",
     ready: true,
     pinia_ready: true
   });
   assert.equal(JSON.stringify(result).includes("not_returned"), false);
+
+  for (const candidate of [{ _s: new Map() }, { _s: {} }, { private: "unrelated" }]) {
+    const negative = evaluate({ __PINIA__: candidate }, { querySelector: () => null }, {
+      origin: "https://www.xiaohongshu.com",
+      pathname: "/search_result",
+      search: "?keyword=AI"
+    });
+    assert.equal(negative.pinia_ready, false);
+  }
 });
 
 test("does not construct post-check provenance from missing or arbitrary source labels", () => {
@@ -156,12 +167,16 @@ test("fails closed when the live probe lacks an operation-specific surface or re
   const readyXhs = {
     origin: "https://www.xiaohongshu.com",
     pathname: "/search_result",
+    search: "?keyword=AI",
     ready: true,
     pinia_ready: true,
     operation_response_status: 200,
     operation_response_url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
   };
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pathname: "/settings" }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "?keyword=other" }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "" }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "?keyword=AI&keyword=AI" }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pinia_ready: false }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, operation_response_status: undefined }).status, "unavailable");
 

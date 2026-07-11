@@ -343,7 +343,7 @@ export class RuntimeSessionStore {
     record.read_operation_user_release_pending = false;
     record.read_operation_user_handoff = record.read_operation_user_confirmed &&
       control.previous_owner === "user" &&
-      (control.owner === "agent" || control.owner === "core_task");
+      control.owner === "core_task";
     record.facts.facts.push(
       { key: "control.owner", source: "observed", value: control.owner },
       { key: "handoff.reason", source: "observed", value: control.handoff_reason ?? "none" },
@@ -448,6 +448,7 @@ export class RuntimeSessionStore {
 
   private acquireControl(record: RuntimeSessionRecord, owner: ControlOwner, holder_ref: string): RuntimeSessionUnavailable | null {
     if (record.facts.control_lock.state === "held" && record.facts.control_lock.owner !== owner) return lockConflict(record, owner);
+    if (record.read_operation_user_release_pending && owner !== "core_task") return lockConflict(record, owner);
     const now = new Date().toISOString();
     record.facts.lifecycle_state = "active";
     record.facts.last_seen_at = now;
@@ -460,8 +461,7 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = false;
-    record.read_operation_user_handoff = record.read_operation_user_release_pending &&
-      (owner === "agent" || owner === "core_task");
+    record.read_operation_user_handoff = record.read_operation_user_release_pending && owner === "core_task";
     record.read_operation_user_release_pending = false;
     this.viewerControls.recordHandoff(record.facts.runtime_session_ref, { control_owner: owner });
     record.facts.facts.push(

@@ -109,19 +109,21 @@ async function route(
   }
 
   if (method === "POST" && url.pathname === "/runtime/identity-environment-sessions") {
+    if (!authorizeCoreControl(manualAuthenticationAuthorizer, request, response)) return;
     const body = await readJson<OpenIdentityEnvironmentSessionInput & { identity_environment_ref?: string }>(request);
     if (body.identity_environment_ref) {
       const result = body.url
         ? await runtime.openManagedIdentityEnvironmentSession({ ...body, identity_environment_ref: body.identity_environment_ref })
         : await runtime.openManagedDefaultSiteSession({ ...body, identity_environment_ref: body.identity_environment_ref });
-      writeJson(response, 201, result);
+      writeJson(response, sessionOpenStatusCode(result), result);
       return;
     }
     if (!body.identity_environment) {
       writeJson(response, 400, identityEnvironmentRequired());
       return;
     }
-    writeJson(response, 201, await runtime.openIdentityEnvironmentSession(body));
+    const result = await runtime.openIdentityEnvironmentSession(body);
+    writeJson(response, sessionOpenStatusCode(result), result);
     return;
   }
 
@@ -225,12 +227,13 @@ async function routeSession(
     return;
   }
   if (action === "read-operations" && method === "POST") {
+    if (!authorizeCoreControl(manualAuthenticationAuthorizer, request, response)) return;
     const result = await runtime.executeAllowlistedReadOperation(runtimeSessionRef, await readJson<unknown>(request));
     writeJson(response, readOperationStatusCode(result), result);
     return;
   }
   if (action === "manual-authentication-completed" && method === "POST") {
-    const authorization = manualAuthenticationAuthorizer.authorize(request);
+    const authorization = manualAuthenticationAuthorizer.authorizeManualAuthentication(request, runtimeSessionRef);
     if (!authorization.authorized) {
       writeJson(response, authorization.status_code, { failure_class: authorization.failure_class });
       return;
@@ -246,12 +249,24 @@ async function routeSession(
     writeJson(response, 405, { error: "method_not_allowed", method });
     return;
   }
+  if (!authorizeCoreControl(manualAuthenticationAuthorizer, request, response)) return;
   const body = await readJson<RuntimeSessionControlInput>(request, {});
   if (action === "lock") writeJson(response, 200, runtime.lockSession(runtimeSessionRef, body));
   else if (action === "release") writeJson(response, 200, runtime.releaseSession(runtimeSessionRef, body));
   else if (action === "stop") writeJson(response, 200, await runtime.stopSession(runtimeSessionRef, body));
   else if (action === "snapshot") writeJson(response, 201, await runtime.captureLiveSnapshot(runtimeSessionRef));
   else writeJson(response, 404, { error: "not_found", path: `/runtime/sessions/${runtimeSessionRef}/${action}` });
+}
+
+function authorizeCoreControl(
+  manualAuthenticationAuthorizer: ManualAuthenticationAuthorizer,
+  request: IncomingMessage,
+  response: ServerResponse
+): boolean {
+  const authorization = manualAuthenticationAuthorizer.authorize(request);
+  if (authorization.authorized) return true;
+  writeJson(response, authorization.status_code, { failure_class: authorization.failure_class });
+  return false;
 }
 
 function sessionReadUnavailable(runtimeSessionRef: string, currentError: RuntimeErrorFact | null | undefined): object | null {
@@ -285,6 +300,10 @@ function readOperationStatusCode(result: { status: string; failure_class?: strin
   if (result.failure_class === "session_missing") return 404;
   if (["invalid_request", "operation_not_allowlisted", "allowlist_pin_invalid", "target_url_invalid", "target_origin_not_allowed", "target_path_not_allowlisted"].includes(result.failure_class ?? "")) return 400;
   return 409;
+}
+
+function sessionOpenStatusCode(result: unknown): number {
+  return typeof result === "object" && result !== null && "status" in result && result.status === "unavailable" ? 409 : 201;
 }
 
 async function readJson<T>(request: IncomingMessage, fallback?: T): Promise<T> {

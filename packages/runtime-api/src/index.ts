@@ -38,7 +38,7 @@ import {
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
 import {
-  isManualAuthenticationAuthorizationGrant,
+  consumeManualAuthenticationAuthorizationGrant,
   type ManualAuthenticationAuthorizationGrant
 } from "./manual-authentication-authorization.js";
 import { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-provider-launcher.js";
@@ -298,7 +298,10 @@ export class HarborRuntime {
     runtime_session_ref: string,
     grant?: ManualAuthenticationAuthorizationGrant
   ): LocalIdentityEnvironmentPublicRecord | ManualAuthenticationCompletionUnavailable {
-    return this.completeBoundManualAuthentication(runtime_session_ref, isManualAuthenticationAuthorizationGrant(grant));
+    return this.completeBoundManualAuthentication(
+      runtime_session_ref,
+      consumeManualAuthenticationAuthorizationGrant(grant, runtime_session_ref)
+    );
   }
 
   private completeBoundManualAuthentication(
@@ -854,7 +857,7 @@ function sameManagedIdentity(session: RuntimeSessionRecord, identity: LocalIdent
 
 function hasStableReadOperationController(session: RuntimeSessionRecord): boolean {
   return session.read_operation_user_handoff &&
-    (session.facts.control_owner === "agent" || session.facts.control_owner === "core_task") &&
+    session.facts.control_owner === "core_task" &&
     session.facts.control_lock.state === "held" &&
     session.facts.control_lock.owner === session.facts.control_owner &&
     Boolean(session.facts.control_lock.holder_ref) &&

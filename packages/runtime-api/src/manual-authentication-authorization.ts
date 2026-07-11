@@ -3,14 +3,14 @@ import type { IncomingMessage } from "node:http";
 
 const SUPERVISOR_TOKEN_BYTES = 32;
 const SUPERVISOR_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
-const authorizationGrants = new WeakSet<object>();
+const authorizationGrants = new WeakMap<object, string>();
 
 export interface ManualAuthenticationAuthorizationGrant {
   readonly kind: "manual_authentication_supervisor_grant";
 }
 
 export type ManualAuthenticationAuthorization =
-  | { authorized: true; grant: ManualAuthenticationAuthorizationGrant }
+  | { authorized: true; grant?: ManualAuthenticationAuthorizationGrant }
   | {
     authorized: false;
     status_code: 403 | 503;
@@ -41,14 +41,22 @@ export class ManualAuthenticationAuthorizer {
         failure_class: "manual_auth_authorization_required"
       };
     }
+    return { authorized: true };
+  }
+
+  authorizeManualAuthentication(request: IncomingMessage, runtimeSessionRef: string): ManualAuthenticationAuthorization {
+    const authorization = this.authorize(request);
+    if (!authorization.authorized) return authorization;
     const grant: ManualAuthenticationAuthorizationGrant = { kind: "manual_authentication_supervisor_grant" };
-    authorizationGrants.add(grant);
+    authorizationGrants.set(grant, runtimeSessionRef);
     return { authorized: true, grant };
   }
 }
 
-export function isManualAuthenticationAuthorizationGrant(value: unknown): value is ManualAuthenticationAuthorizationGrant {
-  return typeof value === "object" && value !== null && authorizationGrants.has(value);
+export function consumeManualAuthenticationAuthorizationGrant(value: unknown, runtimeSessionRef: string): value is ManualAuthenticationAuthorizationGrant {
+  if (typeof value !== "object" || value === null || authorizationGrants.get(value) !== runtimeSessionRef) return false;
+  authorizationGrants.delete(value);
+  return true;
 }
 
 function bearerToken(request: IncomingMessage): Buffer | null {
