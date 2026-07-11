@@ -26,6 +26,7 @@ import {
   type RuntimeViewerEntry,
   type ValidationRuntimeFacts
 } from "./runtime-session-types.js";
+import { isTrustedLocalProviderReadProbe } from "./read-operation-probe-trust.js";
 import type {
   ControlOwner,
   ControlOwnerFacts,
@@ -395,15 +396,16 @@ export class RuntimeSessionStore {
         retryable: false
       };
     }
-    if (record.execution_surface !== "local_provider" || !record.probeReadOperation) {
+    const probeReadOperation = record.probeReadOperation;
+    if (record.execution_surface !== "local_provider" || !isTrustedLocalProviderReadProbe(probeReadOperation)) {
       return {
         status: "unavailable",
-        failure_class: "provider_probe_unavailable",
-        message: "The managed local provider does not expose a read-only probe adapter.",
-        retryable: true
+        failure_class: "evidence_refs_missing",
+        message: "The managed local provider does not expose a trusted read-only probe adapter.",
+        retryable: false
       };
     }
-    const result = await record.probeReadOperation(input);
+    const result = await probeReadOperation(input);
     if (result.page) this.applyPageFacts(record, input.target_url, result.page);
     return result;
   }

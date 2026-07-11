@@ -813,7 +813,7 @@ test("blocks an allowlisted read operation before provider execution when the ma
   }
 });
 
-test("serves a completed local-provider read operation only with its bound public result summary", async () => {
+test("rejects an injected local-provider probe rather than minting a completed read operation", async () => {
   const runtime = new HarborRuntime(successfulBossReadLauncher);
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
@@ -840,23 +840,10 @@ test("serves a completed local-provider read operation only with its bound publi
       operation_id: "boss_job_search",
       query: "AI tools"
     });
-    assert.equal(response.status, 201);
-    assert.equal(response.body.status, "completed");
-    assert.deepEqual(response.body.public_summary, {
-      schema_version: "harbor-read-operation-public-summary/v0",
-      operation_id: "boss_job_search",
-      result_kind: "boss_job_search_surface",
-      surface: "web_geek_jobs",
-      result_state: "operation_read_response_observed",
-      response_status: 200,
-      source_signals: ["boss_wapi_zpgeek_read_network"]
-    });
-    assert.match(response.body.public_summary_ref, /^read_result_/);
-    assert.notEqual(response.body.public_summary_ref, response.body.operation_ref);
-    assert.notEqual(response.body.public_summary_ref, response.body.post_check.post_check_ref);
-    assert.equal(response.body.evidence_refs.includes(response.body.public_summary_ref), false);
-    assert.equal(JSON.stringify(response.body).includes("profile-storage_read-operation-success"), false);
-    assert.equal(JSON.stringify(response.body).includes("webSocketDebuggerUrl"), false);
+    assert.equal(response.status, 409);
+    assert.equal(response.body.status, "unavailable");
+    assert.equal(response.body.failure_class, "evidence_refs_missing");
+    assert.equal(successfulBossProbeCalls, 0);
   } finally {
     await running.close();
   }

@@ -10,6 +10,7 @@ import {
   type IdentityEnvironmentProviderBinding
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
+import { trustLocalProviderReadProbe } from "./read-operation-probe-trust.js";
 import type {
   LocalProviderLaunchInput,
   LocalProviderLauncher,
@@ -69,11 +70,11 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         currentUrl = nextPage.current_url ?? url;
         return nextPage;
       },
-      probeReadOperation: async (probe) => {
+      probeReadOperation: trustLocalProviderReadProbe(async (probe) => {
         const result = await probeProviderReadOperation(port, probe);
         if (result.page?.current_url) currentUrl = result.page.current_url;
         return result;
-      },
+      }),
       captureScreenshot: () => captureProviderScreenshot(port, currentUrl),
       close: () => closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent)
     };
@@ -270,14 +271,28 @@ async function openProviderUrl(port: string, url: string): Promise<LocalProvider
 
 async function probeProviderReadOperation(port: string, input: LocalProviderReadProbeInput): Promise<LocalProviderReadProbeResult> {
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(input.target_url)}`, { method: "PUT" });
-    if (!response.ok) throw new Error(`CDP read-operation navigation failed: ${response.status}`);
-    const page = await response.json() as CdpPageTarget;
+    const page = await createBlankProviderPage(port);
     if (!page.webSocketDebuggerUrl) throw new Error("Read-operation page has no CDP websocket.");
     const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.enable");
       await client.send("Runtime.enable");
       await client.send("Network.enable");
+      await client.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
+      let blockedRedirect = false;
+      const stopIntercepting = client.on("Fetch.requestPaused", (event) => {
+        const requestId = typeof event.requestId === "string" ? event.requestId : "";
+        const resourceType = event.resourceType;
+        const request = event.request as { url?: unknown } | undefined;
+        const url = typeof request?.url === "string" ? request.url : "";
+        if (!requestId) return;
+        if (shouldBlockReadOperationDocumentNavigation(resourceType, url, input.expected_origin)) {
+          blockedRedirect = true;
+          void client.send("Fetch.failRequest", { requestId, errorReason: "Aborted" });
+          return;
+        }
+        void client.send("Fetch.continueRequest", { requestId });
+      });
+      await client.send("Page.navigate", { url: input.target_url });
       let operationResponse: { status: number; url: string } | null = null;
       const stopObservingNetwork = client.on("Network.responseReceived", (event) => {
         const response = event.response as { url?: unknown; status?: unknown } | undefined;
@@ -285,6 +300,11 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         if (status !== null && status >= 200 && status < 300 && typeof response?.url === "string") operationResponse = { status, url: response.url };
       });
       for (let attempt = 0; attempt < 20; attempt++) {
+        if (blockedRedirect) {
+          stopObservingNetwork();
+          stopIntercepting();
+          return { blocked_redirect: true };
+        }
         const evaluated = await client.send("Runtime.evaluate", {
           expression: readProbeExpression(input.site_id),
           returnByValue: true
@@ -301,20 +321,44 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         const observedResponse = operationResponse as { status: number; url: string } | null;
         if (value?.origin && value.ready && observedResponse !== null) {
           stopObservingNetwork();
-          return { ...value, operation_response_status: observedResponse.status, operation_response_url: observedResponse.url };
+          stopIntercepting();
+          const validation = validateReadOperationProbe(input, { ...value, operation_response_status: observedResponse.status, operation_response_url: observedResponse.url });
+          if (validation.status === "unavailable") return { validation };
+          const screenshot = await captureProbeScreenshot(client);
+          return screenshot ? {
+            validation,
+            screenshot_ref: screenshot.screenshot_ref
+          } : { evidence_missing: true };
         }
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
       stopObservingNetwork();
+      stopIntercepting();
       return null;
     });
     const pageFacts = readOperationPageFacts(input.target_url);
     if (!observation) return probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts);
-    const validation = validateReadOperationProbe(input, observation);
-    if (validation.status === "unavailable") return probeUnavailable(validation.failure_class, validation.message, validation.retryable, pageFacts);
-    // This adapter observes only URL/status metadata and intentionally has no
-    // safe snapshot/evidence artifact store. Do not mint substitute refs.
-    return probeUnavailable("evidence_refs_missing", "The local provider cannot safely provide the required observed evidence refs.", true, pageFacts);
+    if (observation.blocked_redirect) return probeUnavailable("origin_drift", "A cross-origin document redirect was blocked before navigation.", false, pageFacts);
+    if (observation.evidence_missing) return probeUnavailable("evidence_refs_missing", "The local provider could not capture required refs-only evidence.", true, pageFacts);
+    const validation = observation.validation;
+    if (!validation || validation.status === "unavailable") {
+      return probeUnavailable(validation?.failure_class ?? "page_not_ready", validation?.message ?? "The read-operation page did not reach a ready state.", validation?.retryable ?? true, pageFacts);
+    }
+    const source_refs = validation.source_kinds.map((kind) => ({ kind, ref: opaqueRef("source") }));
+    const evidence_ref_kinds = [
+      { kind: "snapshot_ref", ref: observation.screenshot_ref! },
+      ...(input.operation_id === "boss_job_search" ? [{ kind: "network_summary_ref", ref: opaqueRef("evidence") }] : [])
+    ];
+    return {
+      status: "completed",
+      observed_at: new Date().toISOString(),
+      observed_origin: input.expected_origin,
+      page: pageFacts,
+      source_refs,
+      evidence_ref_kinds,
+      public_summary_source_ref: source_refs.find((source) => source.kind === "network_summary")?.ref ?? source_refs[0]!.ref,
+      public_summary: validation.public_summary
+    };
   } catch (cause) {
     return probeUnavailable(
       "network_resource_unavailable",
@@ -343,6 +387,35 @@ interface ReadProbeObservation {
   pinia_ready?: boolean;
   operation_response_status?: number;
   operation_response_url?: string;
+  blocked_redirect?: boolean;
+  evidence_missing?: boolean;
+  screenshot_ref?: string;
+  validation?: ReturnType<typeof validateReadOperationProbe>;
+}
+
+async function createBlankProviderPage(port: string): Promise<CdpPageTarget> {
+  const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent("about:blank")}`, { method: "PUT" });
+  if (!response.ok) throw new Error(`CDP read-operation target creation failed: ${response.status}`);
+  return await response.json() as CdpPageTarget;
+}
+
+export function shouldBlockReadOperationDocumentNavigation(resourceType: unknown, value: string, expectedOrigin: string): boolean {
+  if (resourceType !== "Document") return false;
+  try {
+    return new URL(value).origin !== expectedOrigin;
+  } catch {
+    return true;
+  }
+}
+
+async function captureProbeScreenshot(client: CdpClient): Promise<LocalProviderScreenshotFacts | null> {
+  try {
+    const result = await client.send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
+    const data = typeof result.data === "string" ? result.data : "";
+    return data ? screenshotFacts(Buffer.from(data, "base64")) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function validateReadOperationProbe(

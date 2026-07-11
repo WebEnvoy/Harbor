@@ -8,7 +8,7 @@ import {
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
-import { validateReadOperationProbe } from "./local-provider-launcher.js";
+import { shouldBlockReadOperationDocumentNavigation, validateReadOperationProbe } from "./local-provider-launcher.js";
 
 test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
@@ -55,6 +55,13 @@ test("fails closed for invalid target URLs and cross-origin requests", () => {
     admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", url: "https://www.zhipin.com/web/geek/profile" }),
     "target_path_not_allowlisted"
   );
+});
+
+test("blocks cross-origin document redirects before navigation while allowing same-origin resources", () => {
+  assert.equal(shouldBlockReadOperationDocumentNavigation("Document", "https://www.xiaohongshu.com/search_result?keyword=AI", "https://www.xiaohongshu.com"), false);
+  assert.equal(shouldBlockReadOperationDocumentNavigation("Document", "https://evil.example/redirect", "https://www.xiaohongshu.com"), true);
+  assert.equal(shouldBlockReadOperationDocumentNavigation("Document", "not a URL", "https://www.xiaohongshu.com"), true);
+  assert.equal(shouldBlockReadOperationDocumentNavigation("Script", "https://cdn.example/app.js", "https://www.xiaohongshu.com"), false);
 });
 
 test("does not construct post-check provenance from missing or arbitrary source labels", () => {
