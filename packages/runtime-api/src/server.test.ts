@@ -7,7 +7,14 @@ import test from "node:test";
 import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher } from "./index.js";
 import { trustLocalProviderReadProbe, type ReadOperationProbe } from "./read-operation-probe-trust.js";
 import { opaqueRef } from "./refs.js";
-import { startHarborRuntimeServer } from "./server.js";
+import { startHarborRuntimeServer as startUnconfiguredHarborRuntimeServer } from "./server.js";
+
+function startHarborRuntimeServer(options: Parameters<typeof startUnconfiguredHarborRuntimeServer>[0] = {}) {
+  return startUnconfiguredHarborRuntimeServer({
+    ...options,
+    manual_authentication_supervisor_token: options.manual_authentication_supervisor_token ?? supervisorToken()
+  });
+}
 
 test("serves readiness and provider facts as JSON", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
@@ -263,7 +270,7 @@ test("returns structured failure when identity environment session has no identi
         url: "https://example.test/runtime-api",
         control_owner: "agent"
       }),
-      headers: { "content-type": "application/json" }
+      headers: { "content-type": "application/json", ...manualAuthHeaders() }
     });
     assert.equal(response.status, 400);
     const failure = await response.json();
@@ -396,15 +403,114 @@ test("records user-confirmed manual authentication for an active managed session
   }
 });
 
+test("confirms a user-held local provider without a viewer and hands the released session to Core once", async () => {
+  const runtime = new HarborRuntime(unsupportedViewerLauncher("local_provider"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_local-provider-auth"));
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_local-provider-auth",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "user"
+    });
+    assert.equal(session.viewer_entry.availability, "unsupported");
+    assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref).status, "unavailable");
+    assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref, {
+      kind: "manual_authentication_supervisor_grant"
+    }).status, "unavailable");
+
+    const confirmed = await fetch(`${running.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
+      method: "POST",
+      headers: manualAuthHeaders()
+    });
+    assert.equal(confirmed.status, 200);
+    await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "user" });
+
+    const agentClaim = await fetch(`${running.url}/runtime/identity-environment-sessions`, {
+      method: "POST",
+      body: JSON.stringify({
+        identity_environment_ref: "identity-env_local-provider-auth",
+        url: "https://www.zhipin.com/web/geek/jobs",
+        control_owner: "agent",
+        reuse_existing: true
+      }),
+      headers: { "content-type": "application/json", ...manualAuthHeaders() }
+    });
+    assert.equal(agentClaim.status, 409);
+    assert.equal((await agentClaim.json()).failure_class, "session_locked");
+
+    const reused = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_local-provider-auth",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "core_task",
+      reuse_existing: true
+    });
+    assert.equal(reused.runtime_session_ref, session.runtime_session_ref);
+    const admitted = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(admitted.body.failure_class, "evidence_refs_missing");
+
+    await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "core_task" });
+    await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_local-provider-auth",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "core_task",
+      reuse_existing: true
+    });
+    const consumed = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    assert.equal(consumed.body.failure_class, "session_user_controlled");
+  } finally {
+    await running.close();
+  }
+});
+
+test("rejects direct user confirmation for fixture, unknown, and non-user local-provider sessions", async () => {
+  for (const [surface, owner] of [["fixture", "user"], [undefined, "user"], ["local_provider", "agent"]] as const) {
+    const runtime = new HarborRuntime(unsupportedViewerLauncher(surface));
+    const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
+    try {
+      const identityEnvironmentRef = `identity-env_rejected-${surface ?? "unknown"}-${owner}`;
+      await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment(identityEnvironmentRef));
+      const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+        identity_environment_ref: identityEnvironmentRef,
+        url: "https://www.zhipin.com/",
+        control_owner: owner
+      });
+      const response = await fetch(`${running.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
+        method: "POST",
+        headers: manualAuthHeaders()
+      });
+      assert.equal(response.status, 409);
+      assert.equal((await response.json()).failure_class, "user_confirmation_required");
+    } finally {
+      await running.close();
+    }
+  }
+});
+
 test("fails closed before session lookup and requires one valid fixed-format supervisor credential", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
-  const unavailable = await startHarborRuntimeServer({ port: 0, runtime });
+  const unavailable = await startUnconfiguredHarborRuntimeServer({ port: 0, runtime });
   try {
     for (const runtimeSessionRef of ["session_missing", "session_not_inspected"]) {
       const response = await fetch(`${unavailable.url}/runtime/sessions/${runtimeSessionRef}/manual-authentication-completed`, { method: "POST" });
       assert.equal(response.status, 503);
       assert.deepEqual(await response.json(), { failure_class: "manual_auth_authorization_unavailable" });
     }
+    const coreControl = await fetch(`${unavailable.url}/runtime/identity-environment-sessions`, {
+      method: "POST",
+      body: JSON.stringify({ identity_environment_ref: "identity-env_missing", control_owner: "core_task" }),
+      headers: { "content-type": "application/json" }
+    });
+    assert.equal(coreControl.status, 503);
+    assert.deepEqual(await coreControl.json(), { failure_class: "manual_auth_authorization_unavailable" });
   } finally {
     await unavailable.close();
   }
@@ -461,6 +567,42 @@ test("fails closed before session lookup and requires one valid fixed-format sup
     }
   } finally {
     await configured.close();
+  }
+});
+
+test("requires the supervisor bearer for Core control routes", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_core-control"));
+    const request = {
+      identity_environment_ref: "identity-env_core-control",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "core_task"
+    };
+    const unauthorizedOpen = await fetch(`${running.url}/runtime/identity-environment-sessions`, {
+      method: "POST",
+      body: JSON.stringify(request),
+      headers: { "content-type": "application/json" }
+    });
+    assert.equal(unauthorizedOpen.status, 403);
+    assert.deepEqual(await unauthorizedOpen.json(), { failure_class: "manual_auth_authorization_required" });
+
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, request);
+    for (const [path, body] of [
+      [`/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "core_task" }],
+      [`/runtime/sessions/${session.runtime_session_ref}/read-operations`, { site_id: "boss", operation_id: "boss_job_search", query: "AI" }]
+    ] as const) {
+      const response = await fetch(`${running.url}${path}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { "content-type": "application/json" }
+      });
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), { failure_class: "manual_auth_authorization_required" });
+    }
+  } finally {
+    await running.close();
   }
 });
 
@@ -747,7 +889,7 @@ test("rejects every fixture-backed allowlisted read operation without leaking pr
     assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref).status, "unavailable");
     runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
     assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
-    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "core_task", handoff_reason: "user_requested" });
 
     const invalid = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "xiaohongshu",
@@ -835,7 +977,7 @@ test("rejects an injected local-provider probe rather than minting a completed r
     assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref).status, "unavailable");
     runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
     assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
-    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "core_task", handoff_reason: "user_requested" });
     const response = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
@@ -877,7 +1019,7 @@ test("fails closed when session control is released while a trusted read probe i
     });
     runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
     assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
-    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "core_task", handoff_reason: "user_requested" });
 
     const pendingRead = postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
@@ -885,7 +1027,7 @@ test("fails closed when session control is released while a trusted read probe i
       query: "AI tools"
     });
     await probeStarted;
-    runtime.releaseSession(session.runtime_session_ref, { control_owner: "agent" });
+    runtime.releaseSession(session.runtime_session_ref, { control_owner: "core_task" });
     assert.ok(deferredProbe.finish);
     deferredProbe.finish();
 
@@ -1053,7 +1195,7 @@ async function postJson(url: string, body: unknown): Promise<any> {
   const response = await fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
-    headers: { "content-type": "application/json" }
+    headers: { "content-type": "application/json", ...manualAuthHeaders() }
   });
   assert.equal(response.status === 200 || response.status === 201, true);
   return response.json();
@@ -1063,7 +1205,7 @@ async function postReadOperation(url: string, body: unknown): Promise<{ status: 
   const response = await fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
-    headers: { "content-type": "application/json" }
+    headers: { "content-type": "application/json", ...manualAuthHeaders() }
   });
   return { status: response.status, body: await response.json() };
 }
@@ -1104,6 +1246,26 @@ function manualAuthenticationEnvironment(identity_environment_ref: string): Reco
     site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
     login_state: "manual_auth_required",
     storage_state: "present"
+  };
+}
+
+function unsupportedViewerLauncher(execution_surface: "local_provider" | "fixture" | undefined): LocalProviderLauncher {
+  const fixture = createFixtureLauncher("ready");
+  return async (input) => {
+    const launch = await fixture(input);
+    if (launch.status !== "ready") return launch;
+    const { execution_surface: _fixtureSurface, ...ready } = launch;
+    return {
+      ...ready,
+      ...(execution_surface ? { execution_surface } : {}),
+      viewer_entry: {
+        availability: "unsupported",
+        access_mode: "none",
+        transport: "not_applicable",
+        input_capabilities: [],
+        unavailable_reason: "unsupported"
+      }
+    };
   };
 }
 

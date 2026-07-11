@@ -4,12 +4,12 @@
 
 - Item ID: HARBOR-245
 - Current Checkpoint: merge
-- Current Stop: PR #249 is open at the reviewed implementation head with local validation and PR metadata readback complete.
-- Next Step: Consume the required hosted checks, then perform the controlled merge; real managed-session/Core/App evidence remains required before issue closeout.
+- Current Stop: PR #250 is open at head c502d6735bf0662fe892629f290455ba7708e97f. Local validation, cross-repo current-head review, and branch packaged-App live evidence are complete.
+- Next Step: Record the current-head review, consume hosted checks, and perform the controlled merge. Keep #245 open until merged-head packaged-App evidence is repeated.
 - Blockers: None recorded.
 - Recovery Boundary: No automatic login, no production browser/profile action, no Cookie/password/token/CAPTCHA/raw profile/DOM/HAR/screenshot bytes, no submit/publish/send/save, no risk-control bypass, hosted browser, marketplace, or bulk collection.
 - Current Lane: Harbor #245 allowlisted one-shot read-operation implementation.
-- Latest Validation Summary: 2026-07-11 on `work/harbor-245-allowlisted-read-operations`: `pnpm typecheck`, `pnpm build`, focused read-operation/server tests (25 passed), full `pnpm test` (56 passed), `pnpm smoke:runtime:api`, and `git diff --check` passed. The repaired path observes only the exact allowlisted response from before navigation, rechecks session authority after the awaited probe, and closes its temporary CDP target. Fixture smoke used no real account, profile, or production page; merged-head live evidence remains required before issue closeout.
+- Latest Validation Summary: 2026-07-11 at c502d6735bf0662fe892629f290455ba7708e97f: `pnpm typecheck`, `pnpm test` (61/61), and `git diff --check` passed. Cross-review found no P0-P3. Packaged-App branch E2E proved supervisor-authorized manual authentication, one-time user-to-Core session handoff, exact XHS public query/search-store correlation, completed read operation, and refs-only evidence. Latest successful pre-final-review run was app-xiaohongshu-mrgcpit5; merged-head replay remains required.
 
 ## Execution Ledger
 

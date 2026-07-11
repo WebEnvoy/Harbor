@@ -8,7 +8,7 @@ import {
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
-import { shouldBlockReadOperationDocumentNavigation, validateReadOperationProbe } from "./local-provider-launcher.js";
+import { readProbeExpression, shouldBlockReadOperationDocumentNavigation, validateReadOperationProbe } from "./local-provider-launcher.js";
 
 test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
@@ -62,6 +62,48 @@ test("blocks cross-origin document redirects before navigation while allowing sa
   assert.equal(shouldBlockReadOperationDocumentNavigation("Document", "https://evil.example/redirect", "https://www.xiaohongshu.com"), true);
   assert.equal(shouldBlockReadOperationDocumentNavigation("Document", "not a URL", "https://www.xiaohongshu.com"), true);
   assert.equal(shouldBlockReadOperationDocumentNavigation("Script", "https://cdn.example/app.js", "https://www.xiaohongshu.com"), false);
+});
+
+test("correlates the official Vue Pinia search store without exposing store contents", () => {
+  const query = "AI \"tools\"; throw new Error('injected'); //\\nnext";
+  const evaluate = new Function("window", "document", "location", `return ${readProbeExpression("xiaohongshu", query)}`);
+  const pinia = {
+    _s: new Map([["search", {
+      searchValue: { value: query },
+      feeds: { value: Array.from({ length: 22 }, () => ({})) },
+      hasMore: { value: true },
+      private: "not_returned"
+    }]])
+  };
+  const result = evaluate({}, { querySelector: () => ({ __vue_app__: { config: { globalProperties: { $pinia: pinia } } } }) }, {
+    origin: "https://www.xiaohongshu.com",
+    pathname: "/search_result",
+    search: `?keyword=${encodeURIComponent(query)}`
+  });
+  assert.deepEqual(result, {
+    origin: "https://www.xiaohongshu.com",
+    pathname: "/search_result",
+    search: `?keyword=${encodeURIComponent(query)}`,
+    ready: true,
+    pinia_ready: true
+  });
+  assert.equal(JSON.stringify(result).includes("not_returned"), false);
+
+  for (const candidate of [
+    { _s: new Map() },
+    { _s: new Map([["other", { searchValue: { value: query }, feeds: { value: [{}] } }]]) },
+    { _s: new Map([["search", { searchValue: { value: "wrong query" }, feeds: { value: [{}] } }]]) },
+    { _s: new Map([["search", { searchValue: { value: query } }]]) },
+    { _s: {} },
+    { private: "unrelated" }
+  ]) {
+    const negative = evaluate({ __PINIA__: candidate }, { querySelector: () => null }, {
+      origin: "https://www.xiaohongshu.com",
+      pathname: "/search_result",
+      search: `?keyword=${encodeURIComponent(query)}`
+    });
+    assert.equal(negative.pinia_ready, false);
+  }
 });
 
 test("does not construct post-check provenance from missing or arbitrary source labels", () => {
@@ -140,12 +182,16 @@ test("fails closed when the live probe lacks an operation-specific surface or re
   const readyXhs = {
     origin: "https://www.xiaohongshu.com",
     pathname: "/search_result",
+    search: "?keyword=AI",
     ready: true,
     pinia_ready: true,
     operation_response_status: 200,
-    operation_response_url: "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI"
+    operation_response_url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
   };
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pathname: "/settings" }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "?keyword=other" }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "" }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "?keyword=AI&keyword=AI" }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pinia_ready: false }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, operation_response_status: undefined }).status, "unavailable");
 
@@ -167,15 +213,13 @@ test("fails closed when the live probe lacks an operation-specific surface or re
   assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, operation_response_status: 500 }).status, "unavailable");
   assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, operation_response_url: "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=other" }).status, "unavailable");
   assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, operation_response_url: "https://www.zhipin.com/wapi/zpgeek/other?query=AI" }).status, "unavailable");
-  assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, operation_response_url: "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=other" }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, operation_response_url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes?opaque=ignored" }).status, "completed");
   for (const [input, ready, url] of [
-    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI&extra=1"],
-    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI#fragment"],
-    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI#"],
-    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI&keyword=AI"],
-    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI&"],
-    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI&&"],
-    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes"],
+    [xhsInput, readyXhs, "https://www.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=AI"],
+    [xhsInput, readyXhs, "https://so.xiaohongshu.com/api/sns/web/v1/search/notes"],
+    [xhsInput, readyXhs, "https://so.xiaohongshu.com/api/sns/web/v2/search/notes/extra"],
+    [xhsInput, readyXhs, "https://so.xiaohongshu.com.evil.test/api/sns/web/v2/search/notes"],
+    [xhsInput, readyXhs, "http://so.xiaohongshu.com/api/sns/web/v2/search/notes"],
     [bossInput, readyBoss, "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=AI&extra=1"],
     [bossInput, readyBoss, "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=AI#fragment"],
     [bossInput, readyBoss, "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=AI#"],

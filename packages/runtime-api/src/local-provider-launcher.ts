@@ -292,17 +292,20 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         }
         void client.send("Fetch.continueRequest", { requestId }).catch(() => undefined);
       });
+      let navigationStarted = false;
       let operationResponse: { status: number; url: string } | null = null;
       const stopObservingNetwork = client.on("Network.responseReceived", (event) => {
         const response = event.response as { url?: unknown; status?: unknown } | undefined;
         const status = typeof response?.status === "number" ? response.status : null;
         if (
+          navigationStarted &&
           status !== null &&
           status >= 200 &&
           status < 300 &&
           isOperationReadNetworkUrl(input, response?.url)
         ) operationResponse = { status, url: response!.url as string };
       });
+      navigationStarted = true;
       await client.send("Page.navigate", { url: input.target_url });
       for (let attempt = 0; attempt < 20; attempt++) {
         if (blockedRedirect) {
@@ -311,12 +314,13 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           return { blocked_redirect: true };
         }
         const evaluated = await client.send("Runtime.evaluate", {
-          expression: readProbeExpression(input.site_id),
+          expression: readProbeExpression(input.site_id, input.query),
           returnByValue: true
         });
         const value = (evaluated.result as { value?: {
           origin?: string;
           pathname?: string;
+          search?: string;
           ready?: boolean;
           rendered_surface?: boolean;
           login_like?: boolean;
@@ -385,6 +389,7 @@ function probeUnavailable(
 interface ReadProbeObservation {
   origin?: string;
   pathname?: string;
+  search?: string;
   ready?: boolean;
   rendered_surface?: boolean;
   login_like?: boolean;
@@ -440,7 +445,7 @@ export function validateReadOperationProbe(
   if (!observation.ready) return { status: "unavailable", failure_class: "page_not_ready", message: "The read-operation page did not reach the expected operation surface.", retryable: true };
   if (input.operation_id === "xhs_search_notes") {
     const xhsSurface = observation.pathname === "/search_result";
-    if (!xhsSurface || !observation.pinia_ready || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
+    if (!xhsSurface || !hasExactPublicQuery(observation.search, "keyword", input.query) || !observation.pinia_ready || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
       return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search/note, Pinia, or operation-specific read signal is unavailable.", retryable: true };
     }
     return {
@@ -480,15 +485,39 @@ function isSuccessfulReadResponse(status: unknown): status is number {
   return typeof status === "number" && Number.isInteger(status) && status >= 200 && status < 300;
 }
 
-function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"]): string {
-  return "(() => ({ origin: location.origin, pathname: location.pathname, ready: true, pinia_ready: Boolean(window.__PINIA__ || window.__pinia) }))()";
+export function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"], query: string): string {
+  return `(() => {
+    const expectedQuery = ${JSON.stringify(query)};
+    const pinia = window.__PINIA__ || window.__pinia || document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$pinia;
+    const store = pinia?._s instanceof Map ? pinia._s.get("search") : undefined;
+    const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
+    return {
+      origin: location.origin,
+      pathname: location.pathname,
+      search: location.search,
+      ready: true,
+      pinia_ready: unwrap(store?.searchValue) === expectedQuery && Array.isArray(unwrap(store?.feeds))
+    };
+  })()`;
+}
+
+function hasExactPublicQuery(search: unknown, key: string, expected: string): boolean {
+  if (typeof search !== "string") return false;
+  const values = new URLSearchParams(search).getAll(key);
+  return values.length === 1 && values[0] === expected;
 }
 
 function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: unknown): boolean {
   if (typeof value !== "string") return false;
-  const expected = input.operation_id === "xhs_search_notes"
-    ? { pathname: "/api/sns/web/v1/search/notes", query: "keyword" }
-    : { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
+  if (input.operation_id === "xhs_search_notes") {
+    try {
+      const observed = new URL(value);
+      return observed.origin === "https://so.xiaohongshu.com" && observed.pathname === "/api/sns/web/v2/search/notes";
+    } catch {
+      return false;
+    }
+  }
+  const expected = { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
   const canonical = new URL(expected.pathname, input.expected_origin);
   canonical.searchParams.set(expected.query, input.query);
   return value === canonical.href;

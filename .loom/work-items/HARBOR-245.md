@@ -5,7 +5,7 @@
 - Item ID: HARBOR-245
 - Goal: Provide one narrow, allowlisted read-only operation endpoint for an existing managed Harbor Runtime Session. It consumes the pinned Lode #262 local mirror and returns only public refs or a structured failure.
 - Scope: Ownership is limited to Harbor Runtime API routing, static Lode admission mirror, managed-session/probe boundary, refs-only operation result, focused tests, and HARBOR-245 item-specific carriers.
-- Execution Path: work/harbor-245-allowlisted-read-operations
+- Execution Path: work/harbor-245-local-provider-auth-confirmation
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-245.md
 - Review Entry: .loom/reviews/HARBOR-245.json
