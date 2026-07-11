@@ -6,7 +6,7 @@
 - Goal: Execute the Lode #262 pinned `boss_job_search` operation once through an admitted managed local-provider session and return refs-only output or structured failure.
 - Scope: BOSS canonical target admission, concrete read probe validation, directed runtime tests, and HARBOR-251 carriers.
 - Execution Path: work/harbor-251-boss-read-operation
-- Workspace Entry: /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-251-boss-read-operation
+- Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-251.md
 - Review Entry: .loom/reviews/HARBOR-251.json
 - Validation Entry: pnpm typecheck; targeted tests; pnpm test; git diff --check
