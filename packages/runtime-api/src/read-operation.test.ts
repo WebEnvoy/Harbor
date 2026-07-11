@@ -64,28 +64,43 @@ test("blocks cross-origin document redirects before navigation while allowing sa
   assert.equal(shouldBlockReadOperationDocumentNavigation("Script", "https://cdn.example/app.js", "https://www.xiaohongshu.com"), false);
 });
 
-test("detects a populated Vue Pinia store without exposing store contents", () => {
-  const evaluate = new Function("window", "document", "location", `return ${readProbeExpression("xiaohongshu")}`);
-  const pinia = { _s: new Map([["search", { private: "not_returned" }]]) };
+test("correlates the official Vue Pinia search store without exposing store contents", () => {
+  const query = "AI \"tools\"; throw new Error('injected'); //\\nnext";
+  const evaluate = new Function("window", "document", "location", `return ${readProbeExpression("xiaohongshu", query)}`);
+  const pinia = {
+    _s: new Map([["search", {
+      searchValue: { value: query },
+      feeds: { value: Array.from({ length: 22 }, () => ({})) },
+      hasMore: { value: true },
+      private: "not_returned"
+    }]])
+  };
   const result = evaluate({}, { querySelector: () => ({ __vue_app__: { config: { globalProperties: { $pinia: pinia } } } }) }, {
     origin: "https://www.xiaohongshu.com",
     pathname: "/search_result",
-    search: "?keyword=AI"
+    search: `?keyword=${encodeURIComponent(query)}`
   });
   assert.deepEqual(result, {
     origin: "https://www.xiaohongshu.com",
     pathname: "/search_result",
-    search: "?keyword=AI",
+    search: `?keyword=${encodeURIComponent(query)}`,
     ready: true,
     pinia_ready: true
   });
   assert.equal(JSON.stringify(result).includes("not_returned"), false);
 
-  for (const candidate of [{ _s: new Map() }, { _s: {} }, { private: "unrelated" }]) {
+  for (const candidate of [
+    { _s: new Map() },
+    { _s: new Map([["other", { searchValue: { value: query }, feeds: { value: [{}] } }]]) },
+    { _s: new Map([["search", { searchValue: { value: "wrong query" }, feeds: { value: [{}] } }]]) },
+    { _s: new Map([["search", { searchValue: { value: query } }]]) },
+    { _s: {} },
+    { private: "unrelated" }
+  ]) {
     const negative = evaluate({ __PINIA__: candidate }, { querySelector: () => null }, {
       origin: "https://www.xiaohongshu.com",
       pathname: "/search_result",
-      search: "?keyword=AI"
+      search: `?keyword=${encodeURIComponent(query)}`
     });
     assert.equal(negative.pinia_ready, false);
   }

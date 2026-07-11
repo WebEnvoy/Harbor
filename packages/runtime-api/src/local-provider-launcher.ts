@@ -314,7 +314,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           return { blocked_redirect: true };
         }
         const evaluated = await client.send("Runtime.evaluate", {
-          expression: readProbeExpression(input.site_id),
+          expression: readProbeExpression(input.site_id, input.query),
           returnByValue: true
         });
         const value = (evaluated.result as { value?: {
@@ -485,8 +485,20 @@ function isSuccessfulReadResponse(status: unknown): status is number {
   return typeof status === "number" && Number.isInteger(status) && status >= 200 && status < 300;
 }
 
-export function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"]): string {
-  return "(() => { const pinia = window.__PINIA__ || window.__pinia || document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$pinia; const stores = pinia && pinia._s; return { origin: location.origin, pathname: location.pathname, search: location.search, ready: true, pinia_ready: Boolean(stores instanceof Map && stores.size > 0) }; })()";
+export function readProbeExpression(_siteId: LocalProviderReadProbeInput["site_id"], query: string): string {
+  return `(() => {
+    const expectedQuery = ${JSON.stringify(query)};
+    const pinia = window.__PINIA__ || window.__pinia || document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$pinia;
+    const store = pinia?._s instanceof Map ? pinia._s.get("search") : undefined;
+    const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
+    return {
+      origin: location.origin,
+      pathname: location.pathname,
+      search: location.search,
+      ready: true,
+      pinia_ready: unwrap(store?.searchValue) === expectedQuery && Array.isArray(unwrap(store?.feeds))
+    };
+  })()`;
 }
 
 function hasExactPublicQuery(search: unknown, key: string, expected: string): boolean {
