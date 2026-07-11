@@ -3,9 +3,9 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-245
-- Current Checkpoint: build
-- Current Stop: HARBOR-245 has taken over the current pointer after PR #246 merged; the last local-provider response-observer repair requires fresh verification and current-head review.
-- Next Step: Run the full local validation set, consume the independent review, then create the Harbor #245 PR without changing scope.
+- Current Checkpoint: merge
+- Current Stop: PR #249 is open at the reviewed implementation head with local validation and PR metadata readback complete.
+- Next Step: Consume the required hosted checks, then perform the controlled merge; real managed-session/Core/App evidence remains required before issue closeout.
 - Blockers: None recorded.
 - Recovery Boundary: No automatic login, no production browser/profile action, no Cookie/password/token/CAPTCHA/raw profile/DOM/HAR/screenshot bytes, no submit/publish/send/save, no risk-control bypass, hosted browser, marketplace, or bulk collection.
 - Current Lane: Harbor #245 allowlisted one-shot read-operation implementation.

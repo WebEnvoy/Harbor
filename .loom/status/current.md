@@ -11,9 +11,9 @@
 - Review Entry: .loom/reviews/HARBOR-245.json
 - Validation Entry: pnpm typecheck; pnpm test; pnpm build; git diff --check
 - Closing Condition: Create a scoped PR after current-head review and hosted checks. Keep the issue open until the merged implementation has a real managed-session probe, refs-only evidence/readback, and Core/App live evidence.
-- Current Checkpoint: build
-- Current Stop: HARBOR-245 has taken over the current pointer after PR #246 merged; the last local-provider response-observer repair requires fresh verification and current-head review.
-- Next Step: Run the full local validation set, consume the independent review, then create the Harbor #245 PR without changing scope.
+- Current Checkpoint: merge
+- Current Stop: PR #249 is open at the reviewed implementation head with local validation and PR metadata readback complete.
+- Next Step: Consume the required hosted checks, then perform the controlled merge; real managed-session/Core/App evidence remains required before issue closeout.
 - Blockers: None recorded.
 - Latest Validation Summary: 2026-07-11 on `work/harbor-245-allowlisted-read-operations`: `pnpm typecheck`, `pnpm build`, focused read-operation/server tests (25 passed), full `pnpm test` (56 passed), `pnpm smoke:runtime:api`, and `git diff --check` passed. The repaired path observes only the exact allowlisted response from before navigation, rechecks session authority after the awaited probe, and closes its temporary CDP target. Fixture smoke used no real account, profile, or production page; merged-head live evidence remains required before issue closeout.
 - Recovery Boundary: No automatic login, no production browser/profile action, no Cookie/password/token/CAPTCHA/raw profile/DOM/HAR/screenshot bytes, no submit/publish/send/save, no risk-control bypass, hosted browser, marketplace, or bulk collection.
