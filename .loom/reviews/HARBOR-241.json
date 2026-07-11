@@ -2,13 +2,13 @@
   "schema_version": "loom-review/v1",
   "item_id": "HARBOR-241",
   "decision": "allow",
-  "kind": "code_review",
-  "summary": "Current-head implementation review at 3a9026a69297df4dc7e3e245078af79559d95ef7: canonical unavailable session reads return refs-safe 404 facts, and the #247 carrier correction only advances the published Loom consumer/metadata gate path. Focused diff review found no correctness, privacy, or boundary regressions; validation remains fixture/runtime-contract only, with no browser, account, profile, production page, or external action.",
+  "kind": "general_review",
+  "summary": "Closeout-only review at 2b1ad04443e29794ceeb21351016af1641c7ab3e: diff is limited to HARBOR-241 progress, status, work-item, and evidence-map carriers. It accurately consumes merged PR #246 and redacted packaged-App refresh/restart evidence; no runtime behavior, sensitive data, or external action is added.",
   "reviewer": "codex-main-controller",
-  "authored_at": "2026-07-11T02:29:56Z",
-  "reviewed_head": "3a9026a69297df4dc7e3e245078af79559d95ef7",
-  "reviewed_validation_summary": "2026-07-11T02:15Z on work/harbor-241-auth-readiness at 4d50dcddd61198841d554b86c4f559452a1d81f5: npm view @mc-and-his-agents/loom@0.28.1 version, pnpm typecheck, pnpm test (45 passed), pnpm smoke:runtime:api, loom doctor, loom verify, full-suite validation, loom pr metadata-render, and git diff --check passed. HARBOR-247 changes only the pinned installed Loom consumer and its repository PR metadata contract from v0.28.0 compatibility to published v0.28.1; no browser, account, profile, production page, or external action was used.",
-  "reviewed_validation_summary_hash": "df06b1e6555567f38390afd6039a435d8b634cdcfb769ee9340ec27d1b4efa25",
+  "authored_at": "2026-07-11T08:11:09Z",
+  "reviewed_head": "2b1ad04443e29794ceeb21351016af1641c7ab3e",
+  "reviewed_validation_summary": "PR #246 implementation head `bfd7534960a7c4859e8ca0a23db27dcdd86ed6d1` merged into `main` as `39cbe3f006adecf90ab5ee47da312842b95aa153` at 2026-07-11T02:31:52Z; all required `Loom strong governance` checks passed in run `29136454283`. At 2026-07-11T07:53Z, App head `bd679d7e6c231ba36ca6635ad7cbabeed24a43be` rebuilt its packaged Core `b6815950f4f19252e7f15d4d82b6ba789feb0e3a` and merged Harbor `39cbe3f006adecf90ab5ee47da312842b95aa153` runtimes. Computer Use refreshed and then restarted the App for `identity-env-live-xhs-chrome-20260710`; the Harbor public fact remained `login_state=logged_in`, `manual_authentication_state=completed`, and `recovery_required=false`. Local readback also returned Core and Harbor `status=ready`. This evidence records only public status and redacted refs; it did not open a production page, read credentials/Cookie/profile material, or submit, publish, send, or perform a task.",
+  "reviewed_validation_summary_hash": "39a2241eb1a3910f5f7810817d0132f79cc56734d5d3bdc8dc0d60ab89bcb0b2",
   "validation_summary_source": "recovery.latest_validation_summary",
   "validation_summary_locator": ".loom/progress/HARBOR-241.md",
   "fallback_to": null,
@@ -35,26 +35,10 @@
     },
     "engine_adapter": null,
     "engine_evidence": null,
-    "normalized_findings": null,
-    "suite_evidence_validation": "/Users/claw/.local/share/mise/installs/python/3.12.13/bin/python /Users/claw/.local/share/mise/installs/node/24.14.0/lib/node_modules/@mc-and-his-agents/loom/tools/loom.py suite evidence validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-241-auth-readiness --item HARBOR-241 --json",
-    "suite_carrier_validation": "/Users/claw/.local/share/mise/installs/python/3.12.13/bin/python /Users/claw/.local/share/mise/installs/node/24.14.0/lib/node_modules/@mc-and-his-agents/loom/tools/loom.py suite carrier validate --target /Volumes/2T/dev/WebEnvoy/Harbor.worktrees/harbor-241-auth-readiness --item HARBOR-241 --json",
-    "suite_evidence_map": ".loom/specs/HARBOR-241/evidence-map.md",
-    "suite_consistency_analysis": null,
-    "suite_task_carriers": [
-      ".loom/specs/HARBOR-241/task-carrier.md"
-    ],
-    "suite_evidence_consumed_contracts": [
-      "docs/methodology/harness/full-spec-suite-cli-surface.md",
-      "docs/methodology/templates/evidence-map.md"
-    ],
-    "suite_carrier_consumed_contracts": [
-      "docs/methodology/harness/task-carrier-contract.md",
-      "docs/methodology/templates/execution-breakdown.md",
-      "docs/methodology/harness/full-spec-suite-cli-surface.md"
-    ]
+    "normalized_findings": null
   },
-  "semantic_review_disposition": {
+  "carrier_only_closeout_review": {
     "status": "passed",
-    "reason": "Authored implementation review approved the current head for merge checkpoint consumption."
+    "reason": "Authored closeout review approved only terminal carrier metadata consumption; it does not approve product implementation behavior."
   }
 }
