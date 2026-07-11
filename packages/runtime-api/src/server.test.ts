@@ -410,7 +410,7 @@ test("confirms a user-held local provider without a viewer and hands the release
     await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_local-provider-auth"));
     const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_local-provider-auth",
-      url: "https://www.zhipin.com/web/geek/jobs",
+      url: "https://www.zhipin.com/web/geek/job",
       control_owner: "user"
     });
     assert.equal(session.viewer_entry.availability, "unsupported");
@@ -430,7 +430,7 @@ test("confirms a user-held local provider without a viewer and hands the release
       method: "POST",
       body: JSON.stringify({
         identity_environment_ref: "identity-env_local-provider-auth",
-        url: "https://www.zhipin.com/web/geek/jobs",
+        url: "https://www.zhipin.com/web/geek/job",
         control_owner: "agent",
         reuse_existing: true
       }),
@@ -441,7 +441,7 @@ test("confirms a user-held local provider without a viewer and hands the release
 
     const reused = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_local-provider-auth",
-      url: "https://www.zhipin.com/web/geek/jobs",
+      url: "https://www.zhipin.com/web/geek/job",
       control_owner: "core_task",
       reuse_existing: true
     });
@@ -456,7 +456,7 @@ test("confirms a user-held local provider without a viewer and hands the release
     await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "core_task" });
     await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_local-provider-auth",
-      url: "https://www.zhipin.com/web/geek/jobs",
+      url: "https://www.zhipin.com/web/geek/job",
       control_owner: "core_task",
       reuse_existing: true
     });
@@ -577,7 +577,7 @@ test("requires the supervisor bearer for Core control routes", async () => {
     await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_core-control"));
     const request = {
       identity_environment_ref: "identity-env_core-control",
-      url: "https://www.zhipin.com/web/geek/jobs",
+      url: "https://www.zhipin.com/web/geek/job",
       control_owner: "core_task"
     };
     const unauthorizedOpen = await fetch(`${running.url}/runtime/identity-environment-sessions`, {
@@ -971,7 +971,7 @@ test("rejects an injected local-provider probe rather than minting a completed r
     });
     const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_read-operation-success",
-      url: "https://www.zhipin.com/web/geek/jobs",
+      url: "https://www.zhipin.com/web/geek/job",
       control_owner: "user"
     });
     assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref).status, "unavailable");
@@ -1014,7 +1014,7 @@ test("fails closed when session control is released while a trusted read probe i
     });
     const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_read-operation-race",
-      url: "https://www.zhipin.com/web/geek/jobs",
+      url: "https://www.zhipin.com/web/geek/job",
       control_owner: "user"
     });
     runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
@@ -1055,7 +1055,7 @@ test("fails closed before probing when PATCH login state or release lacks a conf
     });
     const patchedSession = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_read-operation-bypass",
-      url: "https://www.zhipin.com/web/geek/jobs",
+      url: "https://www.zhipin.com/web/geek/job",
       control_owner: "agent"
     });
     const patched = await patchJson(`${running.url}/runtime/identity-environments/identity-env_read-operation-bypass`, {
@@ -1073,7 +1073,7 @@ test("fails closed before probing when PATCH login state or release lacks a conf
 
     const confirmedSession = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_read-operation-bypass",
-      url: "https://www.zhipin.com/web/geek/jobs",
+      url: "https://www.zhipin.com/web/geek/job",
       control_owner: "user",
       reuse_existing: false
     });

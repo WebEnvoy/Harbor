@@ -462,7 +462,7 @@ export function validateReadOperationProbe(
       }
     };
   }
-  const bossJobsSurface = observation.pathname === "/web/geek/jobs";
+  const bossJobsSurface = observation.pathname === "/web/geek/job";
   if (!bossJobsSurface || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
     return { status: "unavailable", failure_class: "page_not_ready", message: "BOSS jobs surface or required WAPI read signal is unavailable.", retryable: true };
   }

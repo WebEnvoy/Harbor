@@ -9,7 +9,7 @@ export const LODE_262_ALLOWLIST_PIN = {
   commit: "e36a4a7",
   asset_path: "registry/runtime-consumption-allowlist.json",
   asset_sha256: "5aa6be8bd416bbd19f73dcfab995f62f769849923f2aa2e995da974b0f329184",
-  mirror_payload_sha256: "bbc17210563ed91fc320f006bbd81a9a965ed43f18ffd3018ee9b25f6c5bdf2e",
+  mirror_payload_sha256: "bae3a0c9a57a9d6f3ede369ff1a2f7338220f96e5acf3970e6dfe5ed8ce5015b",
   allowlist_id: "lode.xhs-boss.read.runtime-consumption",
   allowlist_version: "0.1.0",
   asset_owner: "Lode",
@@ -239,7 +239,7 @@ const PINNED_READ_OPERATIONS: readonly PinnedReadOperation[] = [
     lifecycle: "proposed",
     allowed_origin: "https://www.zhipin.com",
     target_schema: {
-      pathname: "/web/geek/jobs",
+      pathname: "/web/geek/job",
       public_query_parameter: "query"
     },
     resource_requirement_id: "boss.job-search.resources",

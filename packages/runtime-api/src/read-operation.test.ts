@@ -32,6 +32,11 @@ test("admits only the two pinned read-only operation identities", () => {
   assert.equal(xiaohongshu.entry.lock_ref, "lode://lock/site-capability/xiaohongshu/search-notes@0.1.0");
   assert.equal(new URL(xiaohongshu.target_url).origin, "https://www.xiaohongshu.com");
 
+  const boss = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools" });
+  assert.equal(typeof boss === "string", false);
+  if (typeof boss === "string") throw new Error("Pinned BOSS operation was unexpectedly rejected.");
+  assert.equal(boss.target_url, "https://www.zhipin.com/web/geek/job?query=AI+tools");
+
   assert.equal(admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_publish_note", query: "AI tools" }), "invalid_request");
   assert.equal(admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", operation_mode: "write" }), "invalid_request");
 });
@@ -53,6 +58,10 @@ test("fails closed for invalid target URLs and cross-origin requests", () => {
   }
   assert.equal(
     admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", url: "https://www.zhipin.com/web/geek/profile" }),
+    "target_path_not_allowlisted"
+  );
+  assert.equal(
+    admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", url: "https://www.zhipin.com/web/geek/jobs?query=AI+tools" }),
     "target_path_not_allowlisted"
   );
 });
@@ -199,17 +208,18 @@ test("fails closed when the live probe lacks an operation-specific surface or re
     site_id: "boss" as const,
     operation_id: "boss_job_search" as const,
     query: "AI",
-    target_url: "https://www.zhipin.com/web/geek/jobs?query=AI",
+    target_url: "https://www.zhipin.com/web/geek/job?query=AI",
     expected_origin: "https://www.zhipin.com"
   };
   const readyBoss = {
     origin: "https://www.zhipin.com",
-    pathname: "/web/geek/jobs",
+    pathname: "/web/geek/job",
     ready: true,
     operation_response_status: 200,
     operation_response_url: "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=AI"
   };
-  assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, pathname: "/web/geek/profile" }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, pathname: "/web/geek/jobs" }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(bossInput, readyBoss).status, "completed");
   assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, operation_response_status: 500 }).status, "unavailable");
   assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, operation_response_url: "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=other" }).status, "unavailable");
   assert.equal(validateReadOperationProbe(bossInput, { ...readyBoss, operation_response_url: "https://www.zhipin.com/wapi/zpgeek/other?query=AI" }).status, "unavailable");
