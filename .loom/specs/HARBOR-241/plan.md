@@ -6,7 +6,7 @@
 2. Expose the session-bound Runtime API endpoints with structured fail-closed responses, including canonical redacted 404 owner readbacks for missing and lost sessions on both GET routes.
 3. Add fixture-server tests for success, persisted public readback, and rejected session states.
 4. Validate static tests, then use the existing real session only to send the user-confirmed intent after confirming the user has manually logged in; read back Harbor and App public facts.
-5. Create a single Harbor #241 PR. The App consumer wiring remains a separate dependent scope.
+5. Create a single Harbor #241 PR. Corrective Work Item #247 may update only its installed Loom consumer version after upstream v0.28.1 is published, so the existing hosted gate evaluates the same PR against the released fix. The App consumer wiring remains a separate dependent scope.
 
 ## Validation
 

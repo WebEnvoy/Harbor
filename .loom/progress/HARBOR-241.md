@@ -4,12 +4,12 @@
 
 - Item ID: HARBOR-241
 - Current Checkpoint: build
-- Current Stop: None.
-- Next Step: Create current-head semantic review and update PR #246 metadata before rerunning the hosted merge gate.
+- Current Stop: The published Loom v0.28.1 consumer update and a fresh current-head review are pending before PR #246's hosted merge gate can be rerun.
+- Next Step: Update PR #246 metadata for corrective Work Item #247, run current-head review, then consume the hosted gate using v0.28.1.
 - Blockers: None recorded.
-- Latest Validation Summary: 2026-07-11T01:08Z on `work/harbor-241-auth-readiness` at `c6c487e79f619e85cf3514696a1bffaee40fffc4`: `pnpm typecheck`, `pnpm test` (45 passed), `pnpm smoke:runtime:api`, `git diff --check`, and Loom full-suite validations passed. This carrier recovery performs contract/runtime smoke only; no browser, account, profile, production page, or external action was used.
+- Latest Validation Summary: 2026-07-11T02:08Z on `work/harbor-241-auth-readiness` at the pending consumer-update head: `npm view @mc-and-his-agents/loom@0.28.1 version`, `pnpm typecheck`, `pnpm test` (45 passed), `pnpm smoke:runtime:api`, and `git diff --check` passed. HARBOR-247 changes only the pinned installed Loom consumer from v0.28.0 to published v0.28.1; no browser, account, profile, production page, or external action was used.
 - Recovery Boundary: Do not read or store Cookie, password, verification code, DOM, page payload, or raw profile material. Do not submit, publish, send, bypass risk controls, use hosted browser, marketplace, or bulk collection.
-- Current Lane: Harbor #241 current-head carrier recovery for PR #246.
+- Current Lane: Harbor #241/#247 current-head carrier recovery and published Loom consumer update for PR #246.
 
 ## Execution Ledger
 
