@@ -44,6 +44,7 @@ import {
   LODE_262_ALLOWLIST_PIN,
   ReadOperationObservationStore,
   readOperationUnavailable,
+  type AdmittedReadOperation,
   type CompletedReadOperation,
   type ReadOperationFailureClass,
   type ReadOperationObservationRecord,
@@ -453,42 +454,8 @@ export class HarborRuntime {
     const admission = admitAllowlistedReadOperation(input);
     if (typeof admission === "string") return readOperationUnavailable(runtime_session_ref, admission);
 
-    const session = this.runtimeSessions.getRecord(runtime_session_ref);
-    if (!session) return readOperationUnavailable(runtime_session_ref, "session_missing", requestIdentity(admission.request));
-    const managedIdentity = session.facts.identity_environment_ref
-      ? this.identityEnvironments.getFacts(session.facts.identity_environment_ref)
-      : null;
-    if (!managedIdentity || !sameManagedIdentity(session, managedIdentity)) {
-      return readOperationUnavailable(runtime_session_ref, "session_unmanaged", requestIdentity(admission.request));
-    }
-    if (
-      managedIdentity.site_binding.site_id !== admission.entry.site_id ||
-      managedIdentity.site_binding.origin !== admission.entry.allowed_origin
-    ) {
-      return readOperationUnavailable(runtime_session_ref, "target_origin_not_allowed", requestIdentity(admission.request));
-    }
-    if (
-      (session.facts.lifecycle_state !== "active" && session.facts.lifecycle_state !== "idle") ||
-      session.facts.availability.cdp !== "available" ||
-      session.facts.current_error
-    ) {
-      return readOperationUnavailable(runtime_session_ref, "session_not_ready", requestIdentity(admission.request));
-    }
-    if (
-      !this.identityEnvironments.hasUserConfirmedManagedSession(managedIdentity.identity_environment_ref, runtime_session_ref) ||
-      managedIdentity.login_state.state !== "logged_in" ||
-      managedIdentity.login_state.reason !== "user_confirmed_managed_session" ||
-      managedIdentity.login_state.manual_authentication_state !== "completed" ||
-      managedIdentity.login_state.recovery_required
-    ) {
-      return readOperationUnavailable(runtime_session_ref, "not_logged_in", requestIdentity(admission.request));
-    }
-    if (!hasStableReadOperationController(session)) {
-      return readOperationUnavailable(runtime_session_ref, "session_user_controlled", requestIdentity(admission.request));
-    }
-    if (isChallengeLike(session.facts.current_page.current_url, session.facts.current_page.title)) {
-      return readOperationUnavailable(runtime_session_ref, "safety_challenge", requestIdentity(admission.request));
-    }
+    const preflightFailure = this.readOperationSessionFailure(runtime_session_ref, admission);
+    if (preflightFailure) return readOperationUnavailable(runtime_session_ref, preflightFailure, requestIdentity(admission.request));
 
     const probe = await this.runtimeSessions.probeReadOperation(runtime_session_ref, {
       site_id: admission.entry.site_id,
@@ -503,6 +470,8 @@ export class HarborRuntime {
         retryable: probe.retryable
       });
     }
+    const postProbeFailure = this.readOperationSessionFailure(runtime_session_ref, admission);
+    if (postProbeFailure) return readOperationUnavailable(runtime_session_ref, postProbeFailure, requestIdentity(admission.request));
 
     const proof = this.readOperationObservations.capture({
       operation_ref: opaqueRef("read_operation"),
@@ -519,6 +488,33 @@ export class HarborRuntime {
     const result = this.readOperationObservations.complete(admission.entry, proof);
     if (typeof result === "string") return readOperationUnavailable(runtime_session_ref, result, requestIdentity(admission.request));
     return result;
+  }
+
+  private readOperationSessionFailure(runtime_session_ref: string, admission: AdmittedReadOperation): ReadOperationFailureClass | null {
+    const session = this.runtimeSessions.getRecord(runtime_session_ref);
+    if (!session) return "session_missing";
+    const managedIdentity = session.facts.identity_environment_ref
+      ? this.identityEnvironments.getFacts(session.facts.identity_environment_ref)
+      : null;
+    if (!managedIdentity || !sameManagedIdentity(session, managedIdentity)) return "session_unmanaged";
+    if (
+      managedIdentity.site_binding.site_id !== admission.entry.site_id ||
+      managedIdentity.site_binding.origin !== admission.entry.allowed_origin
+    ) return "target_origin_not_allowed";
+    if (
+      (session.facts.lifecycle_state !== "active" && session.facts.lifecycle_state !== "idle") ||
+      session.facts.availability.cdp !== "available" ||
+      session.facts.current_error
+    ) return "session_not_ready";
+    if (
+      !this.identityEnvironments.hasUserConfirmedManagedSession(managedIdentity.identity_environment_ref, runtime_session_ref) ||
+      managedIdentity.login_state.state !== "logged_in" ||
+      managedIdentity.login_state.reason !== "user_confirmed_managed_session" ||
+      managedIdentity.login_state.manual_authentication_state !== "completed" ||
+      managedIdentity.login_state.recovery_required
+    ) return "not_logged_in";
+    if (!hasStableReadOperationController(session)) return "session_user_controlled";
+    return isChallengeLike(session.facts.current_page.current_url, session.facts.current_page.title) ? "safety_challenge" : null;
   }
 
   getSnapshot(snapshot_ref: string): SnapshotRecord | PageSceneUnavailable {

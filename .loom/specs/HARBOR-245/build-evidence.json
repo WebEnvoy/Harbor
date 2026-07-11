@@ -1,0 +1,67 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "item_id": "HARBOR-245",
+  "branch": "work/harbor-245-allowlisted-read-operations",
+  "delegations": [
+    {
+      "id": "019f503f-102d-7403-88ed-9feb05bf2b25",
+      "status": "integrated",
+      "task_goal": "Review the allowlisted one-shot read path for correctness, security, privacy, and missing tests.",
+      "context_locators": [
+        "https://github.com/WebEnvoy/Harbor/issues/245",
+        ".loom/work-items/HARBOR-245.md",
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/local-provider-launcher.ts",
+        "packages/runtime-api/src/server.test.ts"
+      ],
+      "read_scope": ["origin/main...HEAD and affected runtime callers/tests"],
+      "write_ownership": ["none; read-only review"],
+      "non_goals": ["file changes", "GitHub mutations", "production account/profile/page actions"],
+      "validation_expectation": ["findings with file/line evidence and missing checks"],
+      "output_format": "findings, commands reviewed, remaining risks, scope confirmation",
+      "integration_target": [
+        "packages/runtime-api/src/index.ts",
+        "packages/runtime-api/src/local-provider-launcher.ts",
+        "packages/runtime-api/src/server.test.ts",
+        ".loom/progress/HARBOR-245.md"
+      ],
+      "result": "Two P1 findings were fixed and covered; temporary target cleanup was also added. Main controller reran focused and full validation."
+    }
+  ],
+  "ownership_constraints": {
+    "write_ownership": [
+      "packages/runtime-api/src/read-operation*.ts",
+      "packages/runtime-api/src/runtime-session*.ts",
+      "packages/runtime-api/src/local-provider-launcher.ts",
+      "packages/runtime-api/src/index.ts",
+      "packages/runtime-api/src/server*.ts",
+      ".loom/** for HARBOR-245 and the serialized current-pointer transfer"
+    ],
+    "forbidden_targets": [
+      "App/Core/Lode code",
+      "credentials, cookies, verification codes, raw profile, DOM, HAR, network bodies, or screenshot bytes",
+      "automatic login and external writes"
+    ],
+    "shared_carrier_policy": "Only the main controller edits shared current/bootstrap carriers."
+  },
+  "ownership_contract": {
+    "write_ownership": ["Harbor #245 runtime implementation, tests, and item-specific carriers"],
+    "non_goals": ["Core/App task integration", "BOSS/XHS live closeout", "write operations"],
+    "integration_target": ["Harbor #245 implementation PR", ".loom/progress/HARBOR-245.md"]
+  },
+  "validation": {
+    "passed": [
+      "pnpm typecheck",
+      "pnpm build",
+      "focused read-operation/server tests (25 passed)",
+      "pnpm test (56 passed)",
+      "pnpm smoke:runtime:api",
+      "git diff --check",
+      "loom fact-chain --target . --item HARBOR-245 --json",
+      "loom suite validate/carrier/evidence"
+    ],
+    "observed_flake": null,
+    "live_evidence": "Pending after merge: the implementation PR uses fixture and contract evidence only; #245 remains open until an authorized managed-session read produces refs consumed by Core/App."
+  },
+  "safety_boundary": "No production page/account/profile action during implementation validation; no automatic login, sensitive-material access, submit, publish, send, save, bulk collection, hosted browser, marketplace, or risk-control bypass."
+}

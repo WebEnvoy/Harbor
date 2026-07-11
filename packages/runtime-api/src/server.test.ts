@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher } from "./index.js";
+import { trustLocalProviderReadProbe, type ReadOperationProbe } from "./read-operation-probe-trust.js";
 import { opaqueRef } from "./refs.js";
 import { startHarborRuntimeServer } from "./server.js";
 
@@ -849,6 +850,53 @@ test("rejects an injected local-provider probe rather than minting a completed r
   }
 });
 
+test("fails closed when session control is released while a trusted read probe is pending", async () => {
+  const deferredProbe: { finish?: () => void } = {};
+  let markProbeStarted!: () => void;
+  const probeStarted = new Promise<void>((resolve) => { markProbeStarted = resolve; });
+  const probe = trustLocalProviderReadProbe((input) => new Promise((resolve) => {
+    markProbeStarted();
+    deferredProbe.finish = () => resolve(completedBossReadProbe(input));
+  }));
+  const runtime = new HarborRuntime(createBossReadLauncher(probe));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_read-operation-race",
+      execution_identity_ref: "execution-identity_read-operation-race",
+      profile_ref: "profile_read-operation-race",
+      profile_storage_ref: "profile-storage_read-operation-race",
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "logged_in",
+      storage_state: "present"
+    });
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_read-operation-race",
+      url: "https://www.zhipin.com/web/geek/jobs",
+      control_owner: "user"
+    });
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "agent", handoff_reason: "user_requested" });
+
+    const pendingRead = postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "AI tools"
+    });
+    await probeStarted;
+    runtime.releaseSession(session.runtime_session_ref, { control_owner: "agent" });
+    assert.ok(deferredProbe.finish);
+    deferredProbe.finish();
+
+    const response = await pendingRead;
+    assert.equal(response.status, 409);
+    assert.equal(response.body.failure_class, "session_user_controlled");
+  } finally {
+    await running.close();
+  }
+});
+
 test("fails closed before probing when PATCH login state or release lacks a confirmed held controller", async () => {
   successfulBossProbeCalls = 0;
   const runtime = new HarborRuntime(successfulBossReadLauncher);
@@ -923,7 +971,19 @@ test("returns JSON errors for bad routes and bad methods", async () => {
 
 let successfulBossProbeCalls = 0;
 
-const successfulBossReadLauncher: LocalProviderLauncher = async (input) => ({
+const successfulBossReadLauncher = createBossReadLauncher(async (probe) => {
+  successfulBossProbeCalls += 1;
+  if (probe.operation_id === "boss_job_search") return completedBossReadProbe(probe);
+  return {
+    status: "unavailable",
+    failure_class: "provider_probe_unavailable",
+    message: "The local test provider only exposes the BOSS read probe.",
+    retryable: false
+  };
+});
+
+function createBossReadLauncher(probeReadOperation: ReadOperationProbe): LocalProviderLauncher {
+  return async (input) => ({
   status: "ready",
   execution_surface: "local_provider",
   cdp_ref: "cdp_test-local-read-provider",
@@ -936,39 +996,7 @@ const successfulBossReadLauncher: LocalProviderLauncher = async (input) => ({
   page: localReadPage(input.url),
   facts: [],
   openUrl: async (url) => localReadPage(url),
-  probeReadOperation: async (probe) => {
-    successfulBossProbeCalls += 1;
-    if (probe.operation_id === "boss_job_search") {
-      const source = { kind: "network_summary", ref: opaqueRef("source") };
-      return {
-        status: "completed",
-        observed_at: "2026-07-11T00:00:00.000Z",
-        observed_origin: "https://www.zhipin.com",
-        page: localReadPage(probe.target_url),
-        source_refs: [source],
-        evidence_ref_kinds: [
-          { kind: "snapshot_ref", ref: opaqueRef("evidence") },
-          { kind: "network_summary_ref", ref: opaqueRef("evidence") }
-        ],
-        public_summary_source_ref: source.ref,
-        public_summary: {
-          schema_version: "harbor-read-operation-public-summary/v0",
-          operation_id: "boss_job_search",
-          result_kind: "boss_job_search_surface",
-          surface: "web_geek_jobs",
-          result_state: "operation_read_response_observed",
-          response_status: 200,
-          source_signals: ["boss_wapi_zpgeek_read_network"]
-        }
-      };
-    }
-    return {
-      status: "unavailable",
-        failure_class: "provider_probe_unavailable",
-      message: "The local test provider only exposes the BOSS read probe.",
-      retryable: false
-    };
-  },
+  probeReadOperation,
   captureScreenshot: async () => ({
     screenshot_ref: "screenshot_test-local-read-provider",
     mime_type: "image/png",
@@ -978,7 +1006,33 @@ const successfulBossReadLauncher: LocalProviderLauncher = async (input) => ({
     facts: []
   }),
   close: async () => {}
-});
+  });
+}
+
+function completedBossReadProbe(probe: Parameters<ReadOperationProbe>[0]): Awaited<ReturnType<ReadOperationProbe>> {
+  const source = { kind: "network_summary", ref: opaqueRef("source") };
+  return {
+    status: "completed",
+    observed_at: "2026-07-11T00:00:00.000Z",
+    observed_origin: "https://www.zhipin.com",
+    page: localReadPage(probe.target_url),
+    source_refs: [source],
+    evidence_ref_kinds: [
+      { kind: "snapshot_ref", ref: opaqueRef("evidence") },
+      { kind: "network_summary_ref", ref: opaqueRef("evidence") }
+    ],
+    public_summary_source_ref: source.ref,
+    public_summary: {
+      schema_version: "harbor-read-operation-public-summary/v0",
+      operation_id: "boss_job_search",
+      result_kind: "boss_job_search_surface",
+      surface: "web_geek_jobs",
+      result_state: "operation_read_response_observed",
+      response_status: 200,
+      source_signals: ["boss_wapi_zpgeek_read_network"]
+    }
+  };
+}
 
 function localReadPage(url: string) {
   return {

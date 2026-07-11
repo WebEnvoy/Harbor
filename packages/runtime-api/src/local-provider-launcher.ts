@@ -25,7 +25,7 @@ import type {
   RuntimeFact
 } from "./runtime-session-types.js";
 
-type CdpPageTarget = { type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
+type CdpPageTarget = { id?: string; type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
 
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
@@ -272,7 +272,7 @@ async function openProviderUrl(port: string, url: string): Promise<LocalProvider
 async function probeProviderReadOperation(port: string, input: LocalProviderReadProbeInput): Promise<LocalProviderReadProbeResult> {
   try {
     const page = await createBlankProviderPage(port);
-    if (!page.webSocketDebuggerUrl) throw new Error("Read-operation page has no CDP websocket.");
+    if (!page.id || !page.webSocketDebuggerUrl) throw new Error("Read-operation page has no target id or CDP websocket.");
     const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.enable");
       await client.send("Runtime.enable");
@@ -292,13 +292,18 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         }
         void client.send("Fetch.continueRequest", { requestId }).catch(() => undefined);
       });
-      await client.send("Page.navigate", { url: input.target_url });
       let operationResponse: { status: number; url: string } | null = null;
       const stopObservingNetwork = client.on("Network.responseReceived", (event) => {
         const response = event.response as { url?: unknown; status?: unknown } | undefined;
         const status = typeof response?.status === "number" ? response.status : null;
-        if (status !== null && status >= 200 && status < 300 && typeof response?.url === "string") operationResponse = { status, url: response.url };
+        if (
+          status !== null &&
+          status >= 200 &&
+          status < 300 &&
+          isOperationReadNetworkUrl(input, response?.url)
+        ) operationResponse = { status, url: response!.url as string };
       });
+      await client.send("Page.navigate", { url: input.target_url });
       for (let attempt = 0; attempt < 20; attempt++) {
         if (blockedRedirect) {
           stopObservingNetwork();
@@ -335,7 +340,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       stopObservingNetwork();
       stopIntercepting();
       return null;
-    });
+    }).finally(() => closeProviderPage(port, page.id!));
     const pageFacts = readOperationPageFacts(input.target_url);
     if (!observation) return probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts);
     if (observation.blocked_redirect) return probeUnavailable("origin_drift", "A cross-origin document redirect was blocked before navigation.", false, pageFacts);
@@ -397,6 +402,11 @@ async function createBlankProviderPage(port: string): Promise<CdpPageTarget> {
   const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent("about:blank")}`, { method: "PUT" });
   if (!response.ok) throw new Error(`CDP read-operation target creation failed: ${response.status}`);
   return await response.json() as CdpPageTarget;
+}
+
+async function closeProviderPage(port: string, targetId: string): Promise<void> {
+  const response = await fetch(`http://127.0.0.1:${port}/json/close/${encodeURIComponent(targetId)}`);
+  if (!response.ok) throw new Error(`CDP read-operation target cleanup failed: ${response.status}`);
 }
 
 export function shouldBlockReadOperationDocumentNavigation(resourceType: unknown, value: string, expectedOrigin: string): boolean {
