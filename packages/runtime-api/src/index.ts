@@ -480,7 +480,8 @@ export class HarborRuntime {
       operation_id: admission.entry.operation_id,
       target_url: admission.target_url,
       expected_origin: admission.entry.allowed_origin,
-      query: admission.request.query
+      query: admission.request.query,
+      city_code: admission.request.city_code
     });
     if (probe.status === "unavailable") {
       return readOperationUnavailable(runtime_session_ref, probe.failure_class, {
