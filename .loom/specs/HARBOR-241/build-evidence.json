@@ -1,7 +1,7 @@
 {
   "schema_version": "loom-build-evidence/v1",
   "item_id": "HARBOR-241",
-  "branch": "work/harbor-241-live-auth-sync",
+  "branch": "work/harbor-241-auth-readiness",
   "delegations": [
     {
       "id": "harbor-241-runtime-api-worker",
@@ -81,14 +81,15 @@
   },
   "validation": {
     "passed": [
-      "pnpm install --offline --frozen-lockfile",
       "pnpm typecheck",
-      "focused Runtime API confirmation test (43 passed)",
-      "isolated persistent-profile and stale-DevTools-port regressions",
-      "git diff --check"
+      "focused Runtime API server test (14 passed)",
+      "pnpm test (45 passed)",
+      "pnpm smoke:runtime:api",
+      "git diff --check",
+      "loom fact-chain --target . --item HARBOR-241 --json"
     ],
-    "observed_flake": "Full pnpm test observed two concurrent local-provider timing failures; both isolated regressions passed.",
-    "live_evidence": "A local official-Chrome Xiaohongshu managed session was active and user controlled. Its supervisor-authorized confirmation was rejected because direct user session open/reuse did not mark it user-held; this correction addresses only that Harbor trust-state defect."
+    "observed_flake": null,
+    "live_evidence": "Not run: this corrective change uses fixture Runtime API tests only and does not open a browser or external site."
   },
   "safety_boundary": "User confirmation only; no Cookie, DOM, credential, profile storage, or external-site write access."
 }

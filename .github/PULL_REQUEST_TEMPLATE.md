@@ -19,8 +19,8 @@ Validation details:
 
 ## Related Work
 
+- Work Item: work_item:<GitHub issue number>
 - Issue:
-- Loom Work Item:
 - Spec / plan:
 
 ## PR Metadata Machine Carrier
@@ -33,9 +33,7 @@ If this repository declares repo-specific PR metadata in `.loom/companion/repo-i
   "metadata_contract_id": "loom-governance-intensity",
   "surface": "merge_ready",
   "fields": {
-    "loom_work_item": "WI-0000",
-    "branch": "work/0000-example",
-    "head_sha": "0000000000000000000000000000000000000000",
+    "work_item_locator": "work_item:<GitHub issue number>",
     "governance_intensity": "standard",
     "change_class": "contract",
     "suite_path": "minimal",
