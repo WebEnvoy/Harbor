@@ -32,9 +32,7 @@
           "marker": "loom:repo-pr-metadata",
           "surface": "merge_ready",
           "repo_specific_field_set": [
-            "loom_work_item",
-            "branch",
-            "head_sha",
+            "work_item_locator",
             "governance_intensity",
             "change_class",
             "suite_path",
@@ -48,9 +46,7 @@
           ],
           "enforcement": "blocking",
           "required_fields": [
-            "loom_work_item",
-            "branch",
-            "head_sha",
+            "work_item_locator",
             "governance_intensity",
             "change_class",
             "suite_path",
@@ -96,7 +92,6 @@
               "issue_conflict",
               "pr_conflict",
               "branch_conflict",
-              "head_sha_conflict",
               "release_judgment_conflict",
               "closeout_policy_conflict"
             ],
