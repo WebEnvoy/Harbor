@@ -95,6 +95,7 @@ if (existsSync(join(profileDir, "DevToolsActivePort"))) process.exit(4);
 if (process.env.HARBOR_FAKE_BROWSER_MARKER) writeFileSync(process.env.HARBOR_FAKE_BROWSER_MARKER, profileDir);
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  if (url.pathname === process.env.HARBOR_FAKE_BROWSER_HANG_PATH) return;
   response.setHeader("content-type", "application/json");
   if (url.pathname === "/json/version") {
     const address = server.address();
@@ -103,7 +104,11 @@ const server = createServer((request, response) => {
     return;
   }
   if (url.pathname === "/json/list") {
-    response.end(JSON.stringify([{ type: "page", url: requestedUrl, title: "Fake page" }]));
+    response.end(JSON.stringify([{
+      type: "page",
+      url: process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL || requestedUrl,
+      title: process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE || "Fake page"
+    }]));
     return;
   }
   if (url.pathname === "/json/new") {
@@ -622,6 +627,85 @@ test("local provider removes unavailable and non-CDP stale DevTools ports", asyn
     await nonCdp.close();
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("bounds provider version and page-list readback while preserving redirect facts", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "harbor-bounded-provider-readback-"));
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  const previousHangPath = process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
+  const previousRedirectUrl = process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL;
+  const previousRedirectTitle = process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE;
+  const browserPath = writeFakeBrowserExecutable(dir);
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
+  try {
+    for (const path of ["/json/version", "/json/list"]) {
+      process.env.HARBOR_FAKE_BROWSER_HANG_PATH = path;
+      const startedAt = Date.now();
+      const result = await launchLocalDedicatedProvider({
+        browser_path: browserPath,
+        headless: false,
+        timeout_ms: 500,
+        url: "https://www.zhipin.com/web/geek/job",
+        profile_ref: `profile_hanging-${path.slice(6)}`,
+        provider_ref: "provider_fake"
+      });
+      assert.ok(Date.now() - startedAt < 2000, `${path} readback must remain bounded`);
+      assert.equal(result.status, path === "/json/version" ? "unavailable" : "ready");
+      if (path === "/json/list" && result.status === "ready") {
+        assert.equal(result.page.status, "unavailable");
+        assert.equal(result.page.error?.code, "cdp_unavailable");
+        await result.close();
+      }
+    }
+
+    delete process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
+    process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL = "https://www.zhipin.com/web/passport/zp/verify.html?code=35";
+    process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE = "安全验证 - BOSS直聘";
+    const redirected = await launchLocalDedicatedProvider({
+      browser_path: browserPath,
+      headless: false,
+      timeout_ms: 1000,
+      url: "https://www.zhipin.com/web/geek/job",
+      profile_ref: "profile_challenge-redirect",
+      provider_ref: "provider_fake"
+    });
+    assert.equal(redirected.status, "ready");
+    if (redirected.status === "ready") {
+      assert.equal(redirected.page.current_url, process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL);
+      assert.equal(redirected.page.title, "安全验证 - BOSS直聘");
+      assert.equal(JSON.stringify(redirected).includes("webSocketDebuggerUrl"), false);
+      await redirected.close();
+    }
+
+    process.env.HARBOR_FAKE_BROWSER_HANG_PATH = "/json/new";
+    const openUrlTimeout = await launchLocalDedicatedProvider({
+      browser_path: browserPath,
+      headless: false,
+      timeout_ms: 500,
+      url: "https://www.zhipin.com/web/geek/job",
+      profile_ref: "profile_open-url-timeout",
+      provider_ref: "provider_fake"
+    });
+    assert.equal(openUrlTimeout.status, "ready");
+    if (openUrlTimeout.status === "ready") {
+      const startedAt = Date.now();
+      const nextPage = await openUrlTimeout.openUrl("https://www.zhipin.com/web/geek/recommend");
+      assert.ok(Date.now() - startedAt < 2000, "open-url readback must remain bounded");
+      assert.equal(nextPage.status, "unavailable");
+      assert.equal(nextPage.error?.code, "url_unreachable");
+      await openUrlTimeout.close();
+    }
+  } finally {
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    if (previousHangPath === undefined) delete process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
+    else process.env.HARBOR_FAKE_BROWSER_HANG_PATH = previousHangPath;
+    if (previousRedirectUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL;
+    else process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL = previousRedirectUrl;
+    if (previousRedirectTitle === undefined) delete process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE;
+    else process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE = previousRedirectTitle;
     rmSync(dir, { recursive: true, force: true });
   }
 });
