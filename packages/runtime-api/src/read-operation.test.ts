@@ -5,11 +5,13 @@ import {
   admitAllowlistedReadOperation,
   canonicalPinnedMirrorSha256,
   LODE_262_ALLOWLIST_PIN,
+  LODE_268_DETAIL_PIN,
   ReadOperationObservationStore,
+  validateDetailTruthPin,
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
-import { probeProviderSiteResource, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe } from "./local-provider-launcher.js";
+import { probeProviderSiteResource, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobDetailResponse, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe } from "./local-provider-launcher.js";
 
 test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
@@ -19,6 +21,21 @@ test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(canonicalPinnedMirrorSha256(), LODE_262_ALLOWLIST_PIN.mirror_payload_sha256);
   assert.equal(validatePinnedAllowlist(), null);
   assert.equal(validatePinnedAllowlist({ entries: [] }), "allowlist_pin_invalid");
+});
+
+test("pins detail admission and completion to merged Lode #268 truth", () => {
+  assert.equal(LODE_268_DETAIL_PIN.merge_commit, "66d79b4e600565a00515b1c801e84291edc7b0c1");
+  assert.equal(LODE_268_DETAIL_PIN.asset_path, "registry/detail-runtime-consumption.json");
+  assert.equal(LODE_268_DETAIL_PIN.asset_sha256, "dca2761b7feb09a0ab86f7202e153da3c97b21a75299af6adaf64eade319deef");
+  assert.equal(LODE_268_DETAIL_PIN.truth_id, "lode.xhs-boss.detail-read.runtime-consumption");
+  assert.equal(validateDetailTruthPin(), null);
+  const boss = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail_ref") });
+  if (typeof boss === "string") throw new Error("Corrected BOSS detail truth was rejected.");
+  assert.equal(boss.entry.package_ref, "lode://site-capability/boss/read-job-detail@0.1.1");
+  assert.equal(boss.entry.lock_ref, "lode://lock/site-capability/boss/read-job-detail@0.1.1");
+  assert.equal(boss.entry.version, "0.1.1");
+  assert.deepEqual(boss.entry.required_source_ref_kinds, ["wapi_job_detail_summary", "dom_snapshot_summary"]);
+  assert.deepEqual(boss.entry.required_evidence_ref_kinds, ["snapshot_ref"]);
 });
 
 test("admits only the two pinned read-only operation identities", () => {
@@ -42,6 +59,13 @@ test("admits only the two pinned read-only operation identities", () => {
 
   assert.equal(admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_publish_note", query: "AI tools" }), "invalid_request");
   assert.equal(admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", operation_mode: "write" }), "invalid_request");
+
+  const noteDetail = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: opaqueRef("detail_ref") });
+  assert.equal(typeof noteDetail === "string", false);
+  const jobDetail = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail_ref") });
+  assert.equal(typeof jobDetail === "string", false);
+  assert.equal(admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail_ref"), url: "https://www.zhipin.com/job_detail/forged.html" }), "invalid_request");
+  assert.equal(admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", query: "forged-id" }), "invalid_request");
 });
 
 test("fails closed for invalid target URLs and cross-origin requests", () => {
@@ -126,7 +150,8 @@ test("correlates the official Vue Pinia search store without exposing store cont
     pathname: "/search_result",
     search: `?keyword=${encodeURIComponent(query)}`,
     ready: true,
-    pinia_ready: true
+    pinia_ready: true,
+    detail_urls: []
   });
   assert.equal(JSON.stringify(result).includes("not_returned"), false);
 
@@ -173,6 +198,83 @@ test("observes BOSS SPA, login wall, and challenge state without returning page 
   assert.equal(evaluate(bossSpaDocument({ cards: [] }), location).rendered_surface, false);
   assert.equal(evaluate(bossSpaDocument({ validCard: false }), location).rendered_surface, false);
   assert.equal(JSON.stringify(evaluate(bossSpaDocument({ text: "private-marker" }), location)).includes("private-marker"), false);
+});
+
+test("observes XHS detail Vue and note Pinia readiness without returning store contents", () => {
+  const evaluate = new Function("window", "document", "location", `return ${readProbeExpression("xiaohongshu", "", undefined, "xhs_read_note_detail")}`);
+  const piniaNote = {
+    note_id: "0123456789abcdef01234567",
+    title: "公开标题",
+    body_summary: "公开正文摘要",
+    author: { display_name: "公开作者", author_id: "author_123" },
+    interaction_metrics: { likes: "10", comments: "2", collects: "3", shares: "1" },
+    private: "must-not-return"
+  };
+  const pinia = { _s: new Map([["noteDetail", { $state: { currentNote: piniaNote } }]]) };
+  const app = { __vue_app__: { config: { globalProperties: { $pinia: pinia } } } };
+  const document = {
+    readyState: "complete",
+    body: { innerText: "公开笔记详情" },
+    querySelector: (selector: string) => {
+      if (selector === "#app") return app;
+      if (selector.includes("captcha") || selector.includes("login")) return null;
+      if (selector.includes("user/profile")) return { getAttribute: () => "/user/profile/author_123" };
+      if (selector.includes("like")) return { textContent: "10" };
+      if (selector.includes("comment")) return { textContent: "2" };
+      if (selector.includes("collect")) return { textContent: "3" };
+      if (selector.includes("share")) return { textContent: "1" };
+      if (selector.includes("note-title") || selector.includes(".title")) return { textContent: "公开标题" };
+      if (selector.includes("detail-desc") || selector.includes("note-desc") || selector.includes("note-content")) return { textContent: "公开正文摘要" };
+      if (selector.includes("author")) return { textContent: "公开作者" };
+      if (selector.includes("interaction-container")) return {};
+      return null;
+    }
+  };
+  const location = { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567", search: "?xsec_token=private" };
+  const observed = evaluate({}, document, location);
+  assert.equal(observed.vue_ready, true);
+  assert.equal(observed.pinia_ready, true);
+  assert.equal(observed.normalized.canonical_url, `${location.origin}${location.pathname}`);
+  assert.equal(observed.normalized.note_id, "0123456789abcdef01234567");
+  assert.equal(observed.normalized.author.author_id, "author_123");
+  assert.deepEqual(observed.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "1" });
+  assert.equal(JSON.stringify(observed).includes("must-not-return"), false);
+  assert.equal(JSON.stringify(observed).includes("xsec_token"), false);
+
+  const withoutNoteStore = evaluate({ __PINIA__: { _s: new Map([["search", {}]]) } }, { ...document, querySelector: (selector: string) => selector === "#app" ? { __vue_app__: { config: { globalProperties: {} } } } : document.querySelector(selector) }, location);
+  assert.equal(withoutNoteStore.vue_ready, true);
+  assert.equal(withoutNoteStore.pinia_ready, false);
+
+  const mismatchedStore = { _s: new Map([["noteDetail", { $state: { currentNote: { ...piniaNote, note_id: "fedcba987654321001234567" } } }]]) };
+  const mismatchedApp = { __vue_app__: { config: { globalProperties: { $pinia: mismatchedStore } } } };
+  const mismatched = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? mismatchedApp : document.querySelector(selector) }, location);
+  assert.equal(mismatched.pinia_ready, false);
+  assert.equal(mismatched.normalized, undefined);
+
+  const dummyStore = { _s: new Map([["noteDetail", { $state: { currentNote: { ...piniaNote, title: "注入标题" } } }]]) };
+  const dummyApp = { __vue_app__: { config: { globalProperties: { $pinia: dummyStore } } } };
+  const dummy = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? dummyApp : document.querySelector(selector) }, location);
+  assert.equal(dummy.pinia_ready, false);
+  assert.equal(dummy.normalized, undefined);
+});
+
+test("detects late challenge and login overlays for both detail sites", () => {
+  const lateChallenge = `${"公开内容".repeat(1000)}访问异常，请完成安全验证`;
+  const lateLogin = `${"公开内容".repeat(1000)}扫码登录`;
+  const xhsEvaluate = new Function("window", "document", "location", `return ${readProbeExpression("xiaohongshu", "", undefined, "xhs_read_note_detail")}`);
+  const bossEvaluate = new Function("document", "location", `return ${readProbeExpression("boss", "", undefined, "boss_read_job_detail")}`);
+  const document = { readyState: "complete", body: { innerText: lateChallenge }, querySelector: () => null };
+  assert.equal(xhsEvaluate({}, document, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).challenge_like, true);
+  assert.equal(bossEvaluate(document, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
+  assert.equal(xhsEvaluate({}, { ...document, body: { innerText: lateLogin } }, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).login_like, true);
+  assert.equal(bossEvaluate({ ...document, body: { innerText: lateLogin } }, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).login_like, true);
+  const overlayDocument = { ...document, body: { innerText: "公开详情" }, querySelector: (selector: string) => selector.includes("captcha") ? {} : null };
+  assert.equal(xhsEvaluate({}, overlayDocument, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).challenge_like, true);
+  assert.equal(bossEvaluate(overlayDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
+  const securityOverlayDocument = { ...document, body: { innerText: "公开详情" }, querySelector: (selector: string) => selector.includes("security-check") ? {} : null };
+  assert.equal(bossEvaluate(securityOverlayDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
+  const qrLoginDocument = { ...document, body: { innerText: "公开详情" }, querySelector: (selector: string) => selector.includes("qrcode") ? {} : null };
+  assert.equal(bossEvaluate(qrLoginDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).login_like, true);
 });
 
 test("bounds the entire BOSS site-resource probe when the CDP page list never responds", async () => {
@@ -321,6 +423,66 @@ test("does not construct post-check provenance from missing or arbitrary source 
   assert.equal(store.complete(admitted.entry, { ...proof, public_summary: { ...proof.public_summary, response_status: 201 } }), "public_summary_missing");
 });
 
+test("completes XHS detail only with bounded public fields and all Lode source refs", () => {
+  const admitted = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: opaqueRef("detail_ref") });
+  if (typeof admitted === "string") throw new Error("XHS detail admission unexpectedly failed.");
+  const store = new ReadOperationObservationStore();
+  const sources = ["pinia_store_summary", "network_summary"].map((kind) => ({ kind, ref: opaqueRef("source") }));
+  const publicSummary = {
+    schema_version: "harbor-read-operation-public-summary/v0" as const,
+    operation_id: "xhs_read_note_detail" as const,
+    result_kind: "xiaohongshu_note_detail_surface" as const,
+    surface: "note_detail" as const,
+    result_state: "operation_read_response_observed" as const,
+    response_status: 200,
+    normalized: {
+      kind: "xiaohongshu_note_detail" as const,
+      canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+      note_id: "0123456789abcdef01234567",
+      title: "公开标题",
+      summary: "公开摘要",
+      body_summary: "公开正文摘要",
+      author: { display_name: "公开作者", author_id: "author_123", profile_url: "https://www.xiaohongshu.com/user/profile/author_123" },
+      interaction_metrics: { likes: "10", comments: "2", collects: "3", shares: "1" },
+      source_citation: {
+        kind: "xhs_note_detail_ref" as const,
+        note_id: "0123456789abcdef01234567",
+        url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+        field_sources: ["pinia_store_summary", "network_summary"]
+      },
+      source_status: "located" as const
+    },
+    source_signals: ["pinia_note_store_ready", "xhs_note_detail_document", "xhs_note_detail_rendered"]
+  };
+  const proof = store.capture({
+    operation_ref: opaqueRef("read_operation"),
+    runtime_session_ref: "session_xhs_detail",
+    entry: admitted.entry,
+    observed_origin: "https://www.xiaohongshu.com",
+    observed_at: "2026-07-12T00:00:00.000Z",
+    source_refs: sources,
+    evidence_ref_kinds: [{ kind: "snapshot_ref", ref: opaqueRef("evidence") }],
+    public_summary_source_ref: sources[0]!.ref,
+    public_summary: publicSummary
+  });
+  if (typeof proof === "string") throw new Error(`XHS detail proof failed: ${proof}`);
+  const completed = store.complete(admitted.entry, proof);
+  if (typeof completed === "string") throw new Error(`XHS detail completion failed: ${completed}`);
+  assert.equal("merge_commit" in completed.lode_pin && completed.lode_pin.merge_commit, LODE_268_DETAIL_PIN.merge_commit);
+  assert.equal(completed.public_summary.normalized?.kind, "xiaohongshu_note_detail");
+  assert.equal(completed.public_summary.normalized?.kind === "xiaohongshu_note_detail" && completed.public_summary.normalized.note_id, "0123456789abcdef01234567");
+  assert.equal(completed.public_summary.normalized?.kind === "xiaohongshu_note_detail" && completed.public_summary.normalized.source_citation.kind, "xhs_note_detail_ref");
+  assert.deepEqual(completed.source_refs.map((entry) => entry.kind), ["pinia_store_summary", "network_summary"]);
+  assert.deepEqual(completed.evidence_ref_kinds.map((entry) => entry.kind), ["snapshot_ref"]);
+  assert.deepEqual(store.get(proof.post_check_ref)?.post_check?.source_refs, proof.source_refs);
+  assert.deepEqual(store.get(proof.post_check_ref)?.post_check?.evidence_refs, proof.evidence_refs);
+  assert.equal(JSON.stringify(completed).includes("xsec_token"), false);
+  assert.equal(store.complete(admitted.entry, {
+    ...proof,
+    public_summary: { ...proof.public_summary, normalized: { ...publicSummary.normalized, title: "篡改标题" } }
+  }), "public_summary_missing");
+});
+
 test("fails closed when the live probe lacks an operation-specific surface or required signal", () => {
   const xhsInput = {
     site_id: "xiaohongshu" as const,
@@ -393,6 +555,134 @@ test("fails closed when the live probe lacks an operation-specific surface or re
   }
 });
 
+test("validates both detail surfaces against the exact search-bound target", () => {
+  const xhsInput = {
+    site_id: "xiaohongshu" as const,
+    operation_id: "xhs_read_note_detail" as const,
+    detail_ref: opaqueRef("detail_ref"),
+    target_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+    expected_origin: "https://www.xiaohongshu.com"
+  };
+  const ready = {
+    origin: "https://www.xiaohongshu.com",
+    pathname: "/explore/0123456789abcdef01234567",
+    ready: true,
+    rendered_surface: true,
+    vue_ready: true,
+    pinia_ready: true,
+    operation_response_status: 200,
+    operation_response_url: xhsInput.target_url,
+    normalized: {
+      kind: "xiaohongshu_note_detail" as const,
+      canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+      note_id: "0123456789abcdef01234567",
+      title: "公开标题",
+      summary: "公开摘要",
+      body_summary: "公开正文摘要",
+      author: { display_name: "公开作者", author_id: "author_123", profile_url: "https://www.xiaohongshu.com/user/profile/author_123" },
+      interaction_metrics: { likes: "10", comments: "2", collects: "3", shares: "1" },
+      source_status: "located" as const
+    }
+  };
+  const xhsCompleted = validateReadOperationProbe(xhsInput, ready);
+  assert.equal(xhsCompleted.status, "completed");
+  if (xhsCompleted.status === "completed") assert.deepEqual(xhsCompleted.source_kinds, ["pinia_store_summary", "network_summary"]);
+  if (xhsCompleted.status === "completed") assert.equal(xhsCompleted.public_summary.normalized?.canonical_url.includes("xsec"), false);
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pinia_ready: false })), "page_not_ready");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, vue_ready: false })), "page_not_ready");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, normalized: { ...ready.normalized, title: "" } })), "field_missing");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pathname: "/explore/aaaaaaaaaaaaaaaaaaaaaaaa" })), "site_changed");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, rendered_surface: false })), "empty_result");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, operation_response_url: "https://evil.example/detail" })), "site_changed");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, login_like: true })), "not_logged_in");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, challenge_like: true })), "safety_challenge");
+
+  const bossInput = {
+    site_id: "boss" as const,
+    operation_id: "boss_read_job_detail" as const,
+    detail_ref: opaqueRef("detail_ref"),
+    target_url: "https://www.zhipin.com/job_detail/AbC_123.html",
+    expected_origin: "https://www.zhipin.com"
+  };
+  const bossDetailResponse = {
+    status: "completed" as const,
+    title: "AI 工程师",
+    summary: "公开职位描述",
+    description: "公开职位描述",
+    job_status: "available",
+    company_name: "公开公司",
+    recruiter_name: "公开招聘者",
+    recruiter_title: "招聘经理"
+  };
+  const readyBossDetail = {
+    ...ready,
+    origin: "https://www.zhipin.com",
+    pathname: "/job_detail/AbC_123.html",
+    operation_response_url: bossInput.target_url,
+    boss_detail_response_status: 200,
+    boss_detail_response_url: "https://www.zhipin.com/wapi/zpgeek/job/detail.json?securityId=AbC_123",
+    boss_detail_response: bossDetailResponse,
+    normalized: {
+      kind: "boss_job_detail" as const,
+      canonical_url: "https://www.zhipin.com/job_detail/AbC_123.html",
+      title: "AI 工程师",
+      summary: "公开职位描述",
+      job: { title: "AI 工程师", description: "公开职位描述", status: "available" },
+      company: { name: "公开公司" },
+      recruiter: { name: "公开招聘者", title: "招聘经理" },
+      source_status: "located" as const
+    }
+  };
+  const bossCompleted = validateReadOperationProbe(bossInput, readyBossDetail);
+  assert.equal(bossCompleted.status, "completed");
+  if (bossCompleted.status === "completed") assert.deepEqual(bossCompleted.source_kinds, ["wapi_job_detail_summary", "dom_snapshot_summary"]);
+  assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, boss_detail_response: undefined, boss_detail_response_url: undefined })), "network_resource_unavailable");
+  assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, boss_detail_response_url: "https://www.zhipin.com/wapi/zpgeek/job/detail.json?securityId=Other" })), "network_resource_unavailable");
+  assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, boss_detail_response: { ...bossDetailResponse, title: "错误职位" } })), "site_changed");
+  assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, normalized: { ...readyBossDetail.normalized, company: { name: "" } } })), "field_missing");
+
+  const longDescription = `负责真实浏览器任务与证据链路。${"持续改进可靠性与安全边界。".repeat(60)}`;
+  const longWapi = summarizeBossJobDetailResponse(JSON.stringify({
+    code: 0,
+    zpData: {
+      securityId: "AbC_123",
+      jobInfo: { jobName: "AI 工程师", postDescription: longDescription, jobStatus: "available" },
+      brandComInfo: { brandName: "公开公司" },
+      bossInfo: { name: "公开招聘者", title: "招聘经理" }
+    }
+  }), "AbC_123");
+  if (longWapi.status !== "completed") throw new Error("Long BOSS WAPI summary unexpectedly failed.");
+  assert.equal(longWapi.summary.length, 500);
+  assert.equal(longWapi.description.length > 500, true);
+  const evaluateBossDetail = new Function("document", "location", `return ${readProbeExpression("boss", "", undefined, "boss_read_job_detail")}`);
+  const domObservation = evaluateBossDetail({
+    readyState: "complete",
+    body: { innerText: longDescription },
+    querySelector: (selector: string) => {
+      if (selector.includes("captcha") || selector.includes("login")) return null;
+      if (selector.includes(".job-name")) return { textContent: "AI 工程师" };
+      if (selector.includes(".job-sec-text")) return { textContent: longDescription };
+      if (selector.includes(".company-info")) return { textContent: "公开公司" };
+      if (selector.includes(".boss-name")) return { textContent: "公开招聘者" };
+      if (selector.includes(".boss-info-attr")) return { textContent: "招聘经理" };
+      if (selector.includes(".job-detail-box")) return {};
+      return null;
+    }
+  }, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" });
+  assert.equal(domObservation.normalized.summary.length, 500);
+  assert.equal(domObservation.normalized.job.description, longDescription);
+  const longReady = {
+    ...readyBossDetail,
+    boss_detail_response: longWapi,
+    normalized: domObservation.normalized
+  };
+  assert.equal(validateReadOperationProbe(bossInput, longReady).status, "completed");
+  assert.equal(failureClass(validateReadOperationProbe(bossInput, {
+    ...longReady,
+    normalized: { ...longReady.normalized, job: { ...longReady.normalized.job, description: `${longDescription}不一致` } }
+  })), "site_changed");
+});
+
 test("summarizes only a successful BOSS WAPI job list and fails closed for empty 2xx shells", () => {
   assert.deepEqual(summarizeBossJobSearchResponse('{"code":0,"zpData":{"jobList":[{},{}]}}'), {
     status: "completed",
@@ -404,6 +694,26 @@ test("summarizes only a successful BOSS WAPI job list and fails closed for empty
   assert.equal(failureClass(summarizeBossJobSearchResponse('{"code":0,"zpData":{"jobList":[null]}}')), "empty_result");
   assert.equal(failureClass(summarizeBossJobSearchResponse('{"code":0,"zpData":{}}')), "site_changed");
   assert.equal(JSON.stringify(summarizeBossJobSearchResponse('{"code":0,"zpData":{"jobList":[{"secret":"not returned"}]}}')).includes("secret"), false);
+});
+
+test("summarizes only a target-bound BOSS detail WAPI response without raw identifiers", () => {
+  const body = JSON.stringify({
+    code: 0,
+    zpData: {
+      securityId: "AbC_123",
+      encryptJobId: "private-job-id",
+      jobInfo: { securityId: "AbC_123", jobName: "AI 工程师", postDescription: "公开职位描述", jobStatus: "available", salaryDesc: "20-30K", locationName: "上海" },
+      brandComInfo: { brandName: "公开公司" },
+      bossInfo: { name: "公开招聘者", title: "招聘经理" }
+    }
+  });
+  const summary = summarizeBossJobDetailResponse(body, "AbC_123");
+  assert.equal(summary.status, "completed");
+  assert.equal(JSON.stringify(summary).includes("securityId"), false);
+  assert.equal(JSON.stringify(summary).includes("encryptJobId"), false);
+  assert.equal(JSON.stringify(summary).includes("private-job-id"), false);
+  assert.equal(failureClass(summarizeBossJobDetailResponse(body, "Other_456")), "site_changed");
+  assert.equal(failureClass(summarizeBossJobDetailResponse('{"code":0,"zpData":{}}', "AbC_123")), "site_changed");
 });
 
 function failureClass(result: { status: string; failure_class?: string }): string | undefined {

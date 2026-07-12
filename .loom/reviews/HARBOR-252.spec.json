@@ -1,0 +1,19 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-252",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "HARBOR-252 spec is aligned to merged Lode detail truth, same-session opaque targets, exact source/evidence bindings, bounded normalized public fields, and no-write privacy boundaries.",
+  "reviewer": "codex-main-controller",
+  "authored_at": "2026-07-12T06:47:00Z",
+  "reviewed_head": "d9948a50bede0e394869850679c30166484f94cc",
+  "reviewed_validation_summary": "2026-07-12T06:47Z: At integrated product head `d9948a50bede0e394869850679c30166484f94cc`, `pnpm test` passed 78/78, `pnpm typecheck`, `pnpm build`, `git diff --check`, and `git diff --cached --check` passed. Independent merge-result review returned ALLOW after confirming HARBOR-251 Vue ownership, abort/deadline, WAPI-deferred pre-admission and HARBOR-252 XHS/BOSS detail target/probe/result paths are both preserved. BOSS detail now inherits security-check and QR-login overlay detection with regression coverage. Lode merge `66d79b4e600565a00515b1c801e84291edc7b0c1` and registry digest `dca2761b7feb09a0ab86f7202e153da3c97b21a75299af6adaf64eade319deef` remain pinned. No production-page action or external write occurred in this merge lane.",
+  "reviewed_validation_summary_hash": "4ce78cd1f9eb2ccc9ec29bfe1815ab1d4618d7141b2c095015f8c807dff1060f",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-252.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": ["Downstream Core/App live detail consumption remains required."],
+  "consumed_inputs": {"work_item": ".loom/work-items/HARBOR-252.md", "recovery_entry": ".loom/progress/HARBOR-252.md", "status_surface": ".loom/status/current.md", "build_checkpoint": "pass", "suite_validation": "loom suite validate --target . --item HARBOR-252 --json", "suite_spec": ".loom/specs/HARBOR-252/spec.md", "suite_plan": ".loom/specs/HARBOR-252/plan.md"}
+}

@@ -12,9 +12,11 @@ import {
 import { opaqueRef } from "./refs.js";
 import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe } from "./read-operation-probe-trust.js";
 import type {
+  BossJobDetailPublicSummary,
   LocalProviderLaunchInput,
   LocalProviderLauncher,
   LocalProviderLaunchResult,
+  LocalProviderDetailPublicSummary,
   LocalProviderPageFacts,
   LocalProviderReadProbeInput,
   LocalProviderReadProbeResult,
@@ -24,10 +26,12 @@ import type {
   LocalProviderScreenshotFacts,
   RuntimeErrorCode,
   RuntimeErrorFact,
-  RuntimeFact
+  RuntimeFact,
+  XiaohongshuNoteDetailPublicSummary
 } from "./runtime-session-types.js";
 
 type CdpPageTarget = { id?: string; type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
+type ObservedDetailPublicSummary = Omit<XiaohongshuNoteDetailPublicSummary, "source_citation"> | Omit<BossJobDetailPublicSummary, "detail_ref" | "source_citation">;
 
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
@@ -350,11 +354,14 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       });
       let navigationStarted = false;
       let operationResponse: { requestId: string; status: number; url: string } | null = null;
+      let bossDetailResponse: { requestId: string; status: number; url: string } | null = null;
       const stopObservingNetwork = client.on("Network.responseReceived", (event) => {
         const response = event.response as { url?: unknown; status?: unknown } | undefined;
         const status = typeof response?.status === "number" ? response.status : null;
         const requestId = typeof event.requestId === "string" ? event.requestId : "";
-        if (
+        if (navigationStarted && input.operation_id === "boss_read_job_detail" && status !== null && status >= 200 && status < 300 && requestId && isBossJobDetailWapiUrl(input, response?.url)) {
+          bossDetailResponse = { requestId, status, url: response!.url as string };
+        } else if (
           navigationStarted &&
           status !== null &&
           status >= 200 &&
@@ -371,7 +378,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           return { blocked_redirect: true };
         }
         const evaluated = await client.send("Runtime.evaluate", {
-          expression: readProbeExpression(input.site_id, input.query, input.city_code),
+          expression: readProbeExpression(input.site_id, input.query ?? "", input.city_code, input.operation_id),
           returnByValue: true
         });
         const value = (evaluated.result as { value?: {
@@ -382,25 +389,35 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           rendered_surface?: boolean;
           login_like?: boolean;
           challenge_like?: boolean;
+          vue_ready?: boolean;
           pinia_ready?: boolean;
+          normalized?: ObservedDetailPublicSummary;
+          detail_urls?: string[];
         } } | undefined)?.value;
         const observedResponse = operationResponse as { requestId: string; status: number; url: string } | null;
+        const observedBossDetailResponse = bossDetailResponse as { requestId: string; status: number; url: string } | null;
         if (value?.origin && (value.challenge_like || value.login_like)) {
           stopObservingNetwork();
           stopIntercepting();
           return { validation: validateReadOperationProbe(input, value) };
         }
-        if (value?.origin && value.ready && observedResponse !== null) {
+        if (value?.origin && value.ready && observedResponse !== null && (input.operation_id !== "boss_read_job_detail" || observedBossDetailResponse !== null)) {
           stopObservingNetwork();
           stopIntercepting();
           const bossResponse = input.operation_id === "boss_job_search"
             ? await readBossJobSearchResponseSummary(client, observedResponse.requestId)
             : null;
+          const bossDetailSummary = input.operation_id === "boss_read_job_detail" && observedBossDetailResponse
+            ? await readBossJobDetailResponseSummary(client, observedBossDetailResponse.requestId, bossDetailTargetId(input.target_url))
+            : null;
           const validation = validateReadOperationProbe(input, {
             ...value,
             operation_response_status: observedResponse.status,
             operation_response_url: observedResponse.url,
-            boss_response: bossResponse
+            boss_response: bossResponse,
+            boss_detail_response: bossDetailSummary,
+            boss_detail_response_status: observedBossDetailResponse?.status,
+            boss_detail_response_url: observedBossDetailResponse?.url
           });
           if (validation.status === "unavailable") return { validation };
           const screenshot = await captureProbeScreenshot(client);
@@ -435,8 +452,9 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       page: pageFacts,
       source_refs,
       evidence_ref_kinds,
-      public_summary_source_ref: source_refs.find((source) => source.kind === "network_summary")?.ref ?? source_refs[0]!.ref,
-      public_summary: validation.public_summary
+      public_summary_source_ref: source_refs.find((source) => source.kind === "network_summary" || source.kind === "wapi_job_detail_summary")?.ref ?? source_refs[0]!.ref,
+      public_summary: validation.public_summary,
+      detail_targets: validation.detail_urls?.map((canonical_url) => ({ canonical_url }))
     };
   } catch (cause) {
     return probeUnavailable(
@@ -467,10 +485,16 @@ interface ReadProbeObservation {
   job_cards_valid?: boolean;
   login_like?: boolean;
   challenge_like?: boolean;
+  vue_ready?: boolean;
   pinia_ready?: boolean;
+  normalized?: ObservedDetailPublicSummary;
+  detail_urls?: string[];
   operation_response_status?: number;
   operation_response_url?: string;
   boss_response?: BossJobSearchResponseSummary | BossJobSearchResponseFailure | null;
+  boss_detail_response?: BossJobDetailResponseSummary | BossJobSearchResponseFailure | null;
+  boss_detail_response_status?: number;
+  boss_detail_response_url?: string;
   blocked_redirect?: boolean;
   evidence_missing?: boolean;
   screenshot_ref?: string;
@@ -511,15 +535,58 @@ export function validateReadOperationProbe(
   input: LocalProviderReadProbeInput,
   observation: ReadProbeObservation
 ):
-  | { status: "completed"; source_kinds: string[]; public_summary: LocalProviderReadProbePublicSummary }
+  | { status: "completed"; source_kinds: string[]; public_summary: LocalProviderReadProbePublicSummary; detail_urls?: string[] }
   | { status: "unavailable"; failure_class: Extract<LocalProviderReadProbeResult, { status: "unavailable" }>["failure_class"]; message: string; retryable: boolean } {
   if (observation.origin !== input.expected_origin) return { status: "unavailable", failure_class: "origin_drift", message: "The read-operation page left the pinned allowed origin.", retryable: false };
   if (observation.challenge_like) return { status: "unavailable", failure_class: "safety_challenge", message: "The read-operation page shows a verification or safety challenge.", retryable: false };
   if (observation.login_like) return { status: "unavailable", failure_class: "not_logged_in", message: "The read-operation page requires a manual login refresh.", retryable: true };
   if (!observation.ready) return { status: "unavailable", failure_class: "page_not_ready", message: "The read-operation page did not reach the expected operation surface.", retryable: true };
+  if (input.operation_id === "xhs_read_note_detail" || input.operation_id === "boss_read_job_detail") {
+    const xhs = input.operation_id === "xhs_read_note_detail";
+    if (xhs && (!observation.vue_ready || !observation.pinia_ready)) {
+      return { status: "unavailable", failure_class: "page_not_ready", message: "The Xiaohongshu detail Vue app or Pinia note store is not ready.", retryable: true };
+    }
+    const expectedPath = new URL(input.target_url).pathname;
+    const pathMatches = observation.pathname === expectedPath;
+    const rendered = observation.rendered_surface === true;
+    if (!pathMatches || !rendered || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
+      return { status: "unavailable", failure_class: rendered ? "site_changed" : "empty_result", message: "The bound detail page did not expose the expected read-only surface.", retryable: true };
+    }
+    const normalized = validateDetailNormalizedSummary(input, observation.normalized);
+    if (!normalized) return { status: "unavailable", failure_class: "field_missing", message: "Required bounded public detail fields are missing.", retryable: true };
+    if (!xhs) {
+      if (!isSuccessfulReadResponse(observation.boss_detail_response_status) || !isBossJobDetailWapiUrl(input, observation.boss_detail_response_url)) {
+        return { status: "unavailable", failure_class: "network_resource_unavailable", message: "The bound BOSS detail WAPI response was not observed.", retryable: true };
+      }
+      if (!observation.boss_detail_response || observation.boss_detail_response.status === "unavailable") {
+        return observation.boss_detail_response ?? { status: "unavailable", failure_class: "network_resource_unavailable", message: "The BOSS detail WAPI summary is unavailable.", retryable: true };
+      }
+      if (!sameBossDetailSummary(normalized, observation.boss_detail_response)) {
+        return { status: "unavailable", failure_class: "site_changed", message: "The BOSS detail WAPI and rendered summary do not match.", retryable: true };
+      }
+    }
+    return {
+      status: "completed",
+      source_kinds: xhs
+        ? ["pinia_store_summary", "network_summary"]
+        : ["wapi_job_detail_summary", "dom_snapshot_summary"],
+      public_summary: {
+        schema_version: "harbor-read-operation-public-summary/v0",
+        operation_id: input.operation_id,
+        result_kind: xhs ? "xiaohongshu_note_detail_surface" : "boss_job_detail_surface",
+        surface: xhs ? "note_detail" : "job_detail",
+        result_state: "operation_read_response_observed",
+        response_status: observation.operation_response_status,
+        normalized,
+        source_signals: xhs
+          ? ["pinia_note_store_ready", "xhs_note_detail_document", "xhs_note_detail_rendered"]
+          : ["boss_job_detail_document"]
+      }
+    };
+  }
   if (input.operation_id === "xhs_search_notes") {
     const xhsSurface = observation.pathname === "/search_result";
-    if (!xhsSurface || !hasExactPublicQuery(observation.search, "keyword", input.query) || !observation.pinia_ready || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
+    if (!xhsSurface || !hasExactPublicQuery(observation.search, "keyword", input.query ?? "") || !observation.pinia_ready || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
       return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search/note, Pinia, or operation-specific read signal is unavailable.", retryable: true };
     }
     return {
@@ -533,14 +600,15 @@ export function validateReadOperationProbe(
         result_state: "operation_read_response_observed",
         response_status: observation.operation_response_status,
         source_signals: ["pinia_store", "xhs_search_read_network"]
-      }
+      },
+      detail_urls: observation.detail_urls ?? []
     };
   }
   const bossJobsSurface = observation.pathname === "/web/geek/job";
   if (!hasExactPublicQuery(observation.search, "city", input.city_code ?? "")) {
     return { status: "unavailable", failure_class: "city_unresolved", message: "BOSS search city does not match the admitted city code.", retryable: true };
   }
-  if (!bossJobsSurface || !hasExactBossSearch(observation.search, input.query, input.city_code ?? "") || !observation.rendered_surface || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
+  if (!bossJobsSurface || !hasExactBossSearch(observation.search, input.query ?? "", input.city_code ?? "") || !observation.rendered_surface || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
     return { status: "unavailable", failure_class: "page_not_ready", message: "BOSS jobs surface or required WAPI read signal is unavailable.", retryable: true };
   }
   if (!observation.boss_response) return { status: "unavailable", failure_class: "site_changed", message: "BOSS WAPI response summary is unavailable.", retryable: true };
@@ -560,7 +628,8 @@ export function validateReadOperationProbe(
       business_code: observation.boss_response.business_code,
       job_count: observation.boss_response.job_count,
       source_signals: ["boss_wapi_zpgeek_read_network"]
-    }
+    },
+    detail_urls: observation.boss_response.detail_urls
   };
 }
 
@@ -568,7 +637,152 @@ function isSuccessfulReadResponse(status: unknown): status is number {
   return typeof status === "number" && Number.isInteger(status) && status >= 200 && status < 300;
 }
 
-export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id"], query: string, cityCode?: string): string {
+function validateDetailNormalizedSummary(
+  input: LocalProviderReadProbeInput,
+  value: ObservedDetailPublicSummary | undefined
+): LocalProviderDetailPublicSummary | null {
+  const target = new URL(input.target_url);
+  const canonical_url = `${target.origin}${target.pathname}`;
+  if (input.operation_id === "xhs_read_note_detail") {
+    const noteId = target.pathname.split("/").filter(Boolean).at(-1) ?? "";
+    if (value?.kind !== "xiaohongshu_note_detail" || value.canonical_url !== canonical_url || value.note_id !== noteId || !/^[a-f0-9]{24}$/i.test(value.note_id) ||
+      !boundedText(value.title, 200) || !boundedText(value.summary, 500) || !boundedText(value.body_summary, 2000) ||
+      !boundedText(value.author.display_name, 100) || !boundedText(value.author.author_id, 100) ||
+      !validPublicProfileUrl(value.author.profile_url, value.author.author_id) || !validMetrics(value.interaction_metrics) ||
+      (value.source_status !== "located" && value.source_status !== "partially_located")) return null;
+    return {
+      kind: value.kind,
+      canonical_url,
+      note_id: value.note_id,
+      title: value.title,
+      summary: value.summary,
+      body_summary: value.body_summary,
+      author: { display_name: value.author.display_name, author_id: value.author.author_id, profile_url: value.author.profile_url },
+      interaction_metrics: { ...value.interaction_metrics },
+      source_citation: {
+        kind: "xhs_note_detail_ref",
+        note_id: value.note_id,
+        url: canonical_url,
+        field_sources: ["pinia_store_summary", "network_summary"]
+      },
+      source_status: value.source_status
+    };
+  }
+  if (value?.kind !== "boss_job_detail" || value.canonical_url !== canonical_url ||
+    !boundedText(value.title, 200) || !boundedText(value.summary, 500) || !boundedText(value.job.title, 200) ||
+    !boundedText(value.job.description, 4000) || !boundedText(value.job.status, 100) || !optionalBoundedText(value.job.salary, 100) || !optionalBoundedText(value.job.location, 100) ||
+    !boundedText(value.company.name, 200) || !boundedText(value.recruiter.name, 100) || !boundedText(value.recruiter.title, 100) ||
+    (value.source_status !== "located" && value.source_status !== "partially_located")) return null;
+  if (!input.detail_ref || !/^detail_ref_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.detail_ref)) return null;
+  return {
+    kind: value.kind,
+    canonical_url,
+    detail_ref: input.detail_ref,
+    title: value.title,
+    summary: value.summary,
+    job: {
+      title: value.job.title,
+      description: value.job.description,
+      status: value.job.status,
+      ...(value.job.salary ? { salary: value.job.salary } : {}),
+      ...(value.job.location ? { location: value.job.location } : {})
+    },
+    company: { name: value.company.name },
+    recruiter: { name: value.recruiter.name, title: value.recruiter.title },
+    source_citation: {
+      kind: "boss_job_detail_ref",
+      detail_ref: input.detail_ref,
+      url: canonical_url,
+      field_sources: ["wapi_job_detail_summary", "dom_snapshot_summary"]
+    },
+    source_status: value.source_status
+  };
+}
+
+function boundedText(value: unknown, max: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function optionalBoundedText(value: unknown, max: number): boolean {
+  return value === undefined || boundedText(value, max);
+}
+
+function validPublicProfileUrl(value: string, authorId: string): boolean {
+  return value === `https://www.xiaohongshu.com/user/profile/${authorId}` && /^[A-Za-z0-9_]+$/.test(authorId);
+}
+
+function validMetrics(value: XiaohongshuNoteDetailPublicSummary["interaction_metrics"]): boolean {
+  return [value.likes, value.comments, value.collects, value.shares].every((entry) => boundedText(entry, 40));
+}
+
+function sameBossDetailSummary(value: LocalProviderDetailPublicSummary, source: BossJobDetailResponseSummary): boolean {
+  return value.kind === "boss_job_detail" && value.title === source.title && value.summary === source.summary &&
+    value.job.title === source.title && value.job.description === source.description && value.job.status === source.job_status &&
+    value.job.salary === source.salary && value.job.location === source.location && value.company.name === source.company_name &&
+    value.recruiter.name === source.recruiter_name && value.recruiter.title === source.recruiter_title;
+}
+
+export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id"], query: string, cityCode?: string, operationId?: LocalProviderReadProbeInput["operation_id"]): string {
+  if (operationId === "xhs_read_note_detail" || operationId === "boss_read_job_detail") return `(() => {
+    const text = document.body?.innerText || "";
+    const clean = (value, max) => typeof value === "string" ? value.replace(/\\s+/g, " ").trim().slice(0, max) : "";
+    const pick = (selectors, max) => clean(document.querySelector(selectors)?.textContent, max);
+    const challenge = /验证码|安全验证|访问异常|captcha|verify/i.test(text) || Boolean(document.querySelector('[class*="captcha"], [class*="verify"], [class*="security-check"]'));
+    const login = /登录后|扫码登录|手机号登录/.test(text) || Boolean(document.querySelector('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
+    const canonicalUrl = location.origin + location.pathname;
+    const rendered = ${operationId === "xhs_read_note_detail"
+      ? "Boolean(document.querySelector('#detail-desc, .note-detail-mask, [class*=note-content], [class*=interaction-container]'))"
+      : "Boolean(document.querySelector('.job-detail-box, .job-detail-container, [class*=job-detail], .job-sec-text'))"};
+    ${operationId === "xhs_read_note_detail" ? `
+    const app = document.querySelector('#app');
+    const vue = app?.__vue_app__;
+    const pinia = window.__PINIA__ || window.__pinia || vue?.config?.globalProperties?.$pinia;
+    const stores = pinia?._s;
+    const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
+    const title = pick('.note-content .title, #detail-title, [class*="note-title"]', 200);
+    const body = pick('#detail-desc, .note-content .desc, [class*="note-desc"]', 4000);
+    const author = pick('.author-container .name, .author-wrapper .name, [class*="author"] [class*="name"]', 100);
+    const authorLink = document.querySelector('a[href^="/user/profile/"], a[href*="xiaohongshu.com/user/profile/"]');
+    const profilePath = authorLink ? new URL(authorLink.getAttribute('href'), location.origin).pathname : "";
+    const authorId = profilePath.startsWith('/user/profile/') ? profilePath.slice('/user/profile/'.length).split('/')[0] : "";
+    const profileUrl = authorId ? location.origin + '/user/profile/' + authorId : "";
+    const likes = pick('[class*="like"] [class*="count"], .like-wrapper .count', 40);
+    const comments = pick('[class*="comment"] [class*="count"], .comment-wrapper .count', 40);
+    const collects = pick('[class*="collect"] [class*="count"], .collect-wrapper .count', 40);
+    const shares = pick('[class*="share"] [class*="count"], .share-wrapper .count', 40);
+    const noteId = location.pathname.split('/').filter(Boolean).at(-1) || "";
+    const noteStores = stores instanceof Map ? Array.from(stores.entries()).filter(([key]) => /note|detail/i.test(String(key))) : [];
+    const matchesStore = ([, candidate]) => {
+      const state = unwrap(candidate?.$state) || candidate;
+      const details = [unwrap(state?.currentNote), unwrap(state?.noteDetail), unwrap(state?.detail), unwrap(state?.note), state].filter((value) => value && typeof value === "object");
+      return details.some((detail) => {
+        const storeAuthor = unwrap(detail.author) || unwrap(detail.user) || {};
+        const storeMetrics = unwrap(detail.interaction_metrics) || unwrap(detail.interactInfo) || unwrap(detail.metrics) || {};
+        return clean(unwrap(detail.note_id) || unwrap(detail.noteId) || unwrap(detail.id), 64) === noteId &&
+          clean(unwrap(detail.title), 200) === title && clean(unwrap(detail.body_summary) || unwrap(detail.desc) || unwrap(detail.description) || unwrap(detail.body), 4000) === body &&
+          clean(unwrap(storeAuthor.display_name) || unwrap(storeAuthor.nickname) || unwrap(storeAuthor.name), 100) === author &&
+          clean(unwrap(storeAuthor.author_id) || unwrap(storeAuthor.userId) || unwrap(storeAuthor.id), 100) === authorId &&
+          clean(unwrap(storeMetrics.likes) || unwrap(storeMetrics.likedCount), 40) === likes &&
+          clean(unwrap(storeMetrics.comments) || unwrap(storeMetrics.commentCount), 40) === comments &&
+          clean(unwrap(storeMetrics.collects) || unwrap(storeMetrics.collectedCount), 40) === collects &&
+          clean(unwrap(storeMetrics.shares) || unwrap(storeMetrics.shareCount), 40) === shares;
+      });
+    };
+    const piniaReady = noteStores.some(matchesStore);
+    const normalized = piniaReady && title && body && author && authorId && profileUrl && likes && comments && collects && shares && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 2000), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: { likes, comments, collects, shares }, source_status: "located" } : undefined;
+    return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
+      : `
+    const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);
+    const description = pick('.job-sec-text, .job-detail-section, [class*="job-description"]', 4000);
+    const company = pick('.company-info .name, .company-name, [class*="company"] [class*="name"]', 200);
+    const recruiter = pick('.boss-name, .job-boss-info .name, [class*="recruiter"] [class*="name"]', 100);
+    const recruiterTitle = pick('.boss-info-attr, .job-boss-info .boss-info-attr, [class*="recruiter"] [class*="title"]', 100);
+    const salary = pick('.salary, [class*="salary"]', 100);
+    const locationText = pick('.location-address, [class*="job-address"], [class*="location"]', 100);
+    const status = /职位已关闭|停止招聘|已下线/.test(text) ? "closed" : "available";
+    const normalized = title && description && company && recruiter && recruiterTitle ? { kind: "boss_job_detail", canonical_url: canonicalUrl, title, summary: description.slice(0, 500), job: { title, description, status, ...(salary ? { salary } : {}), ...(locationText ? { location: locationText } : {}) }, company: { name: company }, recruiter: { name: recruiter, title: recruiterTitle }, source_status: "located" } : undefined;
+    return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, normalized };`}
+  })()`;
   if (siteId === "boss") return `(() => {
     const text = document.body?.innerText || "";
     const challenge = /验证码|安全验证|访问异常|captcha|verify/i.test(text) || Boolean(document.querySelector('[class*="captcha"], [class*="verify"], [class*="security-check"]'));
@@ -623,7 +837,8 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       pathname: location.pathname,
       search: location.search,
       ready: true,
-      pinia_ready: unwrap(store?.searchValue) === expectedQuery && Array.isArray(unwrap(store?.feeds))
+      pinia_ready: unwrap(store?.searchValue) === expectedQuery && Array.isArray(unwrap(store?.feeds)),
+      detail_urls: typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href^="/explore/"]')).slice(0, 15).map((node) => node.href) : []
     };
   })()`;
 }
@@ -644,6 +859,7 @@ function hasExactBossSearch(search: unknown, query: string, cityCode: string): b
 
 function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: unknown): boolean {
   if (typeof value !== "string") return false;
+  if (input.operation_id === "xhs_read_note_detail" || input.operation_id === "boss_read_job_detail") return value === input.target_url;
   if (input.operation_id === "xhs_search_notes") {
     try {
       const observed = new URL(value);
@@ -654,15 +870,44 @@ function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: un
   }
   const expected = { pathname: "/wapi/zpgeek/search/joblist.json", query: "query" };
   const canonical = new URL(expected.pathname, input.expected_origin);
-  canonical.searchParams.set(expected.query, input.query);
+  canonical.searchParams.set(expected.query, input.query ?? "");
   canonical.searchParams.set("city", input.city_code ?? "");
   return value === canonical.href;
+}
+
+function bossJobDetailWapiUrl(targetUrl: string): string {
+  const securityId = bossDetailTargetId(targetUrl);
+  const url = new URL("/wapi/zpgeek/job/detail.json", "https://www.zhipin.com");
+  url.searchParams.set("securityId", securityId);
+  return url.href;
+}
+
+function isBossJobDetailWapiUrl(input: LocalProviderReadProbeInput, value: unknown): boolean {
+  return input.operation_id === "boss_read_job_detail" && typeof value === "string" && value === bossJobDetailWapiUrl(input.target_url);
+}
+
+function bossDetailTargetId(targetUrl: string): string {
+  return new URL(targetUrl).pathname.split("/").at(-1)?.replace(/\.html$/, "") ?? "";
 }
 
 interface BossJobSearchResponseSummary {
   status: "completed";
   business_code: 0;
   job_count: number;
+  detail_urls?: string[];
+}
+
+interface BossJobDetailResponseSummary {
+  status: "completed";
+  title: string;
+  summary: string;
+  description: string;
+  job_status: string;
+  salary?: string;
+  location?: string;
+  company_name: string;
+  recruiter_name: string;
+  recruiter_title: string;
 }
 
 type BossJobSearchResponseFailure = {
@@ -686,6 +931,62 @@ async function readBossJobSearchResponseSummary(client: CdpClient, requestId: st
   }
 }
 
+async function readBossJobDetailResponseSummary(client: CdpClient, requestId: string, targetId: string): Promise<BossJobDetailResponseSummary | BossJobSearchResponseFailure> {
+  try {
+    const response = await client.send("Network.getResponseBody", { requestId });
+    const encoded = typeof response.body === "string" ? response.body : "";
+    const bytes = response.base64Encoded === true ? Buffer.from(encoded, "base64") : Buffer.from(encoded, "utf8");
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_BOSS_RESPONSE_BYTES) return bossResponseFailure("network_resource_unavailable", "BOSS detail WAPI response is empty or exceeds the summary read limit.", true);
+    return summarizeBossJobDetailResponse(bytes.toString("utf8"), targetId);
+  } catch {
+    return bossResponseFailure("network_resource_unavailable", "BOSS detail WAPI response summary could not be read.", true);
+  }
+}
+
+export function summarizeBossJobDetailResponse(body: string, targetId: string): BossJobDetailResponseSummary | BossJobSearchResponseFailure {
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    return bossResponseFailure("site_changed", "BOSS detail WAPI response is not valid JSON.", true);
+  }
+  if (!isPlainRecord(value) || value.code !== 0) return bossResponseFailure("permission_denied", "BOSS detail WAPI rejected the read request.", false);
+  const zpData = isPlainRecord(value.zpData) ? value.zpData : null;
+  const job = zpData && isPlainRecord(zpData.jobInfo) ? zpData.jobInfo : null;
+  const company = zpData && isPlainRecord(zpData.brandComInfo) ? zpData.brandComInfo : null;
+  const recruiter = zpData && isPlainRecord(zpData.bossInfo) ? zpData.bossInfo : null;
+  if (!zpData || !job || !company || !recruiter) return bossResponseFailure("site_changed", "BOSS detail WAPI public summary shape is unavailable.", true);
+  const internalIds = [zpData.securityId, zpData.encryptJobId, job.securityId, job.encryptJobId].filter((entry): entry is string => typeof entry === "string");
+  if (!/^[A-Za-z0-9_-]+$/.test(targetId) || !internalIds.includes(targetId)) return bossResponseFailure("site_changed", "BOSS detail WAPI target binding does not match the selected result.", false);
+  const title = publicResponseText(job.jobName ?? job.title, 200);
+  const description = publicResponseText(job.postDescription ?? job.description ?? job.jobDescription, 4000);
+  const job_status = publicResponseText(job.jobStatus ?? job.status, 100);
+  const company_name = publicResponseText(company.brandName ?? company.name, 200);
+  const recruiter_name = publicResponseText(recruiter.name ?? recruiter.bossName, 100);
+  const recruiter_title = publicResponseText(recruiter.title ?? recruiter.bossTitle, 100);
+  if (!title || !description || !job_status || !company_name || !recruiter_name || !recruiter_title) return bossResponseFailure("site_changed", "BOSS detail WAPI required public fields are unavailable.", true);
+  const salary = publicResponseText(job.salaryDesc ?? job.salary, 100);
+  const location = publicResponseText(job.locationName ?? job.location, 100);
+  return {
+    status: "completed",
+    title,
+    summary: description.slice(0, 500),
+    description,
+    job_status,
+    ...(salary ? { salary } : {}),
+    ...(location ? { location } : {}),
+    company_name,
+    recruiter_name,
+    recruiter_title
+  };
+}
+
+function publicResponseText(value: unknown, max: number): string | null {
+  if (typeof value !== "string" || /[\u0000-\u001f\u007f]/.test(value)) return null;
+  const normalized = value.replace(/\s+/g, " ").trim().slice(0, max);
+  return normalized || null;
+}
+
 export function summarizeBossJobSearchResponse(body: string): BossJobSearchResponseSummary | BossJobSearchResponseFailure {
   let value: unknown;
   try {
@@ -698,7 +999,13 @@ export function summarizeBossJobSearchResponse(body: string): BossJobSearchRespo
   if (!zpData || !Array.isArray(zpData.jobList)) return bossResponseFailure("site_changed", "BOSS WAPI job list shape is unavailable.", true);
   const jobCount = zpData.jobList.filter(isPlainRecord).length;
   if (jobCount === 0) return bossResponseFailure("empty_result", "BOSS WAPI returned no jobs for the bound query and city.", false);
-  return { status: "completed", business_code: 0, job_count: jobCount };
+  const detail_urls = zpData.jobList.filter(isPlainRecord).slice(0, 15).flatMap((job) => {
+    const securityId = typeof job.securityId === "string" ? job.securityId : typeof job.encryptJobId === "string" ? job.encryptJobId : "";
+    return /^[A-Za-z0-9_-]+$/.test(securityId) ? [`https://www.zhipin.com/job_detail/${securityId}.html`] : [];
+  });
+  return detail_urls.length > 0
+    ? { status: "completed", business_code: 0, job_count: jobCount, detail_urls }
+    : { status: "completed", business_code: 0, job_count: jobCount };
 }
 
 function bossResponseFailure(failure_class: BossJobSearchResponseFailure["failure_class"], message: string, retryable: boolean): BossJobSearchResponseFailure {

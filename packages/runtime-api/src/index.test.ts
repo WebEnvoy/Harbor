@@ -157,11 +157,24 @@ test("creates, reads, and closes a runtime session", async () => {
   assert.match(session.viewer_ref ?? "", /^viewer_/);
   assert.equal(runtime.getSession(session.runtime_session_ref)?.runtime_session_ref, session.runtime_session_ref);
 
+  const detailTargets = (runtime as unknown as { detailReadTargets: {
+    register: (input: { runtime_session_ref: string; site_id: "boss"; search_operation_id: "boss_job_search"; targets: { canonical_url: string }[]; now: number }) => string[];
+    consume: (input: { detail_ref: string; runtime_session_ref: string; site_id: "boss"; operation_id: "boss_read_job_detail"; now: number }) => unknown;
+  } }).detailReadTargets;
+  const [closeRef] = detailTargets.register({
+    runtime_session_ref: session.runtime_session_ref,
+    site_id: "boss",
+    search_operation_id: "boss_job_search",
+    targets: [{ canonical_url: "https://www.zhipin.com/job_detail/Close_Lifecycle.html" }],
+    now: 1_000
+  });
+
   const closed = await runtime.closeSession(session.runtime_session_ref);
   assert.equal(closed?.lifecycle_state, "closed");
   assert.equal(closed?.availability.cdp, "unavailable");
   assert.equal(closed?.availability.viewer, "unavailable");
   assert.equal(closed?.control_owner, "none");
+  assert.equal(detailTargets.consume({ detail_ref: closeRef, runtime_session_ref: session.runtime_session_ref, site_id: "boss", operation_id: "boss_read_job_detail", now: 2_000 }), "detail_ref_expired");
 
   const closedStatus = runtime.getAppRuntimeStatusFixture(session.runtime_session_ref);
   assert.equal("status" in closedStatus, false);
@@ -687,6 +700,18 @@ test("reuses, locks, releases, and stops identity environment sessions", async (
   assert.equal(reused.runtime_session_ref, opened.runtime_session_ref);
   assert.equal(reused.current_page.current_url, "https://www.zhipin.com/web/geek/job");
 
+  const detailTargets = (runtime as unknown as { detailReadTargets: {
+    register: (input: { runtime_session_ref: string; site_id: "boss"; search_operation_id: "boss_job_search"; targets: { canonical_url: string }[]; now: number }) => string[];
+    consume: (input: { detail_ref: string; runtime_session_ref: string; site_id: "boss"; operation_id: "boss_read_job_detail"; now: number }) => unknown;
+  } }).detailReadTargets;
+  const [releaseRef] = detailTargets.register({
+    runtime_session_ref: opened.runtime_session_ref,
+    site_id: "boss",
+    search_operation_id: "boss_job_search",
+    targets: [{ canonical_url: "https://www.zhipin.com/job_detail/Release_Lifecycle.html" }],
+    now: 1_000
+  });
+
   const locked = runtime.lockSession(opened.runtime_session_ref, { control_owner: "user", holder_ref: "manual_user" });
   assert.equal("status" in locked, true);
   if (!("status" in locked)) throw new Error("different controller should not take held session");
@@ -698,6 +723,7 @@ test("reuses, locks, releases, and stops identity environment sessions", async (
   assert.equal(released.lifecycle_state, "idle");
   assert.equal(released.control_owner, "none");
   assert.equal(released.control_lock.state, "released");
+  assert.equal(detailTargets.consume({ detail_ref: releaseRef, runtime_session_ref: opened.runtime_session_ref, site_id: "boss", operation_id: "boss_read_job_detail", now: 2_000 }), "detail_ref_expired");
 
   const userLocked = runtime.lockSession(opened.runtime_session_ref, { control_owner: "user", holder_ref: "manual_user" });
   assert.equal("status" in userLocked, false);
@@ -714,11 +740,20 @@ test("reuses, locks, releases, and stops identity environment sessions", async (
   if (!("status" in conflict)) throw new Error("core_task should not take user lock");
   assert.equal(conflict.current_error.code, "session_locked");
 
+  const [stopRef] = detailTargets.register({
+    runtime_session_ref: opened.runtime_session_ref,
+    site_id: "boss",
+    search_operation_id: "boss_job_search",
+    targets: [{ canonical_url: "https://www.zhipin.com/job_detail/Stop_Lifecycle.html" }],
+    now: 3_000
+  });
+
   const stopped = await runtime.stopSession(opened.runtime_session_ref, { control_owner: "user" });
   assert.equal("status" in stopped, false);
   if ("status" in stopped) throw new Error("user should stop locked session");
   assert.equal(stopped.lifecycle_state, "closed");
   assert.equal(stopped.control_lock.state, "closed");
+  assert.equal(detailTargets.consume({ detail_ref: stopRef, runtime_session_ref: opened.runtime_session_ref, site_id: "boss", operation_id: "boss_read_job_detail", now: 4_000 }), "detail_ref_expired");
 });
 
 test("returns structured failure for invalid target URLs", async () => {

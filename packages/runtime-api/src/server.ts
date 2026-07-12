@@ -308,7 +308,7 @@ function siteResourceFactsInput(url: URL): SiteResourceFactsInput {
 function readOperationStatusCode(result: { status: string; failure_class?: string }): number {
   if (result.status === "completed") return 201;
   if (result.failure_class === "session_missing") return 404;
-  if (["invalid_request", "operation_not_allowlisted", "allowlist_pin_invalid", "target_url_invalid", "target_origin_not_allowed", "target_path_not_allowlisted"].includes(result.failure_class ?? "")) return 400;
+  if (["invalid_request", "operation_not_allowlisted", "allowlist_pin_invalid", "target_url_invalid", "target_origin_not_allowed", "target_path_not_allowlisted", "detail_ref_invalid"].includes(result.failure_class ?? "")) return 400;
   return 409;
 }
 

@@ -95,6 +95,7 @@ import {
   type ViewerControlFacts,
   type ViewerControlUnavailable
 } from "./viewer-control.js";
+import { DetailReadTargetStore } from "./detail-read-target.js";
 
 export const DEFAULT_IDENTITY_SITE_URLS = {
   xiaohongshu: "https://www.xiaohongshu.com/explore",
@@ -114,7 +115,7 @@ export {
   HARBOR_IDENTITY_PROVIDER_BINDING_SCHEMA
 } from "./provider-management.js";
 export { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-provider-launcher.js";
-export { HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA, LODE_262_ALLOWLIST_PIN } from "./read-operation.js";
+export { HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA, LODE_262_ALLOWLIST_PIN, LODE_268_DETAIL_PIN } from "./read-operation.js";
 export { HARBOR_SITE_RESOURCE_FACTS_SCHEMA } from "./site-runtime-facts.js";
 export { HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA, HARBOR_WRITE_PRECHECK_FACTS_SCHEMA } from "./runtime-fixtures.js";
 export { HARBOR_RUNTIME_FACTS_SCHEMA, HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA } from "./runtime-session.js";
@@ -279,6 +280,7 @@ export type {
 export class HarborRuntime {
   private readonly pageScenes = new PageSceneStore();
   private readonly readOperationObservations = new ReadOperationObservationStore();
+  private readonly detailReadTargets = new DetailReadTargetStore();
   private readonly viewerControls = new ViewerControlStore();
   private readonly identityEnvironments: LocalIdentityEnvironmentManager;
   private readonly runtimeSessions: RuntimeSessionStore;
@@ -348,11 +350,15 @@ export class HarborRuntime {
   }
 
   releaseSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): RuntimeSessionFacts | RuntimeSessionUnavailable {
-    return this.runtimeSessions.releaseSession(runtime_session_ref, input);
+    const result = this.runtimeSessions.releaseSession(runtime_session_ref, input);
+    if (!("status" in result)) this.detailReadTargets.clearSession(runtime_session_ref);
+    return result;
   }
 
   async stopSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): Promise<RuntimeSessionFacts | RuntimeSessionUnavailable> {
-    return this.runtimeSessions.stopSession(runtime_session_ref, input);
+    const result = await this.runtimeSessions.stopSession(runtime_session_ref, input);
+    if (!("status" in result)) this.detailReadTargets.clearSession(runtime_session_ref);
+    return result;
   }
 
   getBrowserProviderStatus(input: BrowserProviderDetectionInput = {}): BrowserProviderCatalog {
@@ -477,13 +483,25 @@ export class HarborRuntime {
     const preflightFailure = this.readOperationSessionFailure(runtime_session_ref, admission);
     if (preflightFailure) return readOperationUnavailable(runtime_session_ref, preflightFailure, requestIdentity(admission.request));
 
+    if (admission.request.detail_ref) {
+      const target = this.detailReadTargets.consume({
+        detail_ref: admission.request.detail_ref,
+        runtime_session_ref,
+        site_id: admission.entry.site_id,
+        operation_id: admission.entry.operation_id
+      });
+      if (typeof target === "string") return readOperationUnavailable(runtime_session_ref, target, requestIdentity(admission.request));
+      admission.target_url = target.canonical_url;
+    }
+
     const probe = await this.runtimeSessions.probeReadOperation(runtime_session_ref, {
       site_id: admission.entry.site_id,
       operation_id: admission.entry.operation_id,
       target_url: admission.target_url,
       expected_origin: admission.entry.allowed_origin,
       query: admission.request.query,
-      city_code: admission.request.city_code
+      city_code: admission.request.city_code,
+      detail_ref: admission.request.detail_ref
     });
     if (probe.status === "unavailable") {
       return readOperationUnavailable(runtime_session_ref, probe.failure_class, {
@@ -494,6 +512,15 @@ export class HarborRuntime {
     const postProbeFailure = this.readOperationSessionFailure(runtime_session_ref, admission);
     if (postProbeFailure) return readOperationUnavailable(runtime_session_ref, postProbeFailure, requestIdentity(admission.request));
 
+    const detail_refs = probe.detail_targets && (admission.entry.operation_id === "xhs_search_notes" || admission.entry.operation_id === "boss_job_search")
+      ? this.detailReadTargets.register({
+          runtime_session_ref,
+          site_id: admission.entry.site_id,
+          search_operation_id: admission.entry.operation_id,
+          targets: probe.detail_targets
+        })
+      : [];
+    const publicSummary = detail_refs.length > 0 ? { ...probe.public_summary, detail_refs } : probe.public_summary;
     const proof = this.readOperationObservations.capture({
       operation_ref: opaqueRef("read_operation"),
       runtime_session_ref,
@@ -503,7 +530,7 @@ export class HarborRuntime {
       source_refs: probe.source_refs,
       evidence_ref_kinds: probe.evidence_ref_kinds,
       public_summary_source_ref: probe.public_summary_source_ref,
-      public_summary: probe.public_summary,
+      public_summary: publicSummary,
     });
     if (typeof proof === "string") return readOperationUnavailable(runtime_session_ref, proof, requestIdentity(admission.request));
     const result = this.readOperationObservations.complete(admission.entry, proof);
@@ -802,7 +829,9 @@ export class HarborRuntime {
   }
 
   async closeSession(runtime_session_ref: string): Promise<RuntimeSessionFacts | null> {
-    return this.runtimeSessions.closeSession(runtime_session_ref);
+    const result = await this.runtimeSessions.closeSession(runtime_session_ref);
+    if (result) this.detailReadTargets.clearSession(runtime_session_ref);
+    return result;
   }
 }
 
