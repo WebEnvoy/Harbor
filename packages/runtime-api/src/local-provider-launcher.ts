@@ -52,10 +52,12 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
   ];
   await removeStaleDevtoolsPort(profileStorage.profileDir);
   const child = spawn(browserPath, args, { stdio: "ignore" });
+  const launchDeadline = Date.now() + Math.max(1, input.timeout_ms);
   try {
-    const port = await waitForDevtoolsPort(profileStorage.profileDir, input.timeout_ms);
-    const version = await fetchVersion(port);
-    const page = await readPageFacts(port, input.url);
+    const port = await waitForDevtoolsPort(profileStorage.profileDir, launchDeadline);
+    const readbackSignal = AbortSignal.timeout(remainingLaunchTime(launchDeadline));
+    const version = await fetchVersion(port, readbackSignal);
+    const page = await readPageFacts(port, input.url, readbackSignal);
     let currentUrl = page.current_url ?? input.url;
     const evidence_ref = opaqueRef("validation");
     return {
@@ -72,7 +74,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         ...page.facts
       ],
       openUrl: async (url) => {
-        const nextPage = await openProviderUrl(port, url);
+        const nextPage = await openProviderUrl(port, url, AbortSignal.timeout(Math.max(1, input.timeout_ms)));
         currentUrl = nextPage.current_url ?? url;
         return nextPage;
       },
@@ -265,9 +267,8 @@ async function prepareProfileStorage(profileStorageRef: string | undefined): Pro
   };
 }
 
-async function waitForDevtoolsPort(profileDir: string, timeoutMs: number): Promise<string> {
+async function waitForDevtoolsPort(profileDir: string, deadline: number): Promise<string> {
   const portFile = join(profileDir, "DevToolsActivePort");
-  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const [port] = (await readFile(portFile, "utf8")).trim().split("\n");
@@ -277,6 +278,12 @@ async function waitForDevtoolsPort(profileDir: string, timeoutMs: number): Promi
     }
   }
   throw new Error("Timed out waiting for local browser CDP readiness.");
+}
+
+function remainingLaunchTime(deadline: number): number {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error("Timed out reading local browser CDP readiness.");
+  return remaining;
 }
 
 async function removeStaleDevtoolsPort(profileDir: string): Promise<void> {
@@ -313,17 +320,17 @@ function hasCdpWebSocketEndpoint(version: unknown): boolean {
   }
 }
 
-async function fetchVersion(port: string): Promise<Record<string, string>> {
-  const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+async function fetchVersion(port: string, signal?: AbortSignal): Promise<Record<string, string>> {
+  const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal });
   if (!response.ok) throw new Error(`CDP readiness probe failed: ${response.status}`);
   return (await response.json()) as Record<string, string>;
 }
 
-async function openProviderUrl(port: string, url: string): Promise<LocalProviderPageFacts> {
+async function openProviderUrl(port: string, url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });
+    const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT", signal });
     if (!response.ok) throw new Error(`CDP open-url probe failed: ${response.status}`);
-    return readTargetPageFacts(await response.json() as CdpPageTarget, url);
+    return readTargetPageFacts(await response.json() as CdpPageTarget, url, signal);
   } catch (cause) {
     return unavailablePageFacts("url_unreachable", url, cause);
   }
@@ -1046,17 +1053,24 @@ function readOperationPageFacts(targetUrl: string): LocalProviderPageFacts {
   };
 }
 
-async function readPageFacts(port: string, requested_url: string): Promise<LocalProviderPageFacts> {
+async function readPageFacts(port: string, requested_url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
   try {
-    const page = selectPage(await pageTargets(port), requested_url);
-    return readTargetPageFacts(page, requested_url);
+    const page = selectPage(await pageTargets(port, signal), requested_url);
+    return readTargetPageFacts(page, requested_url, signal);
   } catch (cause) {
     return unavailablePageFacts("cdp_unavailable", requested_url, cause);
   }
 }
 
-async function readTargetPageFacts(page: CdpPageTarget | undefined, requested_url: string): Promise<LocalProviderPageFacts> {
-  const observed = page?.webSocketDebuggerUrl ? await readPageTitle(page.webSocketDebuggerUrl, requested_url) : null;
+async function readTargetPageFacts(page: CdpPageTarget | undefined, requested_url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
+  let observed: { title: string; url: string } | null = null;
+  if (page?.webSocketDebuggerUrl) {
+    try {
+      observed = await readPageTitle(page.webSocketDebuggerUrl, requested_url, signal);
+    } catch {
+      // Page-list facts remain useful for login/challenge handoff when a page target rejects deeper CDP commands.
+    }
+  }
   return readyPage(observed?.url ?? page?.url ?? requested_url, observed?.title ?? page?.title ?? null);
 }
 
@@ -1095,7 +1109,7 @@ function selectPage(pages: CdpPageTarget[], requested_url?: string) {
     pages[0];
 }
 
-async function readPageTitle(webSocketUrl: string, requested_url: string): Promise<{ title: string; url: string } | null> {
+async function readPageTitle(webSocketUrl: string, requested_url: string, signal?: AbortSignal): Promise<{ title: string; url: string } | null> {
   return withCdp(webSocketUrl, async (client) => {
     await client.send("Runtime.enable");
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -1110,7 +1124,7 @@ async function readPageTitle(webSocketUrl: string, requested_url: string): Promi
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     return null;
-  });
+  }, signal);
 }
 
 async function withCdp<T>(webSocketUrl: string, callback: (client: CdpClient) => Promise<T>, signal?: AbortSignal): Promise<T> {
