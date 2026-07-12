@@ -5,7 +5,7 @@
 - Item ID: HARBOR-251
 - Goal: Make the pinned `boss_job_search` operation reachable by verifying the BOSS SPA through a safe pre-admission probe while deferring exact WAPI proof to the operation probe.
 - Scope: BOSS `job_search` site-resource safe probe, refs-only fact mapping, directed runtime tests, and HARBOR-251 item-specific carriers.
-- Execution Path: work/harbor-251-boss-resource-probe
+- Execution Path: work/harbor-251-challenge-visibility
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-251.md
 - Review Entry: .loom/reviews/HARBOR-251.json
