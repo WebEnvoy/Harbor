@@ -575,13 +575,14 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/web/user/') || Boolean(document.querySelector('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
     const app = document.querySelector('#wrap, #app');
     const vue3App = app?.__vue_app__;
-    const rootComponent = app?.__vueParentComponent;
-    const mountedSubtree = rootComponent?.subTree?.el;
+    const rootComponent = app?._vnode?.component;
+    const mountedElement = rootComponent?.vnode?.el || rootComponent?.subTree?.el;
     const vue3Owned = typeof vue3App?.version === 'string' &&
       typeof vue3App?.config?.globalProperties === 'object' &&
       vue3App?._container === app &&
+      rootComponent === vue3App?._instance &&
       rootComponent?.appContext?.app === vue3App &&
-      Boolean(mountedSubtree && app.contains(mountedSubtree));
+      Boolean(mountedElement && (mountedElement === app || app.contains(mountedElement)));
     const vue2Instance = app?.__vue__;
     const vue2Owned = Boolean(vue2Instance?._isMounted === true && vue2Instance?.$root === vue2Instance && vue2Instance?.$el === app);
     const vueOwned = vue3Owned || vue2Owned;

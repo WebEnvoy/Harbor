@@ -225,9 +225,15 @@ function bossSpaDocument(options: {
     contains: (candidate: unknown) => (options.rootOwnsList !== false && candidate === list) || (options.mountedSubtreeOwned !== false && candidate === mountedElement)
   };
   if (options.vueOwned !== false) {
-    const app = { version: "3", config: { globalProperties: {} }, ...(options.fakeVueState ? {} : { _container: root }) };
+    const app: Record<string, any> = { version: "3", config: { globalProperties: {} }, _container: root };
     root.__vue_app__ = app;
-    if (!options.fakeVueState) root.__vueParentComponent = { appContext: { app }, subTree: { el: mountedElement } };
+    if (options.fakeVueState) {
+      root.__vueParentComponent = { appContext: { app }, subTree: { el: mountedElement } };
+    } else {
+      const component = { appContext: { app }, vnode: { el: mountedElement }, subTree: { el: mountedElement } };
+      app._instance = component;
+      root._vnode = { component };
+    }
   }
   return {
     readyState: "complete",
