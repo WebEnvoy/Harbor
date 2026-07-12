@@ -2,34 +2,34 @@
 
 ## Derived Fact Chain View
 
-- Item ID: HARBOR-263
-- Goal: 保持已确认 headed managed session 在连续、独立提交的 Core 只读任务之间的可信 controller handoff。
-- Scope: shared Runtime Session release/acquire handoff lifecycle and focused lifecycle regressions.
-- Execution Path: work/harbor-263-continuous-handoff
+- Item ID: HARBOR-268
+- Goal: Require verified Xiaohongshu result semantics instead of URL, title, or ready state before a read operation succeeds.
+- Scope: XHS search semantic extraction, bounded canonical detail targets, fail-closed validation, focused regressions, and item-specific carriers.
+- Execution Path: work/harbor-268-page-semantics
 - Workspace Entry: .
-- Recovery Entry: .loom/progress/HARBOR-263.md
-- Review Entry: .loom/reviews/HARBOR-263.json
+- Recovery Entry: .loom/progress/HARBOR-268.md
+- Review Entry: .loom/reviews/HARBOR-268.json
 - Validation Entry: pnpm typecheck; pnpm build; targeted tests; pnpm test; git diff --check
-- Closing Condition: Merge PR #269 after current-head review and hosted gate; close only after packaged App proves two separately submitted Xiaohongshu reads on the same confirmed headed session. Do not rerun BOSS production pages.
-- Current Checkpoint: merge
-- Current Stop: PR #269 at carrier head `74c4e26778371e66deefb11aae9959418ad58f5d` has passing product validation and independent semantic review; the only scope-carrier finding is resolved in this carrier-only sync.
-- Next Step: Push the scope/review carrier sync, consume hosted gates, and controlled-merge PR #269. Post-merge live closeout uses Xiaohongshu only; do not rerun BOSS production pages.
-- Blockers: None recorded.
-- Latest Validation Summary: 2026-07-12T09:59Z: Product head `cebd9384a4c3eac1ce810684833bf525c6db1d21` and carrier head `74c4e26778371e66deefb11aae9959418ad58f5d` passed `pnpm typecheck`, `pnpm build`, focused lifecycle tests 6/6, `pnpm test` 85/85, and `git diff --check`. Independent review found no product correctness/security issue; the scope-carrier finding is resolved by limiting post-merge live closeout to two separately submitted Xiaohongshu reads on the same confirmed headed session and prohibiting BOSS production reruns.
-- Recovery Boundary: Revert only HARBOR-263 product and carriers. No BOSS production page rerun, automatic login, sensitive material access, external write, or Core/Lode/App change.
-- Current Lane: Harbor #263 continuous confirmed session handoff.
+- Closing Condition: Ready PR for issue #268 with current-head review and hosted checks; live issue closeout remains post-merge.
+- Current Checkpoint: review
+- Current Stop: Product head `09f75859dd4285dd889841468c5e27376b1f3bc7` passed targeted/full validation and independent final review with no findings.
+- Next Step: Commit review/build carriers, push the branch, create the HARBOR-268 PR, and consume hosted gate.
+- Blockers: None
+- Latest Validation Summary: 2026-07-12T12:02Z at product head 09f75859dd4285dd889841468c5e27376b1f3bc7: pnpm typecheck, pnpm build, targeted read-operation tests 17/17, pnpm test 85/85, pnpm smoke:runtime, isolated-state pnpm smoke:runtime:api, and git diff --check passed. Independent final review returned ALLOW: mixed feeds and virtual DOM subsets correlate safely; empty, pending and drift failures remain distinct; result_count is bound to completion proof; protected API smoke authorization is scoped to protected calls only.
+- Recovery Boundary: Revert only HARBOR-268 code and carriers. Do not change BOSS production behavior, auth/session/profile, other repositories, or external runtime state.
+- Current Lane: HARBOR-268 XHS page-semantic success validation.
 
 ## Runtime Evidence
 
-- Run Entry: Packaged Xiaohongshu two-task same-session replay is pending after merge; BOSS production replay is prohibited while deferred.
-- Logs Entry: targeted tests; pnpm typecheck; pnpm build; pnpm test; git diff --check.
-- Diagnostics Entry: packages/runtime-api/src/runtime-session.ts; packages/runtime-api/src/server.test.ts
-- Verification Entry: .loom/progress/HARBOR-263.md
-- Lane Entry: HARBOR-263
+- Run Entry: no production run in implementation; merged packaged App XHS E2E required for closeout
+- Logs Entry: targeted 17/17; full 85/85; typecheck/build/runtime smoke/diff pass
+- Diagnostics Entry: packages/runtime-api/src/local-provider-launcher.ts; packages/runtime-api/src/read-operation.ts
+- Verification Entry: .loom/specs/HARBOR-268/build-evidence.json
+- Lane Entry: .loom/specs/HARBOR-268/plan.md
 
 ## Sources
 
-- Static Truth: .loom/work-items/HARBOR-263.md
-- Dynamic Truth: .loom/progress/HARBOR-263.md
+- Static Truth: .loom/work-items/HARBOR-268.md
+- Dynamic Truth: .loom/progress/HARBOR-268.md
 - Locator Truth: .loom/bootstrap/init-result.json
-- Fact Chain CLI: loom fact-chain --target . --item HARBOR-263 --json
+- Fact Chain CLI: loom fact-chain --target . --item HARBOR-268 --json
