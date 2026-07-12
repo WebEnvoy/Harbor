@@ -575,12 +575,16 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/web/user/') || Boolean(document.querySelector('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
     const app = document.querySelector('#wrap, #app');
     const vue3App = app?.__vue_app__;
-    const vue3Owned = typeof vue3App?.version === 'string' && typeof vue3App?.config?.globalProperties === 'object';
+    const rootComponent = app?.__vueParentComponent;
+    const mountedSubtree = rootComponent?.subTree?.el;
+    const vue3Owned = typeof vue3App?.version === 'string' &&
+      typeof vue3App?.config?.globalProperties === 'object' &&
+      vue3App?._container === app &&
+      rootComponent?.appContext?.app === vue3App &&
+      Boolean(mountedSubtree && app.contains(mountedSubtree));
     const vue2Instance = app?.__vue__;
-    const vue2Owned = Boolean(vue2Instance?.$root && vue2Instance?.$el);
-    const vueComponent = app?.__vueParentComponent;
-    const vueComponentOwned = typeof vueComponent?.appContext?.app?.version === 'string';
-    const vueOwned = vue3Owned || vue2Owned || vueComponentOwned;
+    const vue2Owned = Boolean(vue2Instance?._isMounted === true && vue2Instance?.$root === vue2Instance && vue2Instance?.$el === app);
+    const vueOwned = vue3Owned || vue2Owned;
     const list = app?.querySelector('.job-list-box, .job-list, [class*="job-list"]');
     const cards = list ? Array.from(list.querySelectorAll('.job-card-wrapper, li.job-card-box, [ka^="search_list_"]')).slice(0, 20) : [];
     const validCards = cards.length > 0 && cards.every((card) => {

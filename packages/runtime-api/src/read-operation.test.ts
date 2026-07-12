@@ -168,6 +168,7 @@ test("observes BOSS SPA, login wall, and challenge state without returning page 
   assert.equal(evaluate(bossSpaDocument({ challengeOverlay: true }), location).challenge_like, true);
   assert.equal(evaluate(bossSpaDocument({ vueOwned: false }), location).rendered_surface, false);
   assert.equal(evaluate(bossSpaDocument({ fakeVueState: true }), location).rendered_surface, false);
+  assert.equal(evaluate(bossSpaDocument({ mountedSubtreeOwned: false }), location).rendered_surface, false);
   assert.equal(evaluate(bossSpaDocument({ rootOwnsList: false }), location).rendered_surface, false);
   assert.equal(evaluate(bossSpaDocument({ cards: [] }), location).rendered_surface, false);
   assert.equal(evaluate(bossSpaDocument({ validCard: false }), location).rendered_surface, false);
@@ -198,6 +199,7 @@ function bossSpaDocument(options: {
   text?: string;
   vueOwned?: boolean;
   fakeVueState?: boolean;
+  mountedSubtreeOwned?: boolean;
   rootOwnsList?: boolean;
   cards?: unknown[];
   validCard?: boolean;
@@ -217,11 +219,16 @@ function bossSpaDocument(options: {
     querySelectorAll: () => cards,
     contains: (candidate: unknown) => cards.includes(candidate as typeof card)
   };
-  const root = {
-    ...(options.vueOwned === false ? {} : options.fakeVueState ? { __vue_app__: {} } : { __vue_app__: { version: "3", config: { globalProperties: {} } } }),
+  const mountedElement = {};
+  const root: Record<string, any> = {
     querySelector: () => list,
-    contains: (candidate: unknown) => options.rootOwnsList !== false && candidate === list
+    contains: (candidate: unknown) => (options.rootOwnsList !== false && candidate === list) || (options.mountedSubtreeOwned !== false && candidate === mountedElement)
   };
+  if (options.vueOwned !== false) {
+    const app = { version: "3", config: { globalProperties: {} }, ...(options.fakeVueState ? {} : { _container: root }) };
+    root.__vue_app__ = app;
+    if (!options.fakeVueState) root.__vueParentComponent = { appContext: { app }, subTree: { el: mountedElement } };
+  }
   return {
     readyState: "complete",
     body: { innerText: options.text ?? "公开职位列表" },
