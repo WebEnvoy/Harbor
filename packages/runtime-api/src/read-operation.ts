@@ -571,6 +571,7 @@ function samePublicSummary(left: LocalProviderReadProbePublicSummary, right: Loc
     left.surface === right.surface &&
     left.result_state === right.result_state &&
     left.response_status === right.response_status &&
+    left.result_count === right.result_count &&
     sameNormalizedSummary(left.normalized, right.normalized) &&
     sameStrings(left.detail_refs ?? [], right.detail_refs ?? []) &&
     sameStrings(left.source_signals, right.source_signals);

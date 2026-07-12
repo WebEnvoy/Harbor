@@ -11,7 +11,6 @@ interface StartupLine {
 }
 
 const endpointsChecked: string[] = [];
-const supervisorToken = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const xhsNoteUrl = "https://www.xiaohongshu.com/explore/0123456789abcdef01234567";
 const xhsProbe = validateReadOperationProbe({
   site_id: "xiaohongshu",
@@ -43,8 +42,7 @@ const child = spawn("pnpm", ["start:runtime"], {
   env: {
     ...process.env,
     HARBOR_RUNTIME_PORT: "0",
-    HARBOR_RUNTIME_PROVIDER: "fixture",
-    HARBOR_MANUAL_AUTH_SUPERVISOR_TOKEN: supervisorToken
+    HARBOR_RUNTIME_PROVIDER: "fixture"
   },
   stdio: ["ignore", "pipe", "pipe"]
 });
@@ -155,7 +153,7 @@ async function postJson(baseUrl: string, path: string, body: unknown): Promise<a
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     body: JSON.stringify(body),
-    headers: { "content-type": "application/json", authorization: `Bearer ${supervisorToken}` }
+    headers: { "content-type": "application/json" }
   });
   endpointsChecked.push(`POST ${path}`);
   assert.equal(response.status === 200 || response.status === 201, true);

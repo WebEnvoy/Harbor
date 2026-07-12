@@ -514,6 +514,7 @@ test("does not construct post-check provenance from missing or arbitrary source 
   assert.equal(store.complete(admitted.entry, forged), "post_check_missing");
   assert.equal(store.complete(admitted.entry, { ...proof, public_summary_source_ref: opaqueRef("source") }), "public_summary_missing");
   assert.equal(store.complete(admitted.entry, { ...proof, public_summary: { ...proof.public_summary, response_status: 201 } }), "public_summary_missing");
+  assert.equal(store.complete(admitted.entry, { ...proof, public_summary: { ...proof.public_summary, result_count: 1 } }), "public_summary_missing");
 });
 
 test("completes XHS detail only with bounded public fields and all Lode source refs", () => {
