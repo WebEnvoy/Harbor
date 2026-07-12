@@ -54,6 +54,7 @@ export type ReadOperationFailureClass =
   | "permission_denied"
   | "city_unresolved"
   | "empty_result"
+  | "field_missing"
   | "site_changed"
   | "public_summary_missing"
   | "source_refs_missing"
@@ -569,6 +570,7 @@ function samePublicSummary(left: LocalProviderReadProbePublicSummary, right: Loc
     left.surface === right.surface &&
     left.result_state === right.result_state &&
     left.response_status === right.response_status &&
+    sameNormalizedSummary(left.normalized, right.normalized) &&
     sameStrings(left.detail_refs ?? [], right.detail_refs ?? []) &&
     sameStrings(left.source_signals, right.source_signals);
 }
@@ -732,10 +734,12 @@ function isExpectedPublicSummary(entry: PinnedReadOperation, summary: LocalProvi
   }
   if (entry.operation_id === "xhs_read_note_detail") {
     return summary.result_kind === "xiaohongshu_note_detail_surface" && summary.surface === "note_detail" &&
-      sameStrings(summary.source_signals, ["xhs_note_detail_document"]);
+      validXhsDetailSummary(summary.normalized) &&
+      sameStrings(summary.source_signals, ["pinia_note_store_ready", "xhs_note_detail_document", "xhs_note_detail_rendered"]);
   }
   if (entry.operation_id === "boss_read_job_detail") {
     return summary.result_kind === "boss_job_detail_surface" && summary.surface === "job_detail" &&
+      validBossDetailSummary(summary.normalized) &&
       sameStrings(summary.source_signals, ["boss_job_detail_document"]);
   }
   return summary.result_kind === "boss_job_search_surface" &&
@@ -788,6 +792,39 @@ function isOperationId(value: unknown): value is AllowlistedReadOperationId {
 
 function isDetailOperation(value: AllowlistedReadOperationId): boolean {
   return value === "xhs_read_note_detail" || value === "boss_read_job_detail";
+}
+
+function sameNormalizedSummary(left: LocalProviderReadProbePublicSummary["normalized"], right: LocalProviderReadProbePublicSummary["normalized"]): boolean {
+  return left === undefined && right === undefined || JSON.stringify(left) === JSON.stringify(right);
+}
+
+function validXhsDetailSummary(value: LocalProviderReadProbePublicSummary["normalized"]): boolean {
+  return value?.kind === "xiaohongshu_note_detail" && validCanonicalPublicUrl(value.canonical_url, "https://www.xiaohongshu.com") &&
+    validBoundedText(value.title, 200) && validBoundedText(value.summary, 500) && validBoundedText(value.body_summary, 2000) &&
+    validBoundedText(value.author.display_name, 100) && (value.source_status === "located" || value.source_status === "partially_located");
+}
+
+function validBossDetailSummary(value: LocalProviderReadProbePublicSummary["normalized"]): boolean {
+  return value?.kind === "boss_job_detail" && validCanonicalPublicUrl(value.canonical_url, "https://www.zhipin.com") &&
+    validBoundedText(value.title, 200) && validBoundedText(value.summary, 500) && validBoundedText(value.job.name, 200) &&
+    validBoundedText(value.job.description_summary, 2000) && validOptionalText(value.job.salary_summary, 100) && validOptionalText(value.job.location_summary, 100) &&
+    validBoundedText(value.company.name, 200) && validBoundedText(value.recruiter.display_name, 100) && validOptionalText(value.recruiter.title, 100) &&
+    (value.source_status === "located" || value.source_status === "partially_located");
+}
+
+function validCanonicalPublicUrl(value: string, origin: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.origin === origin && !url.search && !url.hash && !url.username && !url.password;
+  } catch { return false; }
+}
+
+function validBoundedText(value: string, max: number): boolean {
+  return typeof value === "string" && value.length > 0 && value.length <= max && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function validOptionalText(value: string | undefined, max: number): boolean {
+  return value === undefined || validBoundedText(value, max);
 }
 
 function canonicalJson(value: unknown): string {

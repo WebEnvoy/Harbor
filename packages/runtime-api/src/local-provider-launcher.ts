@@ -15,6 +15,7 @@ import type {
   LocalProviderLaunchInput,
   LocalProviderLauncher,
   LocalProviderLaunchResult,
+  LocalProviderDetailPublicSummary,
   LocalProviderPageFacts,
   LocalProviderReadProbeInput,
   LocalProviderReadProbeResult,
@@ -326,7 +327,9 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           rendered_surface?: boolean;
           login_like?: boolean;
           challenge_like?: boolean;
+          vue_ready?: boolean;
           pinia_ready?: boolean;
+          normalized?: LocalProviderDetailPublicSummary;
           detail_urls?: string[];
         } } | undefined)?.value;
         const observedResponse = operationResponse as { requestId: string; status: number; url: string } | null;
@@ -410,7 +413,9 @@ interface ReadProbeObservation {
   rendered_surface?: boolean;
   login_like?: boolean;
   challenge_like?: boolean;
+  vue_ready?: boolean;
   pinia_ready?: boolean;
+  normalized?: LocalProviderDetailPublicSummary;
   detail_urls?: string[];
   operation_response_status?: number;
   operation_response_url?: string;
@@ -462,13 +467,18 @@ export function validateReadOperationProbe(
   if (observation.login_like) return { status: "unavailable", failure_class: "not_logged_in", message: "The read-operation page requires a manual login refresh.", retryable: true };
   if (!observation.ready) return { status: "unavailable", failure_class: "page_not_ready", message: "The read-operation page did not reach the expected operation surface.", retryable: true };
   if (input.operation_id === "xhs_read_note_detail" || input.operation_id === "boss_read_job_detail") {
+    const xhs = input.operation_id === "xhs_read_note_detail";
+    if (xhs && (!observation.vue_ready || !observation.pinia_ready)) {
+      return { status: "unavailable", failure_class: "page_not_ready", message: "The Xiaohongshu detail Vue app or Pinia note store is not ready.", retryable: true };
+    }
     const expectedPath = new URL(input.target_url).pathname;
     const pathMatches = observation.pathname === expectedPath;
     const rendered = observation.rendered_surface === true;
     if (!pathMatches || !rendered || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
       return { status: "unavailable", failure_class: rendered ? "site_changed" : "empty_result", message: "The bound detail page did not expose the expected read-only surface.", retryable: true };
     }
-    const xhs = input.operation_id === "xhs_read_note_detail";
+    const normalized = validateDetailNormalizedSummary(input, observation.normalized);
+    if (!normalized) return { status: "unavailable", failure_class: "field_missing", message: "Required bounded public detail fields are missing.", retryable: true };
     return {
       status: "completed",
       source_kinds: xhs
@@ -481,7 +491,10 @@ export function validateReadOperationProbe(
         surface: xhs ? "note_detail" : "job_detail",
         result_state: "operation_read_response_observed",
         response_status: observation.operation_response_status,
-        source_signals: [xhs ? "xhs_note_detail_document" : "boss_job_detail_document"]
+        normalized,
+        source_signals: xhs
+          ? ["pinia_note_store_ready", "xhs_note_detail_document", "xhs_note_detail_rendered"]
+          : ["boss_job_detail_document"]
       }
     };
   }
@@ -538,15 +551,91 @@ function isSuccessfulReadResponse(status: unknown): status is number {
   return typeof status === "number" && Number.isInteger(status) && status >= 200 && status < 300;
 }
 
+function validateDetailNormalizedSummary(
+  input: LocalProviderReadProbeInput,
+  value: LocalProviderDetailPublicSummary | undefined
+): LocalProviderDetailPublicSummary | null {
+  const target = new URL(input.target_url);
+  const canonical_url = `${target.origin}${target.pathname}`;
+  if (input.operation_id === "xhs_read_note_detail") {
+    if (value?.kind !== "xiaohongshu_note_detail" || value.canonical_url !== canonical_url ||
+      !boundedText(value.title, 200) || !boundedText(value.summary, 500) || !boundedText(value.body_summary, 2000) ||
+      !boundedText(value.author.display_name, 100) || (value.source_status !== "located" && value.source_status !== "partially_located")) return null;
+    return {
+      kind: value.kind,
+      canonical_url,
+      title: value.title,
+      summary: value.summary,
+      body_summary: value.body_summary,
+      author: { display_name: value.author.display_name },
+      source_status: value.source_status
+    };
+  }
+  if (value?.kind !== "boss_job_detail" || value.canonical_url !== canonical_url ||
+    !boundedText(value.title, 200) || !boundedText(value.summary, 500) || !boundedText(value.job.name, 200) ||
+    !boundedText(value.job.description_summary, 2000) || !optionalBoundedText(value.job.salary_summary, 100) || !optionalBoundedText(value.job.location_summary, 100) ||
+    !boundedText(value.company.name, 200) || !boundedText(value.recruiter.display_name, 100) || !optionalBoundedText(value.recruiter.title, 100) ||
+    (value.source_status !== "located" && value.source_status !== "partially_located")) return null;
+  return {
+    kind: value.kind,
+    canonical_url,
+    title: value.title,
+    summary: value.summary,
+    job: {
+      name: value.job.name,
+      description_summary: value.job.description_summary,
+      ...(value.job.salary_summary ? { salary_summary: value.job.salary_summary } : {}),
+      ...(value.job.location_summary ? { location_summary: value.job.location_summary } : {})
+    },
+    company: { name: value.company.name },
+    recruiter: {
+      display_name: value.recruiter.display_name,
+      ...(value.recruiter.title ? { title: value.recruiter.title } : {})
+    },
+    source_status: value.source_status
+  };
+}
+
+function boundedText(value: unknown, max: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function optionalBoundedText(value: unknown, max: number): boolean {
+  return value === undefined || boundedText(value, max);
+}
+
 export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id"], query: string, cityCode?: string, operationId?: LocalProviderReadProbeInput["operation_id"]): string {
   if (operationId === "xhs_read_note_detail" || operationId === "boss_read_job_detail") return `(() => {
     const text = (document.body?.innerText || "").slice(0, 2000);
+    const clean = (value, max) => typeof value === "string" ? value.replace(/\\s+/g, " ").trim().slice(0, max) : "";
+    const pick = (selectors, max) => clean(document.querySelector(selectors)?.textContent, max);
     const challenge = /验证码|安全验证|访问异常|captcha|verify/i.test(text) || Boolean(document.querySelector('[class*="captcha"], [class*="verify"]'));
     const login = /登录后|扫码登录|手机号登录/.test(text) || Boolean(document.querySelector('.login-dialog, [class*="login"] form'));
+    const canonicalUrl = location.origin + location.pathname;
     const rendered = ${operationId === "xhs_read_note_detail"
       ? "Boolean(document.querySelector('#detail-desc, .note-detail-mask, [class*=note-content], [class*=interaction-container]'))"
       : "Boolean(document.querySelector('.job-detail-box, .job-detail-container, [class*=job-detail], .job-sec-text'))"};
-    return { origin: location.origin, pathname: location.pathname, search: location.search, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge };
+    ${operationId === "xhs_read_note_detail" ? `
+    const app = document.querySelector('#app');
+    const vue = app?.__vue_app__;
+    const pinia = window.__PINIA__ || window.__pinia || vue?.config?.globalProperties?.$pinia;
+    const stores = pinia?._s;
+    const piniaReady = stores instanceof Map && Array.from(stores.keys()).some((key) => /note|feed|detail/i.test(String(key)));
+    const title = pick('.note-content .title, #detail-title, [class*="note-title"]', 200);
+    const body = pick('#detail-desc, .note-content .desc, [class*="note-desc"]', 2000);
+    const author = pick('.author-container .name, .author-wrapper .name, [class*="author"] [class*="name"]', 100);
+    const normalized = title && body && author ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, title, summary: body.slice(0, 500), body_summary: body, author: { display_name: author }, source_status: "located" } : undefined;
+    return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
+      : `
+    const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);
+    const description = pick('.job-sec-text, .job-detail-section, [class*="job-description"]', 2000);
+    const company = pick('.company-info .name, .company-name, [class*="company"] [class*="name"]', 200);
+    const recruiter = pick('.boss-name, .job-boss-info .name, [class*="recruiter"] [class*="name"]', 100);
+    const recruiterTitle = pick('.boss-info-attr, .job-boss-info .boss-info-attr, [class*="recruiter"] [class*="title"]', 100);
+    const salary = pick('.salary, [class*="salary"]', 100);
+    const locationText = pick('.location-address, [class*="job-address"], [class*="location"]', 100);
+    const normalized = title && description && company && recruiter ? { kind: "boss_job_detail", canonical_url: canonicalUrl, title, summary: description.slice(0, 500), job: { name: title, description_summary: description, ...(salary ? { salary_summary: salary } : {}), ...(locationText ? { location_summary: locationText } : {}) }, company: { name: company }, recruiter: { display_name: recruiter, ...(recruiterTitle ? { title: recruiterTitle } : {}) }, source_status: "located" } : undefined;
+    return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, normalized };`}
   })()`;
   if (siteId === "boss") return `(() => {
     const text = (document.body?.innerText || "").slice(0, 2000);

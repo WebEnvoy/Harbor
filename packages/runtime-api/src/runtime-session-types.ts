@@ -186,8 +186,37 @@ export interface LocalProviderReadProbePublicSummary {
   business_code?: number;
   job_count?: number;
   detail_refs?: readonly string[];
+  normalized?: LocalProviderDetailPublicSummary;
   source_signals: readonly string[];
 }
+
+export interface XiaohongshuNoteDetailPublicSummary {
+  kind: "xiaohongshu_note_detail";
+  canonical_url: string;
+  title: string;
+  summary: string;
+  body_summary: string;
+  author: { display_name: string };
+  source_status: "located" | "partially_located";
+}
+
+export interface BossJobDetailPublicSummary {
+  kind: "boss_job_detail";
+  canonical_url: string;
+  title: string;
+  summary: string;
+  job: {
+    name: string;
+    description_summary: string;
+    salary_summary?: string;
+    location_summary?: string;
+  };
+  company: { name: string };
+  recruiter: { display_name: string; title?: string };
+  source_status: "located" | "partially_located";
+}
+
+export type LocalProviderDetailPublicSummary = XiaohongshuNoteDetailPublicSummary | BossJobDetailPublicSummary;
 
 export interface LocalProviderReadProbeDetailTarget {
   canonical_url: string;
@@ -212,7 +241,7 @@ export type LocalProviderReadProbeResult =
     }
   | {
       status: "unavailable";
-      failure_class: "origin_drift" | "not_logged_in" | "safety_challenge" | "page_not_ready" | "network_resource_unavailable" | "evidence_refs_missing" | "fixture_runtime" | "provider_probe_unavailable" | "permission_denied" | "city_unresolved" | "empty_result" | "site_changed";
+      failure_class: "origin_drift" | "not_logged_in" | "safety_challenge" | "page_not_ready" | "network_resource_unavailable" | "evidence_refs_missing" | "fixture_runtime" | "provider_probe_unavailable" | "permission_denied" | "city_unresolved" | "empty_result" | "field_missing" | "site_changed";
       message: string;
       retryable: boolean;
       page?: LocalProviderPageFacts;
