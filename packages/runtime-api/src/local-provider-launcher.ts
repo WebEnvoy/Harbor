@@ -11,7 +11,7 @@ import {
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
 import { publicReadOperationTargetUrl } from "./read-operation.js";
-import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe } from "./read-operation-probe-trust.js";
+import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe, trustLocalProviderWritePrecheckProbe } from "./read-operation-probe-trust.js";
 import type {
   BossJobDetailPublicSummary,
   LocalProviderLaunchInput,
@@ -30,6 +30,7 @@ import type {
   RuntimeFact,
   XiaohongshuNoteDetailPublicSummary
 } from "./runtime-session-types.js";
+import type { LocalProviderWritePrecheckProbeInput, LocalProviderWritePrecheckProbeResult } from "./runtime-session-types.js";
 
 type CdpPageTarget = { id?: string; type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
 type ObservedDetailPublicSummary = Omit<XiaohongshuNoteDetailPublicSummary, "source_citation"> | Omit<BossJobDetailPublicSummary, "detail_ref" | "source_citation">;
@@ -51,14 +52,17 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     ...(input.headless ? ["--headless=new"] : []),
     input.url
   ];
-  await removeStaleDevtoolsPort(profileStorage.profileDir);
+  const reusingActiveBrowser = await removeStaleDevtoolsPort(profileStorage.profileDir);
   const child = spawn(browserPath, args, { stdio: "ignore" });
   const launchDeadline = Date.now() + Math.max(1, input.timeout_ms);
   try {
     const port = await waitForDevtoolsPort(profileStorage.profileDir, launchDeadline);
     const readbackSignal = AbortSignal.timeout(remainingLaunchTime(launchDeadline));
     const version = await fetchVersion(port, readbackSignal);
-    const page = await readPageFacts(port, input.url, readbackSignal);
+    const ownedTargetIds = new Set<string>();
+    const page = reusingActiveBrowser
+      ? await openProviderUrl(port, input.url, readbackSignal, (targetId) => ownedTargetIds.add(targetId))
+      : await readPageFacts(port, input.url, readbackSignal);
     let currentUrl = page.current_url ?? input.url;
     let retainedXhsSearchTargetId: string | undefined;
     let readOperationTail = Promise.resolve();
@@ -77,7 +81,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         ...page.facts
       ],
       openUrl: async (url) => {
-        const nextPage = await openProviderUrl(port, url, AbortSignal.timeout(Math.max(1, input.timeout_ms)));
+        const nextPage = await openProviderUrl(port, url, AbortSignal.timeout(Math.max(1, input.timeout_ms)), reusingActiveBrowser ? (targetId) => ownedTargetIds.add(targetId) : undefined);
         currentUrl = nextPage.current_url ?? url;
         return nextPage;
       },
@@ -102,9 +106,11 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
           release();
         }
       }),
+      probeWritePrecheck: trustLocalProviderWritePrecheckProbe((probe) => probeProviderWritePrecheck(port, currentUrl, probe)),
       captureScreenshot: () => captureProviderScreenshot(port, currentUrl),
       close: async () => {
         if (retainedXhsSearchTargetId) await closeProviderPage(port, retainedXhsSearchTargetId).catch(() => undefined);
+        for (const targetId of ownedTargetIds) await closeProviderPage(port, targetId).catch(() => undefined);
         await closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent);
       }
     };
@@ -118,6 +124,113 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     });
     return unavailable("launch_failed", diagnostic.app_summary, [...providerBindingFacts(providerBinding), ...profileStorage.facts]);
   }
+}
+
+type WritePrecheckObservation = {
+  url?: string;
+  origin?: string;
+  pathname?: string;
+  challenge_like?: boolean;
+  login_like?: boolean;
+  creator_app_owned?: boolean;
+  creator_root_count?: number;
+  upload_image_tab_active?: boolean;
+  upload_image_entry_visible?: boolean;
+  text_image_entry_visible?: boolean;
+};
+
+export function validateXhsWritePrecheckObservation(input: LocalProviderWritePrecheckProbeInput, observation: WritePrecheckObservation | undefined): LocalProviderWritePrecheckProbeResult {
+  if (!observation) return writePrecheckUnavailable("page_changed", "The creator page returned no public semantic observation.");
+  if (observation.challenge_like) return writePrecheckUnavailable("safety_challenge", "The creator page shows a safety challenge.", false);
+  if (observation.login_like) return writePrecheckUnavailable("login_required", "The creator page requires manual login.");
+  if (observation.origin !== input.expected_origin || observation.pathname !== "/publish/publish" || observation.url !== input.target_url) return writePrecheckUnavailable("page_changed", "The current page is not the exact requested creator publish page.");
+  if (!observation.creator_app_owned || observation.creator_root_count !== 1 || !observation.upload_image_tab_active || !observation.upload_image_entry_visible || !observation.text_image_entry_visible) {
+    return writePrecheckUnavailable("target_not_writable", "The creator publish entrypoint or its visible image/text entry controls are unavailable.", false);
+  }
+  const pageSource = opaqueRef("source");
+  const domSource = opaqueRef("source");
+  return {
+    status: "completed", observed_at: new Date().toISOString(), observed_url: input.target_url,
+    page: readyPage(input.target_url, "Xiaohongshu creator publish precheck"),
+    source_refs: [{ kind: "creator_publish_page_summary", ref: pageSource }, { kind: "dom_snapshot_summary", ref: domSource }],
+    evidence_ref_kinds: [{ kind: "snapshot_ref", ref: opaqueRef("evidence") }],
+    classification: "partial_result",
+    precheck_scope: "entrypoint_only",
+    composition_state: "composition_not_initialized",
+    entrypoint_observations: {
+      route_loaded: true,
+      publish_vue_container_visible: true,
+      upload_image_tab_active: true,
+      upload_image_entry_visible: true,
+      text_image_entry_visible: true
+    },
+    field_states: {
+      title_input: { availability: "unavailable", observation: "not_observed" },
+      content_editor: { availability: "unavailable", observation: "not_observed" },
+      publish_control: { availability: "unavailable", observation: "not_observed" }
+    },
+    prohibited_actions_observed: { upload: false, generate: false, save: false, publish: false },
+    target_ref: input.target_ref
+  };
+}
+
+async function probeProviderWritePrecheck(port: string, currentUrl: string, input: LocalProviderWritePrecheckProbeInput): Promise<LocalProviderWritePrecheckProbeResult> {
+  try {
+    if (currentUrl !== input.target_url) return writePrecheckUnavailable("page_changed", "The managed session is not on the requested creator publish page.");
+    const page = await activePage(port, currentUrl, AbortSignal.timeout(3000));
+    if (!page.webSocketDebuggerUrl) return writePrecheckUnavailable("provider_probe_unavailable", "The creator page has no controlled CDP target.");
+    const observedAt = Date.now();
+    const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
+      await client.send("Runtime.enable");
+      const evaluated = await client.send("Runtime.evaluate", { expression: writePrecheckProbeExpression(), returnByValue: true, awaitPromise: true });
+      return (evaluated.result as { value?: WritePrecheckObservation } | undefined)?.value;
+    }, AbortSignal.timeout(3000));
+    const validation = validateXhsWritePrecheckObservation(input, observation);
+    if (validation.status === "unavailable") return validation;
+    const screenshot = await withCdp(page.webSocketDebuggerUrl, captureProbeScreenshot, AbortSignal.timeout(3000));
+    if (!screenshot) return writePrecheckUnavailable("evidence_unavailable", "The refs-only precheck snapshot evidence could not be captured.");
+    const after = await withCdp(page.webSocketDebuggerUrl, async (client) => {
+      const evaluated = await client.send("Runtime.evaluate", { expression: writePrecheckProbeExpression(), returnByValue: true, awaitPromise: true });
+      return (evaluated.result as { value?: WritePrecheckObservation } | undefined)?.value;
+    }, AbortSignal.timeout(3000));
+    if (!validWritePrecheckFreshness(input, observation, after, observedAt, Date.now())) return writePrecheckUnavailable("page_changed", "The creator page changed while snapshot evidence was captured.");
+    return { ...validation, observed_at: new Date(observedAt).toISOString(), evidence_ref_kinds: [{ kind: "snapshot_ref", ref: screenshot.screenshot_ref }] };
+  } catch {
+    return writePrecheckUnavailable("provider_probe_unavailable", "The creator write-precheck probe failed.");
+  }
+}
+
+function writePrecheckUnavailable(failure_class: Extract<LocalProviderWritePrecheckProbeResult, { status: "unavailable" }>["failure_class"], message: string, retryable = true): LocalProviderWritePrecheckProbeResult {
+  return { status: "unavailable", failure_class, message, retryable };
+}
+
+export function writePrecheckProbeExpression(): string {
+  return `(async () => {
+    const observe = () => {
+    const text = (document.body?.innerText || '').slice(0, 20000).toLowerCase();
+    const visible = (el) => { const s = el ? getComputedStyle(el) : null; const r = el?.getBoundingClientRect(); return Boolean(el && !el.hidden && !el.disabled && !el.closest('[aria-hidden="true"], [aria-disabled="true"], [hidden], [data-decoy="true"], [data-testid*="decoy"], .decoy') && s && s.visibility !== 'hidden' && s.display !== 'none' && s.pointerEvents !== 'none' && s.zIndex !== '-1' && Number(s.opacity) >= 0.01 && r && r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight && (typeof el.checkVisibility !== 'function' || el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))); };
+    const app = document.querySelector('#app');
+    const frameworkOwned = Boolean(app?.__vue_app__);
+    const roots = [...document.querySelectorAll('#web.publish-vue-container')].filter((root) => visible(root) && app?.contains(root));
+    const exactText = (el, expected) => (el.textContent || '').trim() === expected;
+    const rootFacts = roots.map((root) => { const activeTab = [...root.querySelectorAll('.creator-tab.active, .creator-tab[aria-selected="true"]')].some((el) => visible(el) && exactText(el, '上传图文')); const buttons = [...root.querySelectorAll('button, [role="button"]')].filter(visible); return { activeTab, uploadImage: buttons.some((el) => exactText(el, '上传图片')), textImage: buttons.some((el) => exactText(el, '文字配图')) }; });
+    const entrypoint = rootFacts.find((fact) => fact.activeTab && fact.uploadImage && fact.textImage);
+    const loginSurface = location.pathname.startsWith('/login') || [...document.querySelectorAll('[class*="login"], [class*="qrcode"], [class*="qr-code"]')].some((el) => visible(el) && /扫码登录|手机号登录|登录二维码/.test(el.textContent || ''));
+    return { url: location.href, origin: location.origin, pathname: location.pathname, challenge_like: /验证码|安全验证|访问受限|captcha/.test(text), login_like: loginSurface, creator_app_owned: frameworkOwned && Boolean(entrypoint), creator_root_count: roots.length, upload_image_tab_active: Boolean(entrypoint?.activeTab), upload_image_entry_visible: Boolean(entrypoint?.uploadImage), text_image_entry_visible: Boolean(entrypoint?.textImage) };
+    };
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const observation = observe();
+      if (observation.challenge_like || observation.login_like || observation.creator_app_owned) return observation;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return observe();
+  })()`;
+}
+
+export function validWritePrecheckFreshness(input: LocalProviderWritePrecheckProbeInput, before: WritePrecheckObservation | undefined, after: WritePrecheckObservation | undefined, startedAt: number, completedAt: number): boolean {
+  if (completedAt < startedAt || completedAt - startedAt > 2000) return false;
+  if (validateXhsWritePrecheckObservation(input, before).status !== "completed" || validateXhsWritePrecheckObservation(input, after).status !== "completed") return false;
+  return JSON.stringify(before) === JSON.stringify(after);
 }
 
 const BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS = 3000;
@@ -307,16 +420,17 @@ function remainingLaunchTime(deadline: number): number {
   return remaining;
 }
 
-async function removeStaleDevtoolsPort(profileDir: string): Promise<void> {
+async function removeStaleDevtoolsPort(profileDir: string): Promise<boolean> {
   const portFile = join(profileDir, "DevToolsActivePort");
   let port = "";
   try {
     [port] = (await readFile(portFile, "utf8")).trim().split("\n");
   } catch {
-    return;
+    return false;
   }
-  if (port && await isDevtoolsPortReachable(port)) return;
+  if (port && await isDevtoolsPortReachable(port)) return true;
   await rm(portFile, { force: true });
+  return false;
 }
 
 async function isDevtoolsPortReachable(port: string): Promise<boolean> {
@@ -347,11 +461,13 @@ async function fetchVersion(port: string, signal?: AbortSignal): Promise<Record<
   return (await response.json()) as Record<string, string>;
 }
 
-async function openProviderUrl(port: string, url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
+async function openProviderUrl(port: string, url: string, signal?: AbortSignal, onOpened?: (targetId: string) => void): Promise<LocalProviderPageFacts> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT", signal });
     if (!response.ok) throw new Error(`CDP open-url probe failed: ${response.status}`);
-    return readTargetPageFacts(await response.json() as CdpPageTarget, url, signal);
+    const target = await response.json() as CdpPageTarget;
+    if (target.id) onOpened?.(target.id);
+    return readTargetPageFacts(target, url, signal);
   } catch (cause) {
     return unavailablePageFacts("url_unreachable", url, cause);
   }

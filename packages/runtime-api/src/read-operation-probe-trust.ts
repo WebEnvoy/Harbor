@@ -4,6 +4,7 @@ import type {
   LocalProviderSiteResourceProbeInput,
   LocalProviderSiteResourceProbeResult
 } from "./runtime-session-types.js";
+import type { LocalProviderWritePrecheckProbeInput, LocalProviderWritePrecheckProbeResult } from "./runtime-session-types.js";
 
 export type ReadOperationProbe = (input: LocalProviderReadProbeInput) => Promise<LocalProviderReadProbeResult>;
 export type SiteResourceProbe = (input: LocalProviderSiteResourceProbeInput) => Promise<LocalProviderSiteResourceProbeResult>;
@@ -12,6 +13,8 @@ export type SiteResourceProbe = (input: LocalProviderSiteResourceProbeInput) => 
 // produce an operation completion. Test and fixture launchers remain fail-closed.
 const trustedReadOperationProbes = new WeakSet<ReadOperationProbe>();
 const trustedSiteResourceProbes = new WeakSet<SiteResourceProbe>();
+export type WritePrecheckProbe = (input: LocalProviderWritePrecheckProbeInput) => Promise<LocalProviderWritePrecheckProbeResult>;
+const trustedWritePrecheckProbes = new WeakSet<WritePrecheckProbe>();
 
 export function trustLocalProviderReadProbe(probe: ReadOperationProbe): ReadOperationProbe {
   trustedReadOperationProbes.add(probe);
@@ -29,4 +32,13 @@ export function trustLocalProviderSiteResourceProbe(probe: SiteResourceProbe): S
 
 export function isTrustedLocalProviderSiteResourceProbe(probe: SiteResourceProbe | undefined): probe is SiteResourceProbe {
   return probe !== undefined && trustedSiteResourceProbes.has(probe);
+}
+
+export function trustLocalProviderWritePrecheckProbe(probe: WritePrecheckProbe): WritePrecheckProbe {
+  trustedWritePrecheckProbes.add(probe);
+  return probe;
+}
+
+export function isTrustedLocalProviderWritePrecheckProbe(probe: WritePrecheckProbe | undefined): probe is WritePrecheckProbe {
+  return probe !== undefined && trustedWritePrecheckProbes.has(probe);
 }

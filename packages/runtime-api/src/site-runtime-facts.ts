@@ -114,8 +114,8 @@ const SITE_PROFILES: Record<SiteRuntimeId, SiteResourceProfile> = {
       "runtime.execution_surface.available",
       "runtime.public_https_navigation.allowed",
       "runtime.site_identity.logged_in",
-      "snapshot.creator_publish_page.available",
-      "refmap.write_target_refs.available",
+      "snapshot.creator_publish_entrypoint.available",
+      "refmap.entrypoint_refs.available",
       "evidence.snapshot_ref.available",
       "no_submit_guard.active"
     ]
@@ -164,7 +164,8 @@ export function createSiteResourceFacts(
   session: RuntimeSessionFacts,
   input: SiteResourceFactsInput,
   capture: SnapshotCaptureResult,
-  siteProbe?: LocalProviderSiteResourceProbeResult
+  siteProbe?: LocalProviderSiteResourceProbeResult,
+  siteIdentityConfirmed = false
 ): SiteResourceFacts | SiteResourceFactsUnavailable {
   const siteId = normalizeSiteId(input.site_id, session.current_page.current_url ?? session.current_page.requested_url);
   const profile = siteId ? SITE_PROFILES[siteId] : null;
@@ -182,8 +183,8 @@ export function createSiteResourceFacts(
   const runtimeReady = isRuntimeReady(session);
   const sourceRefsAvailable = capture.status === "captured";
   const facts = profile.write_precheck_task_kinds.has(taskKind)
-    ? writePrecheckFacts(profile, session, pageOrigin, runtimeReady, sourceRefsAvailable, challengeDetected, firstEvidenceRef)
-    : readFacts(profile, session, pageOrigin, runtimeReady, sourceRefsAvailable, challengeDetected, firstEvidenceRef, taskKind, siteProbe);
+    ? writePrecheckFacts(profile, session, pageOrigin, runtimeReady, sourceRefsAvailable, challengeDetected, firstEvidenceRef, siteIdentityConfirmed)
+    : readFacts(profile, session, pageOrigin, runtimeReady, sourceRefsAvailable, challengeDetected, firstEvidenceRef, taskKind, siteProbe, siteIdentityConfirmed);
 
   if (capture.status !== "captured") {
     facts.push({
@@ -246,7 +247,8 @@ function readFacts(
   challengeDetected: boolean,
   evidence_ref: string | undefined,
   taskKind: string,
-  siteProbe?: LocalProviderSiteResourceProbeResult
+  siteProbe?: LocalProviderSiteResourceProbeResult,
+  siteIdentityConfirmed = false
 ): SiteResourceFact[] {
   return profile.read_fact_keys.map((key) => factForKey(key, profile, {
     session,
@@ -257,7 +259,8 @@ function readFacts(
     evidence_ref,
     taskKind,
     writePrecheck: false,
-    siteProbe
+    siteProbe,
+    siteIdentityConfirmed
   }));
 }
 
@@ -268,7 +271,8 @@ function writePrecheckFacts(
   runtimeReady: boolean,
   sourceRefsAvailable: boolean,
   challengeDetected: boolean,
-  evidence_ref: string | undefined
+  evidence_ref: string | undefined,
+  siteIdentityConfirmed: boolean
 ): SiteResourceFact[] {
   return profile.write_precheck_fact_keys.map((key) => factForKey(key, profile, {
     session,
@@ -278,7 +282,8 @@ function writePrecheckFacts(
     challengeDetected,
     evidence_ref,
     taskKind: "write_precheck",
-    writePrecheck: true
+    writePrecheck: true,
+    siteIdentityConfirmed
   }));
 }
 
@@ -292,6 +297,7 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
   taskKind: string;
   writePrecheck: boolean;
   siteProbe?: LocalProviderSiteResourceProbeResult;
+  siteIdentityConfirmed: boolean;
 }): SiteResourceFact {
   if (key === "runtime.execution_surface.available") {
     return context.runtimeReady
@@ -309,7 +315,7 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
       ? available(key, `Current page origin is allowed for ${profile.site_id}.`, "observed", context.evidence_ref)
       : blocking(key, `Current page origin is ${context.pageOrigin ?? "unavailable"}; expected ${[...profile.allowed_write_origins].join(" or ")}.`);
   }
-  if (key === "source.refs.available" || key === "evidence.snapshot_ref.available" || key === "refmap.write_target_refs.available") {
+  if (key === "source.refs.available" || key === "evidence.snapshot_ref.available" || key === "refmap.write_target_refs.available" || key === "refmap.entrypoint_refs.available") {
     return context.sourceRefsAvailable
       ? available(key, "Harbor produced refs-only snapshot/evidence facts for the current page.", "validation_evidence", context.evidence_ref)
       : blocking(key, "Harbor could not produce current page refs.");
@@ -329,15 +335,9 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
     if (key === "identity.boss_geek_logged_in.confirmed" && context.siteProbe && "failure_class" in context.siteProbe && context.siteProbe.failure_class === "not_logged_in") {
       return blocked(key, context.siteProbe.message);
     }
-    if (isFixtureRuntime(context.session)) {
-      return available(key, "Fixture launcher supplies logged-in state only for local packaged runtime smoke.", "validation_evidence", context.evidence_ref);
-    }
-    return isLoginLike(context.session.current_page.current_url, context.session.current_page.title)
-      ? blocking(key, "Current public page facts suggest login is required.")
-      : unknown(
-        key,
-        "Harbor has no safe site-specific login probe in this endpoint; Core must treat this as admission-unknown until live profile facts confirm it."
-      );
+    return context.siteIdentityConfirmed
+      ? available(key, "Current managed identity was user-confirmed for this Runtime Session.", "validation_evidence", context.evidence_ref)
+      : blocking(key, "Current Runtime Session has no matching user-confirmed logged-in identity.");
   }
   if (key === "page.boss_spa.ready" && context.siteProbe) {
     if (context.siteProbe.status === "available") {
@@ -358,7 +358,7 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
       ? blocked(key, "Page readiness cannot be accepted while a visible challenge is present.")
       : unknown(key, "Harbor did not expose raw DOM, network bodies, or app store internals; readiness remains unknown until a safe probe produces a ref.");
   }
-  if (key === "snapshot.creator_publish_page.available" || key === "snapshot.job_or_recruiter_target.available") {
+  if (key === "snapshot.creator_publish_entrypoint.available" || key === "snapshot.job_or_recruiter_target.available") {
     return context.sourceRefsAvailable
       ? available(key, "Harbor captured refs-only target page context for validate-only write precheck.", "validation_evidence", context.evidence_ref)
       : blocking(key, "Target page snapshot refs are unavailable.");
@@ -426,11 +426,6 @@ function safeOrigin(url?: string | null): string | null {
 function isChallengeLike(url?: string | null, title?: string | null): boolean {
   const text = `${url ?? ""} ${title ?? ""}`.toLowerCase();
   return /captcha|challenge|verify|verification|security|安全|验证|校验/.test(text);
-}
-
-function isLoginLike(url?: string | null, title?: string | null): boolean {
-  const text = `${url ?? ""} ${title ?? ""}`.toLowerCase();
-  return /login|signin|sign-in|登录|登陆/.test(text);
 }
 
 function isFixtureRuntime(session: RuntimeSessionFacts): boolean {
