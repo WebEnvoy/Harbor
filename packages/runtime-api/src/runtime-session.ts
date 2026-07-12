@@ -15,6 +15,8 @@ import {
   type LocalProviderReadProbePublicSummary,
   type LocalProviderReadProbeResult,
   type LocalProviderScreenshotFacts,
+  type LocalProviderSiteResourceProbeInput,
+  type LocalProviderSiteResourceProbeResult,
   type OpenIdentityEnvironmentSessionInput,
   type RuntimeErrorCode,
   type RuntimeErrorFact,
@@ -26,7 +28,7 @@ import {
   type RuntimeViewerEntry,
   type ValidationRuntimeFacts
 } from "./runtime-session-types.js";
-import { isTrustedLocalProviderReadProbe } from "./read-operation-probe-trust.js";
+import { isTrustedLocalProviderReadProbe, isTrustedLocalProviderSiteResourceProbe } from "./read-operation-probe-trust.js";
 import type {
   ControlOwner,
   ControlOwnerFacts,
@@ -50,6 +52,8 @@ export type {
   LocalProviderReadProbePublicSummary,
   LocalProviderReadProbeResult,
   LocalProviderScreenshotFacts,
+  LocalProviderSiteResourceProbeInput,
+  LocalProviderSiteResourceProbeResult,
   OpenIdentityEnvironmentSessionInput,
   ProviderMode,
   RuntimeControlLockFacts,
@@ -78,6 +82,7 @@ export interface RuntimeSessionRecord {
   execution_surface: "local_provider" | "fixture" | "unknown";
   openUrl?: (url: string) => Promise<LocalProviderPageFacts>;
   probeReadOperation?: (input: LocalProviderReadProbeInput) => Promise<LocalProviderReadProbeResult>;
+  probeSiteResource?: (input: LocalProviderSiteResourceProbeInput) => Promise<LocalProviderSiteResourceProbeResult>;
   captureScreenshot?: () => Promise<LocalProviderScreenshotFacts | RuntimeErrorFact>;
   close?: () => Promise<void>;
 }
@@ -182,6 +187,7 @@ export class RuntimeSessionStore {
       execution_surface: ready ? launch.execution_surface ?? "unknown" : "unknown",
       openUrl: ready ? launch.openUrl : undefined,
       probeReadOperation: ready ? launch.probeReadOperation : undefined,
+      probeSiteResource: ready ? launch.probeSiteResource : undefined,
       captureScreenshot: ready ? launch.captureScreenshot : undefined,
       close: ready ? launch.close : undefined
     });
@@ -424,6 +430,22 @@ export class RuntimeSessionStore {
     const result = await probeReadOperation(input);
     if (result.page) this.applyPageFacts(record, input.target_url, result.page);
     return result;
+  }
+
+  async probeSiteResource(
+    runtime_session_ref: string,
+    input: LocalProviderSiteResourceProbeInput
+  ): Promise<LocalProviderSiteResourceProbeResult> {
+    const record = this.records.get(runtime_session_ref);
+    const probe = record?.probeSiteResource;
+    if (!record || record.execution_surface !== "local_provider" || !isTrustedLocalProviderSiteResourceProbe(probe)) {
+      return {
+        status: "unknown",
+        failure_class: "provider_probe_unavailable",
+        message: "The managed local provider does not expose a trusted site-resource probe."
+      };
+    }
+    return probe(input);
   }
 
   private findReusableSession(

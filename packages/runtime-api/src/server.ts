@@ -219,7 +219,7 @@ async function routeSession(
   }
   if (action === "site-resource-facts" && method === "GET") {
     const requestUrl = new URL(request.url ?? "/", "http://harbor.local");
-    writeJson(response, 200, runtime.getSiteResourceFacts(runtimeSessionRef, siteResourceFactsInput(requestUrl)));
+    writeJson(response, 200, await runtime.getSiteResourceFacts(runtimeSessionRef, siteResourceFactsInput(requestUrl)));
     return;
   }
   if (action === "write-precheck-facts" && method === "POST") {

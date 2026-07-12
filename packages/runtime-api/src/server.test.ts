@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher } from "./index.js";
-import { trustLocalProviderReadProbe, type ReadOperationProbe } from "./read-operation-probe-trust.js";
+import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe, type ReadOperationProbe, type SiteResourceProbe } from "./read-operation-probe-trust.js";
 import { opaqueRef } from "./refs.js";
 import { startHarborRuntimeServer as startUnconfiguredHarborRuntimeServer } from "./server.js";
 
@@ -155,6 +155,65 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
     assert.equal(nestedIdentityPath.status, 404);
   } finally {
     await running.close();
+  }
+});
+
+test("serves a trusted refs-only BOSS SPA fact while deferring exact WAPI evidence", async () => {
+  const siteProbe = trustLocalProviderSiteResourceProbe(async () => ({
+    status: "available",
+    observed_at: "2026-07-12T00:00:00.000Z",
+    evidence_ref: "validation_boss-spa-test"
+  }));
+  const readProbe = trustLocalProviderReadProbe(async (probe) => completedBossReadProbe(probe));
+  const runtime = new HarborRuntime(createBossReadLauncher(readProbe, siteProbe));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    const session = await runtime.createSession({
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "agent",
+      holder_ref: "boss-site-resource-test"
+    });
+    const facts = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=boss&task_kind=job_search`);
+    const spa = facts.resource_facts.find((fact: { key: string }) => fact.key === "page.boss_spa.ready");
+    const wapi = facts.resource_facts.find((fact: { key: string }) => fact.key === "network.wapi_zpgeek.available");
+    assert.deepEqual({ state: spa.state, source: spa.source, evidence_ref: spa.evidence_ref }, {
+      state: "available",
+      source: "validation_evidence",
+      evidence_ref: "validation_boss-spa-test"
+    });
+    assert.equal(wapi.state, "unknown");
+    assert.match(wapi.message, /deferred to the allowlisted read-operation probe/);
+    const publicJson = JSON.stringify(facts).toLowerCase();
+    for (const forbidden of ["<html", "response_body", "cookie_value", "access_token", "profile_path", "websocketdebuggerurl"]) {
+      assert.equal(publicJson.includes(forbidden), false);
+    }
+    assert.equal(facts.public_boundary.raw_dom, "not_exposed");
+    assert.equal(facts.public_boundary.raw_network_bodies, "not_exposed");
+  } finally {
+    await running.close();
+  }
+});
+
+test("maps trusted BOSS login and challenge probes to blocking admission facts", async () => {
+  for (const probeResult of [
+    { status: "blocked" as const, failure_class: "not_logged_in" as const, message: "manual login required" },
+    { status: "blocked" as const, failure_class: "safety_challenge" as const, message: "challenge present" }
+  ]) {
+    const siteProbe = trustLocalProviderSiteResourceProbe(async () => probeResult);
+    const readProbe = trustLocalProviderReadProbe(async (probe) => completedBossReadProbe(probe));
+    const runtime = new HarborRuntime(createBossReadLauncher(readProbe, siteProbe));
+    const running = await startHarborRuntimeServer({ port: 0, runtime });
+    try {
+      const session = await runtime.createSession({ url: "https://www.zhipin.com/web/geek/job" });
+      const facts = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=boss&task_kind=job_search`);
+      const key = probeResult.failure_class === "not_logged_in" ? "identity.boss_geek_logged_in.confirmed" : "safety.challenge.absent";
+      const fact = facts.resource_facts.find((candidate: { key: string }) => candidate.key === key);
+      assert.equal(fact.state, "blocked");
+      assert.equal(fact.severity, "blocking");
+      assert.equal(fact.message, probeResult.message);
+    } finally {
+      await running.close();
+    }
   }
 });
 
@@ -1131,7 +1190,7 @@ const successfulBossReadLauncher = createBossReadLauncher(async (probe) => {
   };
 });
 
-function createBossReadLauncher(probeReadOperation: ReadOperationProbe): LocalProviderLauncher {
+function createBossReadLauncher(probeReadOperation: ReadOperationProbe, probeSiteResource?: SiteResourceProbe): LocalProviderLauncher {
   return async (input) => ({
   status: "ready",
   execution_surface: "local_provider",
@@ -1145,6 +1204,7 @@ function createBossReadLauncher(probeReadOperation: ReadOperationProbe): LocalPr
   page: localReadPage(input.url),
   facts: [],
   openUrl: async (url) => localReadPage(url),
+  probeSiteResource,
   probeReadOperation,
   captureScreenshot: async () => ({
     screenshot_ref: "screenshot_test-local-read-provider",

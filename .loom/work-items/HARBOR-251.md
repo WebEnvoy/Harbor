@@ -3,14 +3,14 @@
 ## Static Facts
 
 - Item ID: HARBOR-251
-- Goal: Execute the Lode #262 pinned `boss_job_search` operation once through an admitted managed local-provider session and return refs-only output or structured failure.
-- Scope: BOSS canonical target admission, concrete read probe validation, directed runtime tests, and HARBOR-251 carriers.
-- Execution Path: work/harbor-251-boss-read-operation
+- Goal: Make the pinned `boss_job_search` operation reachable by verifying the BOSS SPA through a safe pre-admission probe while deferring exact WAPI proof to the operation probe.
+- Scope: BOSS `job_search` site-resource safe probe, refs-only fact mapping, directed runtime tests, and HARBOR-251 item-specific carriers.
+- Execution Path: work/harbor-251-boss-resource-probe
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-251.md
 - Review Entry: .loom/reviews/HARBOR-251.json
 - Validation Entry: pnpm typecheck; targeted tests; pnpm test; git diff --check
-- Closing Condition: Create and push a ready PR covering #251; do not merge or close issues.
+- Closing Condition: Create and push a Draft PR covering the pre-admission correction; keep #251 open for merged App/Core live evidence.
 
 ## Host Binding
 
@@ -22,6 +22,7 @@
 
 - Do not edit App, Core, Lode, HARBOR-245 item-specific carriers, or parent FR truth.
 - Reuse the existing read-operation, managed-session, authentication, and trusted-probe boundaries.
+- Keep exact query/city-bound `network.wapi_zpgeek.available` unknown before execution; only the allowlisted read-operation may prove it.
 - No real login, send, greet, submit, apply, save, bulk collection, risk-control bypass, or sensitive material access.
 
 ## Associated Artifacts
@@ -38,6 +39,7 @@
 - `.loom/specs/HARBOR-251/suite-index.md`
 - `.loom/specs/HARBOR-251/task-carrier.md`
 - `packages/runtime-api/src/read-operation.ts`
+- `packages/runtime-api/src/site-runtime-facts.ts`
 - `packages/runtime-api/src/local-provider-launcher.ts`
 - `packages/runtime-api/src/read-operation.test.ts`
 - `packages/runtime-api/src/server.test.ts`

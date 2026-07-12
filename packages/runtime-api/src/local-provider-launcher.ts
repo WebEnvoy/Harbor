@@ -10,7 +10,7 @@ import {
   type IdentityEnvironmentProviderBinding
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
-import { trustLocalProviderReadProbe } from "./read-operation-probe-trust.js";
+import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe } from "./read-operation-probe-trust.js";
 import type {
   LocalProviderLaunchInput,
   LocalProviderLauncher,
@@ -19,6 +19,8 @@ import type {
   LocalProviderReadProbeInput,
   LocalProviderReadProbeResult,
   LocalProviderReadProbePublicSummary,
+  LocalProviderSiteResourceProbeInput,
+  LocalProviderSiteResourceProbeResult,
   LocalProviderScreenshotFacts,
   RuntimeErrorCode,
   RuntimeErrorFact,
@@ -70,6 +72,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         currentUrl = nextPage.current_url ?? url;
         return nextPage;
       },
+      probeSiteResource: trustLocalProviderSiteResourceProbe((probe) => probeProviderSiteResource(port, currentUrl, probe)),
       probeReadOperation: trustLocalProviderReadProbe(async (probe) => {
         const result = await probeProviderReadOperation(port, probe);
         if (result.page?.current_url) currentUrl = result.page.current_url;
@@ -88,6 +91,54 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     });
     return unavailable("launch_failed", diagnostic.app_summary, [...providerBindingFacts(providerBinding), ...profileStorage.facts]);
   }
+}
+
+async function probeProviderSiteResource(
+  port: string,
+  requestedUrl: string,
+  input: LocalProviderSiteResourceProbeInput
+): Promise<LocalProviderSiteResourceProbeResult> {
+  if (input.site_id !== "boss" || (input.task_kind !== "job_search" && input.task_kind !== "boss_job_search")) {
+    return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The local provider has no safe probe for this site resource.");
+  }
+  try {
+    const page = await activePage(port, requestedUrl);
+    if (!page.webSocketDebuggerUrl) {
+      return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The BOSS page has no controlled CDP target.");
+    }
+    const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
+      await client.send("Runtime.enable");
+      const evaluated = await client.send("Runtime.evaluate", {
+        expression: readProbeExpression("boss", ""),
+        returnByValue: true
+      });
+      return (evaluated.result as { value?: ReadProbeObservation } | undefined)?.value;
+    });
+    return validateBossSpaResourceProbe(observation);
+  } catch {
+    return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The BOSS SPA could not be verified through the controlled CDP probe.");
+  }
+}
+
+export function validateBossSpaResourceProbe(observation: ReadProbeObservation | undefined): LocalProviderSiteResourceProbeResult {
+  if (!observation) return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The BOSS SPA probe returned no public observation.");
+  if (observation.challenge_like) return siteResourceProbeUnavailable("blocked", "safety_challenge", "The BOSS page shows a verification or safety challenge.");
+  if (observation.login_like) return siteResourceProbeUnavailable("blocked", "not_logged_in", "The BOSS page requires manual login.");
+  if (observation.origin !== "https://www.zhipin.com" || observation.pathname !== "/web/geek/job") {
+    return siteResourceProbeUnavailable("unavailable", "page_not_ready", "The active page is not the canonical BOSS job-search surface.");
+  }
+  if (!observation.ready || !observation.rendered_surface) {
+    return siteResourceProbeUnavailable("unavailable", "page_not_ready", "The canonical BOSS page has no verified SPA job-search surface.");
+  }
+  return { status: "available", observed_at: new Date().toISOString(), evidence_ref: opaqueRef("validation") };
+}
+
+function siteResourceProbeUnavailable(
+  status: "blocked" | "unavailable" | "unknown",
+  failure_class: Extract<LocalProviderSiteResourceProbeResult, { status: "blocked" | "unavailable" | "unknown" }>["failure_class"],
+  message: string
+): LocalProviderSiteResourceProbeResult {
+  return { status, failure_class, message };
 }
 
 export function createFixtureLauncher(status: "ready" | "unavailable" | "profile_locked" | "session_lost" = "ready"): LocalProviderLauncher {

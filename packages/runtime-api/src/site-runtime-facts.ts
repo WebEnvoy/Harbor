@@ -1,5 +1,6 @@
 import type { SnapshotCaptureResult } from "./page-scene.js";
 import type { RuntimeSessionFacts } from "./runtime-session-types.js";
+import type { LocalProviderSiteResourceProbeResult } from "./runtime-session-types.js";
 
 export const HARBOR_SITE_RESOURCE_FACTS_SCHEMA = "harbor-site-resource-facts/v0";
 
@@ -162,7 +163,8 @@ export function missingSiteRuntimeSession(runtime_session_ref: string, input: Si
 export function createSiteResourceFacts(
   session: RuntimeSessionFacts,
   input: SiteResourceFactsInput,
-  capture: SnapshotCaptureResult
+  capture: SnapshotCaptureResult,
+  siteProbe?: LocalProviderSiteResourceProbeResult
 ): SiteResourceFacts | SiteResourceFactsUnavailable {
   const siteId = normalizeSiteId(input.site_id, session.current_page.current_url ?? session.current_page.requested_url);
   const profile = siteId ? SITE_PROFILES[siteId] : null;
@@ -181,7 +183,7 @@ export function createSiteResourceFacts(
   const sourceRefsAvailable = capture.status === "captured";
   const facts = profile.write_precheck_task_kinds.has(taskKind)
     ? writePrecheckFacts(profile, session, pageOrigin, runtimeReady, sourceRefsAvailable, challengeDetected, firstEvidenceRef)
-    : readFacts(profile, session, pageOrigin, runtimeReady, sourceRefsAvailable, challengeDetected, firstEvidenceRef, taskKind);
+    : readFacts(profile, session, pageOrigin, runtimeReady, sourceRefsAvailable, challengeDetected, firstEvidenceRef, taskKind, siteProbe);
 
   if (capture.status !== "captured") {
     facts.push({
@@ -243,7 +245,8 @@ function readFacts(
   sourceRefsAvailable: boolean,
   challengeDetected: boolean,
   evidence_ref: string | undefined,
-  taskKind: string
+  taskKind: string,
+  siteProbe?: LocalProviderSiteResourceProbeResult
 ): SiteResourceFact[] {
   return profile.read_fact_keys.map((key) => factForKey(key, profile, {
     session,
@@ -253,7 +256,8 @@ function readFacts(
     challengeDetected,
     evidence_ref,
     taskKind,
-    writePrecheck: false
+    writePrecheck: false,
+    siteProbe
   }));
 }
 
@@ -287,6 +291,7 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
   evidence_ref: string | undefined;
   taskKind: string;
   writePrecheck: boolean;
+  siteProbe?: LocalProviderSiteResourceProbeResult;
 }): SiteResourceFact {
   if (key === "runtime.execution_surface.available") {
     return context.runtimeReady
@@ -313,11 +318,17 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
     return available(key, "No-submit guard is active; Harbor does not publish, send, submit, save, delete, or pay.", "configured", context.evidence_ref);
   }
   if (key === "safety.challenge.absent") {
+    if (context.siteProbe && "failure_class" in context.siteProbe && context.siteProbe.failure_class === "safety_challenge") {
+      return blocked(key, context.siteProbe.message);
+    }
     return context.challengeDetected
       ? blocked(key, "Visible URL/title suggests login, CAPTCHA, verification, or safety challenge; manual handling is required.")
       : available(key, "No login, CAPTCHA, verification, or safety challenge is visible from public page facts.", "derived", context.evidence_ref);
   }
   if (key === "identity.user_logged_in.confirmed" || key === "identity.boss_geek_logged_in.confirmed" || key === "runtime.site_identity.logged_in") {
+    if (key === "identity.boss_geek_logged_in.confirmed" && context.siteProbe && "failure_class" in context.siteProbe && context.siteProbe.failure_class === "not_logged_in") {
+      return blocked(key, context.siteProbe.message);
+    }
     if (isFixtureRuntime(context.session)) {
       return available(key, "Fixture launcher supplies logged-in state only for local packaged runtime smoke.", "validation_evidence", context.evidence_ref);
     }
@@ -328,7 +339,18 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
         "Harbor has no safe site-specific login probe in this endpoint; Core must treat this as admission-unknown until live profile facts confirm it."
       );
   }
-  if (key === "page.vue_app.ready" || key === "page.pinia_store.ready" || key === "page.boss_spa.ready" || key === "network.wapi_zpgeek.available") {
+  if (key === "page.boss_spa.ready" && context.siteProbe) {
+    if (context.siteProbe.status === "available") {
+      return available(key, "Controlled CDP probe verified the canonical rendered BOSS SPA job-search surface.", "validation_evidence", context.siteProbe.evidence_ref);
+    }
+    if (context.siteProbe.status === "blocked") return blocked(key, context.siteProbe.message);
+    if (context.siteProbe.status === "unavailable") return blocking(key, context.siteProbe.message);
+    return unknown(key, context.siteProbe.message);
+  }
+  if (key === "network.wapi_zpgeek.available") {
+    return unknown(key, "The exact query-bound BOSS WAPI response is deferred to the allowlisted read-operation probe; pre-admission does not synthesize it.");
+  }
+  if (key === "page.vue_app.ready" || key === "page.pinia_store.ready" || key === "page.boss_spa.ready") {
     if (isFixtureRuntime(context.session)) {
       return available(key, "Fixture launcher supplies site readiness only for local packaged runtime smoke.", "validation_evidence", context.evidence_ref);
     }

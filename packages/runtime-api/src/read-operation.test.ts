@@ -8,7 +8,7 @@ import {
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
-import { readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobSearchResponse, validateReadOperationProbe } from "./local-provider-launcher.js";
+import { readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe } from "./local-provider-launcher.js";
 
 test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
@@ -73,6 +73,32 @@ test("blocks cross-origin document redirects before navigation while allowing sa
   assert.equal(shouldBlockReadOperationDocumentNavigation("Document", "https://evil.example/redirect", "https://www.xiaohongshu.com"), true);
   assert.equal(shouldBlockReadOperationDocumentNavigation("Document", "not a URL", "https://www.xiaohongshu.com"), true);
   assert.equal(shouldBlockReadOperationDocumentNavigation("Script", "https://cdn.example/app.js", "https://www.xiaohongshu.com"), false);
+});
+
+test("accepts only a rendered canonical BOSS SPA surface for pre-admission", () => {
+  const ready = validateBossSpaResourceProbe({
+    origin: "https://www.zhipin.com",
+    pathname: "/web/geek/job",
+    ready: true,
+    rendered_surface: true,
+    login_like: false,
+    challenge_like: false
+  });
+  assert.equal(ready.status, "available");
+  assert.equal("evidence_ref" in ready, true);
+
+  const cases = [
+    [{ origin: "https://www.zhipin.com", pathname: "/web/user/", ready: true, rendered_surface: false, login_like: true }, "blocked", "not_logged_in"],
+    [{ origin: "https://www.zhipin.com", pathname: "/security/verify", ready: true, rendered_surface: false, challenge_like: true }, "blocked", "safety_challenge"],
+    [{ origin: "null", pathname: "blank", ready: false, rendered_surface: false }, "unavailable", "page_not_ready"],
+    [{ origin: "https://www.zhipin.com", pathname: "/web/geek/job", ready: true, rendered_surface: false }, "unavailable", "page_not_ready"],
+    [undefined, "unknown", "provider_probe_unavailable"]
+  ] as const;
+  for (const [observation, status, failureClass] of cases) {
+    const result = validateBossSpaResourceProbe(observation);
+    assert.equal(result.status, status);
+    assert.equal("failure_class" in result ? result.failure_class : null, failureClass);
+  }
 });
 
 test("correlates the official Vue Pinia search store without exposing store contents", () => {
