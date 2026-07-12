@@ -581,7 +581,7 @@ export function validateReadOperationProbe(
     return {
       status: "completed",
       source_kinds: xhs
-        ? ["pinia_store_summary", "network_summary"]
+        ? ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]
         : ["wapi_job_detail_summary", "dom_snapshot_summary"],
       public_summary: {
         schema_version: "harbor-read-operation-public-summary/v0",
@@ -699,7 +699,8 @@ function validateDetailNormalizedSummary(
         kind: "xhs_note_detail_ref",
         note_id: value.note_id,
         url: canonical_url,
-        field_sources: ["pinia_store_summary", "network_summary"]
+        // Lode v0 has one aggregate citation for all validated public fields.
+        field_sources: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]
       },
       source_status: value.source_status
     };

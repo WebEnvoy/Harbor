@@ -29,6 +29,10 @@ test("pins detail admission and completion to merged Lode #268 truth", () => {
   assert.equal(LODE_268_DETAIL_PIN.asset_sha256, "dca2761b7feb09a0ab86f7202e153da3c97b21a75299af6adaf64eade319deef");
   assert.equal(LODE_268_DETAIL_PIN.truth_id, "lode.xhs-boss.detail-read.runtime-consumption");
   assert.equal(validateDetailTruthPin(), null);
+  const xhs = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: opaqueRef("detail_ref") });
+  if (typeof xhs === "string") throw new Error("Corrected XHS detail truth was rejected.");
+  assert.deepEqual(xhs.entry.required_source_ref_kinds, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]);
+  assert.deepEqual(xhs.entry.required_evidence_ref_kinds, ["snapshot_ref", "post_check_ref"]);
   const boss = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail_ref") });
   if (typeof boss === "string") throw new Error("Corrected BOSS detail truth was rejected.");
   assert.equal(boss.entry.package_ref, "lode://site-capability/boss/read-job-detail@0.1.1");
@@ -521,7 +525,7 @@ test("completes XHS detail only with bounded public fields and all Lode source r
   const admitted = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: opaqueRef("detail_ref") });
   if (typeof admitted === "string") throw new Error("XHS detail admission unexpectedly failed.");
   const store = new ReadOperationObservationStore();
-  const sources = ["pinia_store_summary", "network_summary"].map((kind) => ({ kind, ref: opaqueRef("source") }));
+  const sources = ["pinia_store_summary", "network_summary", "dom_snapshot_summary"].map((kind) => ({ kind, ref: opaqueRef("source") }));
   const publicSummary = {
     schema_version: "harbor-read-operation-public-summary/v0" as const,
     operation_id: "xhs_read_note_detail" as const,
@@ -542,7 +546,7 @@ test("completes XHS detail only with bounded public fields and all Lode source r
         kind: "xhs_note_detail_ref" as const,
         note_id: "0123456789abcdef01234567",
         url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
-        field_sources: ["pinia_store_summary", "network_summary"]
+        field_sources: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]
       },
       source_status: "located" as const
     },
@@ -566,8 +570,8 @@ test("completes XHS detail only with bounded public fields and all Lode source r
   assert.equal(completed.public_summary.normalized?.kind, "xiaohongshu_note_detail");
   assert.equal(completed.public_summary.normalized?.kind === "xiaohongshu_note_detail" && completed.public_summary.normalized.note_id, "0123456789abcdef01234567");
   assert.equal(completed.public_summary.normalized?.kind === "xiaohongshu_note_detail" && completed.public_summary.normalized.source_citation.kind, "xhs_note_detail_ref");
-  assert.deepEqual(completed.source_refs.map((entry) => entry.kind), ["pinia_store_summary", "network_summary"]);
-  assert.deepEqual(completed.evidence_ref_kinds.map((entry) => entry.kind), ["snapshot_ref"]);
+  assert.deepEqual(completed.source_refs.map((entry) => entry.kind), ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]);
+  assert.deepEqual(completed.evidence_ref_kinds.map((entry) => entry.kind), ["snapshot_ref", "post_check_ref"]);
   assert.deepEqual(store.get(proof.post_check_ref)?.post_check?.source_refs, proof.source_refs);
   assert.deepEqual(store.get(proof.post_check_ref)?.post_check?.evidence_refs, proof.evidence_refs);
   assert.equal(JSON.stringify(completed).includes("xsec_token"), false);
@@ -575,6 +579,34 @@ test("completes XHS detail only with bounded public fields and all Lode source r
     ...proof,
     public_summary: { ...proof.public_summary, normalized: { ...publicSummary.normalized, title: "篡改标题" } }
   }), "public_summary_missing");
+  assert.equal(store.capture({
+    operation_ref: opaqueRef("read_operation"), runtime_session_ref: "session_missing_dom", entry: admitted.entry,
+    observed_origin: "https://www.xiaohongshu.com", observed_at: "2026-07-12T00:00:01.000Z",
+    source_refs: sources.slice(0, 2), evidence_ref_kinds: [{ kind: "snapshot_ref", ref: opaqueRef("evidence") }],
+    public_summary_source_ref: sources[0]!.ref, public_summary: publicSummary
+  }), "source_refs_missing");
+  assert.equal(store.capture({
+    operation_ref: opaqueRef("read_operation"), runtime_session_ref: "session_missing_snapshot", entry: admitted.entry,
+    observed_origin: "https://www.xiaohongshu.com", observed_at: "2026-07-12T00:00:03.000Z",
+    source_refs: sources, evidence_ref_kinds: [], public_summary_source_ref: sources[0]!.ref, public_summary: publicSummary
+  }), "evidence_refs_missing");
+  assert.equal(store.capture({
+    operation_ref: opaqueRef("read_operation"), runtime_session_ref: "session_missing_dom_citation", entry: admitted.entry,
+    observed_origin: "https://www.xiaohongshu.com", observed_at: "2026-07-12T00:00:04.000Z",
+    source_refs: sources, evidence_ref_kinds: [{ kind: "snapshot_ref", ref: opaqueRef("evidence") }], public_summary_source_ref: sources[0]!.ref,
+    public_summary: { ...publicSummary, normalized: { ...publicSummary.normalized, source_citation: { ...publicSummary.normalized.source_citation, field_sources: ["pinia_store_summary", "network_summary"] } } }
+  }), "public_summary_missing");
+  assert.equal(store.capture({
+    operation_ref: opaqueRef("read_operation"), runtime_session_ref: "session_extra_source", entry: admitted.entry,
+    observed_origin: "https://www.xiaohongshu.com", observed_at: "2026-07-12T00:00:02.000Z",
+    source_refs: [...sources, { kind: "unexpected_summary", ref: opaqueRef("source") }],
+    evidence_ref_kinds: [{ kind: "snapshot_ref", ref: opaqueRef("evidence") }],
+    public_summary_source_ref: sources[0]!.ref, public_summary: publicSummary
+  }), "source_refs_missing");
+  assert.equal(store.complete(admitted.entry, {
+    ...proof,
+    evidence_ref_kinds: proof.evidence_ref_kinds.map((entry) => entry.kind === "snapshot_ref" ? { ...entry, kind: "mutated_snapshot_ref" } : entry)
+  }), "evidence_refs_missing");
 });
 
 test("fails closed when the live probe lacks an operation-specific surface or required signal", () => {
@@ -691,7 +723,22 @@ test("validates both detail surfaces against the exact search-bound target", () 
   };
   const xhsCompleted = validateReadOperationProbe(xhsInput, ready);
   assert.equal(xhsCompleted.status, "completed");
-  if (xhsCompleted.status === "completed") assert.deepEqual(xhsCompleted.source_kinds, ["pinia_store_summary", "network_summary"]);
+  if (xhsCompleted.status === "completed") {
+    assert.deepEqual(xhsCompleted.source_kinds, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]);
+    assert.deepEqual(xhsCompleted.public_summary.normalized?.kind === "xiaohongshu_note_detail" ? xhsCompleted.public_summary.normalized.source_citation.field_sources : [], ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]);
+    const admitted = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: xhsInput.detail_ref });
+    if (typeof admitted === "string") throw new Error(`XHS detail admission failed: ${admitted}`);
+    const store = new ReadOperationObservationStore();
+    const sourceRefs = xhsCompleted.source_kinds.map((kind) => ({ kind, ref: opaqueRef("source") }));
+    const proof = store.capture({
+      operation_ref: opaqueRef("read_operation"), runtime_session_ref: "session_xhs_launcher_capture", entry: admitted.entry,
+      observed_origin: xhsInput.expected_origin, observed_at: "2026-07-12T00:01:00.000Z",
+      source_refs: sourceRefs, evidence_ref_kinds: [{ kind: "snapshot_ref", ref: opaqueRef("evidence") }],
+      public_summary_source_ref: sourceRefs[0]!.ref, public_summary: xhsCompleted.public_summary
+    });
+    if (typeof proof === "string") throw new Error(`XHS launcher proof capture failed: ${proof}`);
+    assert.notEqual(store.complete(admitted.entry, proof), "source_refs_missing");
+  }
   if (xhsCompleted.status === "completed") assert.equal(xhsCompleted.public_summary.normalized?.canonical_url.includes("xsec"), false);
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pinia_ready: false })), "page_not_ready");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, vue_ready: false })), "page_not_ready");
