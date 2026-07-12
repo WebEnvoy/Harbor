@@ -11,11 +11,11 @@
 - Review Entry: .loom/reviews/HARBOR-263.json
 - Validation Entry: pnpm typecheck; pnpm build; targeted tests; pnpm test; git diff --check
 - Closing Condition: Merge after hosted gate; close only after packaged same-session two-task live evidence.
-- Current Checkpoint: implementation
-- Current Stop: Shared lifecycle fix and focused tests are being implemented.
-- Next Step: Validate, record evidence, push, and create a ready PR for main-controller review.
+- Current Checkpoint: pr_ready
+- Current Stop: Product/spec head `cebd9384a4c3eac1ce810684833bf525c6db1d21` passed focused lifecycle tests 6/6, typecheck, build, full tests 85/85, and diff-check.
+- Next Step: Push and create a ready PR for main-controller semantic review and hosted gates.
 - Blockers: None recorded.
-- Latest Validation Summary: Pending at implementation start from Harbor `0b588466bd16144884a4f8f8696781778680ef63`.
+- Latest Validation Summary: 2026-07-12T09:24Z: At product/spec head `cebd9384a4c3eac1ce810684833bf525c6db1d21`, `pnpm typecheck`, `pnpm build`, focused lifecycle tests 6/6, `pnpm test` 85/85, and `git diff --check` passed. The same confirmed headed session completed two explicit Core acquire/probe/release cycles; negative controller, identity, provider and conflict boundaries remained fail closed. No real browser/page action, sensitive material, external write, or cross-repo change occurred.
 - Recovery Boundary: No real browser/page action, sensitive material, automatic login, external write, or cross-repo change.
 - Current Lane: Harbor #263 continuous confirmed session handoff.
 
