@@ -324,7 +324,7 @@ async function openProviderUrl(port: string, url: string, signal?: AbortSignal):
   try {
     const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT", signal });
     if (!response.ok) throw new Error(`CDP open-url probe failed: ${response.status}`);
-    return readTargetPageFacts(await response.json() as CdpPageTarget, url);
+    return readTargetPageFacts(await response.json() as CdpPageTarget, url, signal);
   } catch (cause) {
     return unavailablePageFacts("url_unreachable", url, cause);
   }

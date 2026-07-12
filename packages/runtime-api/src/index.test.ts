@@ -112,7 +112,14 @@ const server = createServer((request, response) => {
     return;
   }
   if (url.pathname === "/json/new") {
-    response.end(JSON.stringify({ type: "page", url: decodeURIComponent(url.search.slice(1)), title: "Fake page" }));
+    response.end(JSON.stringify({
+      type: "page",
+      url: decodeURIComponent(url.search.slice(1)),
+      title: "Fake page",
+      ...(process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL
+        ? { webSocketDebuggerUrl: process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL }
+        : {})
+    }));
     return;
   }
   response.statusCode = 404;
@@ -637,6 +644,8 @@ test("bounds provider version and page-list readback while preserving redirect f
   const previousHangPath = process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
   const previousRedirectUrl = process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL;
   const previousRedirectTitle = process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE;
+  const previousWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
+  const originalWebSocket = globalThis.WebSocket;
   const browserPath = writeFakeBrowserExecutable(dir);
   process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
   try {
@@ -697,7 +706,33 @@ test("bounds provider version and page-list readback while preserving redirect f
       assert.equal(nextPage.error?.code, "url_unreachable");
       await openUrlTimeout.close();
     }
+
+    delete process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
+    process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = "ws://127.0.0.1/fake-page";
+    for (const ignoredMethod of ["Runtime.enable", "Runtime.evaluate"]) {
+      installFakeCdpWebSocket(ignoredMethod);
+      const cdpTimeout = await launchLocalDedicatedProvider({
+        browser_path: browserPath,
+        headless: false,
+        timeout_ms: 500,
+        url: "https://www.zhipin.com/web/geek/job",
+        profile_ref: `profile_cdp-${ignoredMethod.slice(8)}`,
+        provider_ref: "provider_fake"
+      });
+      assert.equal(cdpTimeout.status, "ready");
+      if (cdpTimeout.status === "ready") {
+        const startedAt = Date.now();
+        const nextPage = await cdpTimeout.openUrl("https://www.zhipin.com/web/passport/zp/verify.html?code=35");
+        assert.ok(Date.now() - startedAt < 1500, `${ignoredMethod} must remain bounded`);
+        assert.equal(nextPage.status, "ready");
+        assert.equal(nextPage.current_url, "https://www.zhipin.com/web/passport/zp/verify.html?code=35");
+        assert.equal(nextPage.title, "Fake page");
+        assert.equal(JSON.stringify(nextPage).includes("webSocketDebuggerUrl"), false);
+        await cdpTimeout.close();
+      }
+    }
   } finally {
+    globalThis.WebSocket = originalWebSocket;
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
     if (previousHangPath === undefined) delete process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
@@ -706,9 +741,39 @@ test("bounds provider version and page-list readback while preserving redirect f
     else process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL = previousRedirectUrl;
     if (previousRedirectTitle === undefined) delete process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE;
     else process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE = previousRedirectTitle;
+    if (previousWebSocketUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
+    else process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = previousWebSocketUrl;
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+function installFakeCdpWebSocket(ignoredMethod: string): void {
+  class FakeCdpWebSocket extends EventTarget {
+    readyState = 0;
+
+    constructor(_url: string | URL) {
+      super();
+      queueMicrotask(() => {
+        this.readyState = 1;
+        this.dispatchEvent(new Event("open"));
+      });
+    }
+
+    send(payload: string): void {
+      const message = JSON.parse(payload) as { id: number; method: string };
+      if (message.method === ignoredMethod) return;
+      queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
+        data: JSON.stringify({ id: message.id, result: {} })
+      })));
+    }
+
+    close(): void {
+      this.readyState = 3;
+      this.dispatchEvent(new Event("close"));
+    }
+  }
+  globalThis.WebSocket = FakeCdpWebSocket as unknown as typeof WebSocket;
+}
 
 test("opens an identity environment session with page and controller facts", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
