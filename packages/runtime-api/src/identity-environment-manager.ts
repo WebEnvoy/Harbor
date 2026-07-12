@@ -217,6 +217,22 @@ export class LocalIdentityEnvironmentManager {
       !login.recovery_required;
   }
 
+  rebindUserConfirmedManagedSession(identity_environment_ref: string, runtime_session_ref: string): boolean {
+    const record = this.records.get(identity_environment_ref);
+    const login = record?.identity_environment.login_state;
+    if (!record ||
+      login?.state !== "logged_in" ||
+      login.reason !== USER_CONFIRMED_MANAGED_SESSION_REASON ||
+      login.manual_authentication_state !== "completed" ||
+      login.recovery_required
+    ) return false;
+
+    record.user_confirmed_session_ref = runtime_session_ref;
+    record.updated_at = new Date().toISOString();
+    this.persist();
+    return true;
+  }
+
   delete(identity_environment_ref: string): LocalIdentityEnvironmentPublicRecord | null {
     const record = this.records.get(identity_environment_ref);
     if (!record) return null;
