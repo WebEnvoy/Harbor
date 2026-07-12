@@ -800,12 +800,14 @@ function sameNormalizedSummary(left: LocalProviderReadProbePublicSummary["normal
 
 function validXhsDetailSummary(value: LocalProviderReadProbePublicSummary["normalized"]): boolean {
   return value?.kind === "xiaohongshu_note_detail" && validCanonicalPublicUrl(value.canonical_url, "https://www.xiaohongshu.com") &&
+    /^[a-f0-9]{24}$/i.test(value.note_id) && value.canonical_url.endsWith(`/explore/${value.note_id}`) &&
     validBoundedText(value.title, 200) && validBoundedText(value.summary, 500) && validBoundedText(value.body_summary, 2000) &&
     validBoundedText(value.author.display_name, 100) && (value.source_status === "located" || value.source_status === "partially_located");
 }
 
 function validBossDetailSummary(value: LocalProviderReadProbePublicSummary["normalized"]): boolean {
   return value?.kind === "boss_job_detail" && validCanonicalPublicUrl(value.canonical_url, "https://www.zhipin.com") &&
+    /^detail_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.detail_ref) &&
     validBoundedText(value.title, 200) && validBoundedText(value.summary, 500) && validBoundedText(value.job.name, 200) &&
     validBoundedText(value.job.description_summary, 2000) && validOptionalText(value.job.salary_summary, 100) && validOptionalText(value.job.location_summary, 100) &&
     validBoundedText(value.company.name, 200) && validBoundedText(value.recruiter.display_name, 100) && validOptionalText(value.recruiter.title, 100) &&

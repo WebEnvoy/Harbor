@@ -12,6 +12,7 @@ import {
 import { opaqueRef } from "./refs.js";
 import { trustLocalProviderReadProbe } from "./read-operation-probe-trust.js";
 import type {
+  BossJobDetailPublicSummary,
   LocalProviderLaunchInput,
   LocalProviderLauncher,
   LocalProviderLaunchResult,
@@ -23,10 +24,12 @@ import type {
   LocalProviderScreenshotFacts,
   RuntimeErrorCode,
   RuntimeErrorFact,
-  RuntimeFact
+  RuntimeFact,
+  XiaohongshuNoteDetailPublicSummary
 } from "./runtime-session-types.js";
 
 type CdpPageTarget = { id?: string; type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
+type ObservedDetailPublicSummary = XiaohongshuNoteDetailPublicSummary | Omit<BossJobDetailPublicSummary, "detail_ref">;
 
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
@@ -329,7 +332,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           challenge_like?: boolean;
           vue_ready?: boolean;
           pinia_ready?: boolean;
-          normalized?: LocalProviderDetailPublicSummary;
+          normalized?: ObservedDetailPublicSummary;
           detail_urls?: string[];
         } } | undefined)?.value;
         const observedResponse = operationResponse as { requestId: string; status: number; url: string } | null;
@@ -415,7 +418,7 @@ interface ReadProbeObservation {
   challenge_like?: boolean;
   vue_ready?: boolean;
   pinia_ready?: boolean;
-  normalized?: LocalProviderDetailPublicSummary;
+  normalized?: ObservedDetailPublicSummary;
   detail_urls?: string[];
   operation_response_status?: number;
   operation_response_url?: string;
@@ -553,17 +556,19 @@ function isSuccessfulReadResponse(status: unknown): status is number {
 
 function validateDetailNormalizedSummary(
   input: LocalProviderReadProbeInput,
-  value: LocalProviderDetailPublicSummary | undefined
+  value: ObservedDetailPublicSummary | undefined
 ): LocalProviderDetailPublicSummary | null {
   const target = new URL(input.target_url);
   const canonical_url = `${target.origin}${target.pathname}`;
   if (input.operation_id === "xhs_read_note_detail") {
-    if (value?.kind !== "xiaohongshu_note_detail" || value.canonical_url !== canonical_url ||
+    const noteId = target.pathname.split("/").filter(Boolean).at(-1) ?? "";
+    if (value?.kind !== "xiaohongshu_note_detail" || value.canonical_url !== canonical_url || value.note_id !== noteId || !/^[a-f0-9]{24}$/i.test(value.note_id) ||
       !boundedText(value.title, 200) || !boundedText(value.summary, 500) || !boundedText(value.body_summary, 2000) ||
       !boundedText(value.author.display_name, 100) || (value.source_status !== "located" && value.source_status !== "partially_located")) return null;
     return {
       kind: value.kind,
       canonical_url,
+      note_id: value.note_id,
       title: value.title,
       summary: value.summary,
       body_summary: value.body_summary,
@@ -576,9 +581,11 @@ function validateDetailNormalizedSummary(
     !boundedText(value.job.description_summary, 2000) || !optionalBoundedText(value.job.salary_summary, 100) || !optionalBoundedText(value.job.location_summary, 100) ||
     !boundedText(value.company.name, 200) || !boundedText(value.recruiter.display_name, 100) || !optionalBoundedText(value.recruiter.title, 100) ||
     (value.source_status !== "located" && value.source_status !== "partially_located")) return null;
+  if (!input.detail_ref || !/^detail_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.detail_ref)) return null;
   return {
     kind: value.kind,
     canonical_url,
+    detail_ref: input.detail_ref,
     title: value.title,
     summary: value.summary,
     job: {
@@ -624,7 +631,8 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const title = pick('.note-content .title, #detail-title, [class*="note-title"]', 200);
     const body = pick('#detail-desc, .note-content .desc, [class*="note-desc"]', 2000);
     const author = pick('.author-container .name, .author-wrapper .name, [class*="author"] [class*="name"]', 100);
-    const normalized = title && body && author ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, title, summary: body.slice(0, 500), body_summary: body, author: { display_name: author }, source_status: "located" } : undefined;
+    const noteId = location.pathname.split('/').filter(Boolean).at(-1) || "";
+    const normalized = title && body && author && /^[a-f0-9]{24}$/i.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 500), body_summary: body, author: { display_name: author }, source_status: "located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
       : `
     const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);

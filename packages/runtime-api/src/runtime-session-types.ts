@@ -193,6 +193,7 @@ export interface LocalProviderReadProbePublicSummary {
 export interface XiaohongshuNoteDetailPublicSummary {
   kind: "xiaohongshu_note_detail";
   canonical_url: string;
+  note_id: string;
   title: string;
   summary: string;
   body_summary: string;
@@ -203,6 +204,7 @@ export interface XiaohongshuNoteDetailPublicSummary {
 export interface BossJobDetailPublicSummary {
   kind: "boss_job_detail";
   canonical_url: string;
+  detail_ref: string;
   title: string;
   summary: string;
   job: {

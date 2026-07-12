@@ -178,6 +178,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   assert.equal(observed.vue_ready, true);
   assert.equal(observed.pinia_ready, true);
   assert.equal(observed.normalized.canonical_url, `${location.origin}${location.pathname}`);
+  assert.equal(observed.normalized.note_id, "0123456789abcdef01234567");
   assert.equal(JSON.stringify(observed).includes("must-not-return"), false);
   assert.equal(JSON.stringify(observed).includes("xsec_token"), false);
 
@@ -275,6 +276,7 @@ test("completes XHS detail only with bounded public fields and all Lode source r
     normalized: {
       kind: "xiaohongshu_note_detail" as const,
       canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+      note_id: "0123456789abcdef01234567",
       title: "公开标题",
       summary: "公开摘要",
       body_summary: "公开正文摘要",
@@ -299,6 +301,7 @@ test("completes XHS detail only with bounded public fields and all Lode source r
   if (typeof completed === "string") throw new Error(`XHS detail completion failed: ${completed}`);
   assert.equal("merge_commit" in completed.lode_pin && completed.lode_pin.merge_commit, LODE_268_DETAIL_PIN.merge_commit);
   assert.equal(completed.public_summary.normalized?.kind, "xiaohongshu_note_detail");
+  assert.equal(completed.public_summary.normalized?.kind === "xiaohongshu_note_detail" && completed.public_summary.normalized.note_id, "0123456789abcdef01234567");
   assert.deepEqual(completed.source_refs.map((entry) => entry.kind), ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]);
   assert.equal(JSON.stringify(completed).includes("xsec_token"), false);
   assert.equal(store.complete(admitted.entry, {
@@ -399,6 +402,7 @@ test("validates both detail surfaces against the exact search-bound target", () 
     normalized: {
       kind: "xiaohongshu_note_detail" as const,
       canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+      note_id: "0123456789abcdef01234567",
       title: "公开标题",
       summary: "公开摘要",
       body_summary: "公开正文摘要",
