@@ -189,8 +189,12 @@ test("observes BOSS SPA, login wall, and challenge state without returning page 
     challenge_like: false
   });
   assert.equal(evaluate(bossSpaDocument({ text: `${"公开职位 ".repeat(400)}访问异常，请完成安全验证` }), location).challenge_like, true);
+  assert.equal(evaluate(bossSpaDocument({ text: "Join us to solve meaningful hiring challenges" }), location).challenge_like, false);
+  assert.equal(evaluate(bossSpaDocument({ text: "Verification challenge required" }), location).challenge_like, true);
   assert.equal(evaluate(bossSpaDocument({ loginOverlay: true }), location).login_like, true);
   assert.equal(evaluate(bossSpaDocument({ challengeOverlay: true }), location).challenge_like, true);
+  assert.equal(evaluate(bossSpaDocument({ verifyElement: true }), location).challenge_like, false);
+  assert.equal(evaluate(bossSpaDocument({ challengeOverlay: true, challengeOverlayHidden: true }), location).challenge_like, false);
   assert.equal(evaluate(bossSpaDocument({ vueOwned: false }), location).rendered_surface, false);
   assert.equal(evaluate(bossSpaDocument({ fakeVueState: true }), location).rendered_surface, false);
   assert.equal(evaluate(bossSpaDocument({ mountedSubtreeOwned: false }), location).rendered_surface, false);
@@ -263,18 +267,31 @@ test("detects late challenge and login overlays for both detail sites", () => {
   const lateLogin = `${"公开内容".repeat(1000)}扫码登录`;
   const xhsEvaluate = new Function("window", "document", "location", `return ${readProbeExpression("xiaohongshu", "", undefined, "xhs_read_note_detail")}`);
   const bossEvaluate = new Function("document", "location", `return ${readProbeExpression("boss", "", undefined, "boss_read_job_detail")}`);
-  const document = { readyState: "complete", body: { innerText: lateChallenge }, querySelector: () => null };
+  const document = { readyState: "complete", body: { innerText: lateChallenge }, querySelector: () => null, querySelectorAll: () => [] };
   assert.equal(xhsEvaluate({}, document, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).challenge_like, true);
   assert.equal(bossEvaluate(document, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
   assert.equal(xhsEvaluate({}, { ...document, body: { innerText: lateLogin } }, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).login_like, true);
   assert.equal(bossEvaluate({ ...document, body: { innerText: lateLogin } }, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).login_like, true);
-  const overlayDocument = { ...document, body: { innerText: "公开详情" }, querySelector: (selector: string) => selector.includes("captcha") ? {} : null };
+  const visibleOverlay = { getBoundingClientRect: () => ({ width: 100, height: 100, top: 0, left: 0, right: 100, bottom: 100 }) };
+  const visibleView = { innerWidth: 1280, innerHeight: 800, getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) };
+  const overlayDocument = { ...document, defaultView: visibleView, body: { innerText: "公开详情" }, querySelectorAll: () => [visibleOverlay] };
   assert.equal(xhsEvaluate({}, overlayDocument, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).challenge_like, true);
   assert.equal(bossEvaluate(overlayDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
-  const securityOverlayDocument = { ...document, body: { innerText: "公开详情" }, querySelector: (selector: string) => selector.includes("security-check") ? {} : null };
+  const securityOverlayDocument = { ...document, defaultView: visibleView, body: { innerText: "公开详情" }, querySelectorAll: () => [visibleOverlay] };
   assert.equal(bossEvaluate(securityOverlayDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
   const qrLoginDocument = { ...document, body: { innerText: "公开详情" }, querySelector: (selector: string) => selector.includes("qrcode") ? {} : null };
   assert.equal(bossEvaluate(qrLoginDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).login_like, true);
+  const verifyOnlyDocument = { ...document, body: { innerText: "We solve meaningful hiring challenges" }, querySelector: (selector: string) => selector.includes("verify") ? {} : null };
+  assert.equal(bossEvaluate(verifyOnlyDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, false);
+  const hiddenOverlayDocument = {
+    ...document,
+    defaultView: { ...visibleView, getComputedStyle: () => ({ display: "none", visibility: "hidden", opacity: "0" }) },
+    body: { innerText: "公开详情" },
+    querySelectorAll: () => [visibleOverlay]
+  };
+  assert.equal(bossEvaluate(hiddenOverlayDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, false);
+  const explicitChallengeDocument = { ...document, body: { innerText: "Verification challenge required" } };
+  assert.equal(bossEvaluate(explicitChallengeDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
 });
 
 test("bounds the entire BOSS site-resource probe when the CDP page list never responds", async () => {
@@ -307,6 +324,8 @@ function bossSpaDocument(options: {
   validCard?: boolean;
   loginOverlay?: boolean;
   challengeOverlay?: boolean;
+  challengeOverlayHidden?: boolean;
+  verifyElement?: boolean;
 } = {}) {
   const card = {
     querySelector(selector: string) {
@@ -338,10 +357,28 @@ function bossSpaDocument(options: {
     }
   }
   return {
+    defaultView: {
+      innerWidth: 1280,
+      innerHeight: 720,
+      getComputedStyle: () => ({
+        display: options.challengeOverlayHidden ? "none" : "block",
+        visibility: "visible",
+        opacity: "1"
+      })
+    },
     readyState: "complete",
     body: { innerText: options.text ?? "公开职位列表" },
+    querySelectorAll(selector: string) {
+      const elements: object[] = [];
+      if (options.challengeOverlay && ["captcha", "challenge", "security-check"].some((token) => selector.includes(`[class*="${token}"]`) || selector.includes(`[id*="${token}"]`))) {
+        elements.push({ getBoundingClientRect: () => ({ width: 640, height: 360, top: 100, left: 100, right: 740, bottom: 460 }) });
+      }
+      if (options.verifyElement && (selector.includes('[class*="verify"]') || selector.includes('[id*="verify"]'))) {
+        elements.push({ getBoundingClientRect: () => ({ width: 200, height: 40, top: 100, left: 100, right: 300, bottom: 140 }) });
+      }
+      return elements;
+    },
     querySelector(selector: string) {
-      if (selector.includes("captcha") || selector.includes("security-check")) return options.challengeOverlay ? {} : null;
       if (selector.includes("login-dialog")) return options.loginOverlay ? {} : null;
       if (selector === "#wrap, #app") return root;
       return null;
