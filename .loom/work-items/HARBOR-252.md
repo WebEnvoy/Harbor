@@ -3,9 +3,9 @@
 ## Static Facts
 
 - Item ID: HARBOR-252
-- Goal: Add one-shot Xiaohongshu note-detail and BOSS job-detail read operations that consume only opaque refs minted from a same-session real search result.
-- Scope: Harbor detail target registry, Runtime API operation admission, local-provider detail probe, focused tests, and HARBOR-252 item-specific carriers.
-- Execution Path: work/harbor-252-detail-read-operations
+- Goal: Align Xiaohongshu note-detail operation source/evidence completion proof exactly with merged Lode detail truth.
+- Scope: XHS detail pinned ref requirements, capture/completion proof, focused contract regressions, and HARBOR-252 carriers.
+- Execution Path: work/harbor-252-lode-detail-alignment
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-252.md
 - Review Entry: .loom/reviews/HARBOR-252.json
@@ -20,8 +20,9 @@
 
 ## Ownership Constraints
 
-- Do not edit App, Core, Lode, or shared `.loom/status/current.md`.
+- Do not edit App, Core, Lode, or BOSS production behavior.
 - No production page, profile, account, Cookie, token, raw DOM, raw network body, or external write action during implementation validation.
+- BOSS detail runtime is deferred and is not acceptance evidence for this Work Item.
 
 ## Associated Artifacts
 

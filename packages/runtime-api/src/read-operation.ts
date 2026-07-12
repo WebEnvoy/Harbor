@@ -319,8 +319,8 @@ const DETAIL_READ_OPERATIONS: readonly PinnedReadOperation[] = [
     required_harbor_fact_keys: ["identity.user_logged_in.confirmed", "page.note_detail.ready", "safety.challenge.absent"],
     failure_mapping_id: "xiaohongshu.read-note-detail.failure-mapping",
     required_failure_classes: ["not_logged_in", "safety_challenge", "page_not_ready", "site_changed", "empty_result"],
-    required_source_ref_kinds: ["pinia_store_summary", "network_summary"],
-    required_evidence_ref_kinds: ["snapshot_ref"],
+    required_source_ref_kinds: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"],
+    required_evidence_ref_kinds: ["snapshot_ref", "post_check_ref"],
     post_check_id: "xiaohongshu.read-note-detail.post-check",
     required_post_check_fields: ["status", "reason", "source_refs", "evidence_refs"]
   },
@@ -404,8 +404,13 @@ function completeReadOperation(
   if (!proof.post_check_ref) return "post_check_missing";
   if (!proof.public_summary_ref || !isExpectedPublicSummary(entry, proof.public_summary)) return "public_summary_missing";
   if (proof.evidence_refs.length === 0 || proof.evidence_refs.some((ref) => !ref)) return "evidence_refs_missing";
-  if (!entry.required_source_ref_kinds.every((kind) => proof.source_refs.some((ref) => ref.kind === kind && ref.ref))) return "source_refs_missing";
-  if (!entry.required_evidence_ref_kinds.every((kind) => proof.evidence_ref_kinds.some((ref) => ref.kind === kind && ref.ref))) return "evidence_refs_missing";
+  const exactXhsDetailRefs = entry.operation_id === "xhs_read_note_detail";
+  if (exactXhsDetailRefs
+    ? !hasRequiredObservedRefs(proof.source_refs, entry.required_source_ref_kinds)
+    : !entry.required_source_ref_kinds.every((kind) => proof.source_refs.some((ref) => ref.kind === kind && ref.ref))) return "source_refs_missing";
+  if (exactXhsDetailRefs
+    ? !hasRequiredObservedRefs(proof.evidence_ref_kinds, entry.required_evidence_ref_kinds)
+    : !entry.required_evidence_ref_kinds.every((kind) => proof.evidence_ref_kinds.some((ref) => ref.kind === kind && ref.ref))) return "evidence_refs_missing";
   return {
     schema_version: HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA,
     status: "completed",
@@ -719,8 +724,8 @@ export function validateDetailTruthPin(): ReadOperationFailureClass | null {
   const xhs = DETAIL_READ_OPERATIONS.find((entry) => entry.operation_id === "xhs_read_note_detail");
   const boss = DETAIL_READ_OPERATIONS.find((entry) => entry.operation_id === "boss_read_job_detail");
   return xhs && boss &&
-    sameStrings(xhs.required_source_ref_kinds, ["pinia_store_summary", "network_summary"]) &&
-    sameStrings(xhs.required_evidence_ref_kinds, ["snapshot_ref"]) &&
+    sameStrings(xhs.required_source_ref_kinds, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]) &&
+    sameStrings(xhs.required_evidence_ref_kinds, ["snapshot_ref", "post_check_ref"]) &&
     boss.package_ref === "lode://site-capability/boss/read-job-detail@0.1.1" && boss.lock_ref === "lode://lock/site-capability/boss/read-job-detail@0.1.1" && boss.version === "0.1.1" &&
     sameStrings(boss.required_source_ref_kinds, ["wapi_job_detail_summary", "dom_snapshot_summary"]) &&
     sameStrings(boss.required_evidence_ref_kinds, ["snapshot_ref"])
@@ -810,7 +815,7 @@ function validXhsDetailSummary(value: LocalProviderReadProbePublicSummary["norma
     value.author.profile_url === `https://www.xiaohongshu.com/user/profile/${value.author.author_id}` &&
     Object.values(value.interaction_metrics).every((entry) => validBoundedText(entry, 40)) &&
     value.source_citation.kind === "xhs_note_detail_ref" && value.source_citation.note_id === value.note_id && value.source_citation.url === value.canonical_url &&
-    validFieldSources(value.source_citation.field_sources, ["pinia_store_summary", "network_summary"]) &&
+    validFieldSources(value.source_citation.field_sources, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]) &&
     (value.source_status === "located" || value.source_status === "partially_located");
 }
 
