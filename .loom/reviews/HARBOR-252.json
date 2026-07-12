@@ -1,1 +1,30 @@
-{"schema_version":"loom-review/v1","item_id":"HARBOR-252","decision":"allow","kind":"code_review","summary":"Final independent review found no findings after producer and post-check truth were bound to exact merged Lode refs.","reviewer":"codex-main-controller-integrating-independent-review","authored_at":"2026-07-12T12:31:00Z","reviewed_head":"17146821603b1abbcb37b0349a9bb14053a2a9d1","reviewed_validation_summary":"2026-07-12T12:30Z at product head 17146821603b1abbcb37b0349a9bb14053a2a9d1: pnpm typecheck, pnpm build, targeted contract tests, pnpm test 85/85, and git diff --check passed. Independent final review returned ALLOW: XHS detail producer, capture, completion and post-check exactly bind Lode merge 66d79b4 source/evidence requirements; refs-only privacy and search/BOSS/auth/session behavior remain unchanged.","reviewed_validation_summary_hash":"2a749bdd5090fc4952ee49bf5bc122bf1e7277cd7586afb07ee947faecc3b4ba","validation_summary_source":"recovery.latest_validation_summary","validation_summary_locator":".loom/progress/HARBOR-252.md","fallback_to":null,"findings":[],"blocking_issues":[],"follow_ups":["Issue remains open until merged packaged App XHS detail live E2E."],"consumed_inputs":{"work_item":".loom/work-items/HARBOR-252.md","recovery_entry":".loom/progress/HARBOR-252.md","status_surface":".loom/status/current.md","build_checkpoint":".loom/specs/HARBOR-252/build-evidence.json","suite_validation":"loom suite validate --target . --item HARBOR-252 --json","suite_evidence_map":".loom/specs/HARBOR-252/evidence-map.md"},"semantic_review_disposition":{"status":"passed","reason":"Producer observations, aggregate citation, exact refs and post-check are mutually bound and fail closed."}}
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-252",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Final independent review found no findings after producer and post-check truth were bound to exact merged Lode refs.",
+  "reviewer": "codex-main-controller-integrating-independent-review",
+  "authored_at": "2026-07-12T12:35:00Z",
+  "reviewed_head": "50d98be8ae80fcdf63570d46c2dd2f96443083f6",
+  "reviewed_validation_summary": "2026-07-12T12:30Z at product head 17146821603b1abbcb37b0349a9bb14053a2a9d1: pnpm typecheck, pnpm build, targeted contract tests, pnpm test 85/85, and git diff --check passed. Independent final review returned ALLOW: XHS detail producer, capture, completion and post-check exactly bind Lode merge 66d79b4 source/evidence requirements; refs-only privacy and search/BOSS/auth/session behavior remain unchanged.",
+  "reviewed_validation_summary_hash": "2a749bdd5090fc4952ee49bf5bc122bf1e7277cd7586afb07ee947faecc3b4ba",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-252.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": ["Issue remains open until merged packaged App XHS detail live E2E."],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-252.md",
+    "recovery_entry": ".loom/progress/HARBOR-252.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": ".loom/specs/HARBOR-252/build-evidence.json",
+    "suite_validation": "loom suite validate --target . --item HARBOR-252 --json",
+    "suite_evidence_map": ".loom/specs/HARBOR-252/evidence-map.md"
+  },
+  "semantic_review_disposition": {
+    "status": "passed",
+    "reason": "Producer observations, aggregate citation, exact refs and post-check are mutually bound and fail closed."
+  }
+}
