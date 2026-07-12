@@ -11,7 +11,7 @@
 - Review Entry: .loom/reviews/HARBOR-263.json
 - Validation Entry: pnpm typecheck; pnpm build; targeted tests; pnpm test; git diff --check
 - Closing Condition: Merge the HARBOR-263 PR after hosted gate; close only after packaged App proves two separately submitted reads on the same confirmed session.
-- Current Checkpoint: pr_ready
+- Current Checkpoint: implementation_validated
 - Current Stop: Product/spec head `cebd9384a4c3eac1ce810684833bf525c6db1d21` passed focused lifecycle tests 6/6, typecheck, build, full tests 85/85, and diff-check.
 - Next Step: Push the current branch and create a ready PR for main-controller semantic review and hosted gates.
 - Blockers: None recorded.

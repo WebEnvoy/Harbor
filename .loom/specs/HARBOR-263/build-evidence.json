@@ -1,0 +1,105 @@
+{
+  "schema_version": "loom-build-evidence/v1",
+  "required_inputs": {
+    "target_repo": "WebEnvoy/Harbor",
+    "work_item": "HARBOR-263",
+    "branch": "work/harbor-263-continuous-handoff",
+    "suite_path": "full",
+    "worktree": "."
+  },
+  "ownership_contract": {
+    "task_goal": "Preserve trusted controller handoff across two separately submitted Core read tasks on one confirmed headed managed session.",
+    "context_locators": [
+      "https://github.com/WebEnvoy/Harbor/issues/263",
+      ".loom/specs/HARBOR-263/spec.md",
+      ".loom/specs/HARBOR-263/implementation-contract.md",
+      "packages/runtime-api/src/runtime-session.ts",
+      "packages/runtime-api/src/server.test.ts"
+    ],
+    "read_scope": ["Harbor Runtime Session controller lifecycle, HTTP lifecycle tests, and HARBOR-263 carriers"],
+    "write_ownership": [
+      "packages/runtime-api/src/runtime-session.ts",
+      "packages/runtime-api/src/server.test.ts",
+      ".loom/work-items/HARBOR-263.md",
+      ".loom/progress/HARBOR-263.md",
+      ".loom/status/current.md",
+      ".loom/bootstrap/init-result.json",
+      ".loom/specs/HARBOR-263/**"
+    ],
+    "non_goals": [
+      "No App/Core/Lode or other Harbor worktree changes",
+      "No BOSS probe changes",
+      "No real browser, account, profile, page, credential, Cookie, token, raw material, or external write",
+      "No merge or issue closeout"
+    ],
+    "validation_expectation": [
+      "pnpm typecheck",
+      "pnpm build",
+      "focused lifecycle tests 6/6",
+      "pnpm test 85/85",
+      "git diff --check",
+      "loom suite validate",
+      "loom suite carrier validate",
+      "loom fact-chain"
+    ],
+    "output_format": "Ready implementation PR bound to Harbor #263 for main-controller review and gates.",
+    "integration_target": [
+      "packages/runtime-api/src/runtime-session.ts",
+      "packages/runtime-api/src/server.test.ts",
+      ".loom/progress/HARBOR-263.md",
+      ".loom/specs/HARBOR-263/**"
+    ]
+  },
+  "ownership_constraints": [
+    "Writes are limited to the registered Harbor #263 worktree and declared runtime-session/test/carrier paths.",
+    "App, Core, Lode, other Harbor worktrees, BOSS probe code, secrets, raw runtime material, and external pages are forbidden.",
+    "Merge, issue closeout, and packaged live E2E remain main-controller responsibilities."
+  ],
+  "delegations": [],
+  "delegation_evidence": {
+    "used_nested_subagents": false,
+    "unintegrated_subagent_output": false
+  },
+  "integration_evidence": [
+    "A trusted confirmed Core release now re-arms the next explicit Core acquisition only when the prior trusted handoff and matching held lock are present.",
+    "The focused lifecycle test proves two separate acquire/probe/release cycles on the same session and preserves the pending handoff against user/agent claims.",
+    "Existing negative lifecycle tests cover unconfirmed, headless visibility, fixture, different identity/profile, released controller, user lock, holder conflict, and cleanup failure boundaries."
+  ],
+  "ownership_conflicts": [],
+  "repeated_blocker_signal": null,
+  "suite_path_consumption": {
+    "suite_path": "full",
+    "required_artifacts": [
+      ".loom/specs/HARBOR-263/suite-index.md",
+      ".loom/specs/HARBOR-263/spec.md",
+      ".loom/specs/HARBOR-263/plan.md",
+      ".loom/specs/HARBOR-263/implementation-contract.md",
+      ".loom/specs/HARBOR-263/execution-breakdown.md",
+      ".loom/specs/HARBOR-263/task-carrier.md",
+      ".loom/specs/HARBOR-263/evidence-map.md",
+      ".loom/specs/HARBOR-263/build-evidence.json",
+      ".loom/specs/HARBOR-263/consistency-analysis.md"
+    ],
+    "consumer_boundary": "Harbor shared session/controller lifecycle only; site probes and downstream contracts are unchanged.",
+    "recheck_condition": "Refresh after lifecycle, test, ownership, product head, or PR metadata changes."
+  },
+  "validation": {
+    "passed": [
+      "pnpm typecheck",
+      "pnpm build",
+      "focused lifecycle tests 6/6",
+      "pnpm test 85/85",
+      "git diff --check",
+      "loom suite validate --target . --item HARBOR-263 --json",
+      "loom suite carrier validate --target . --item HARBOR-263 --json",
+      "loom fact-chain --target . --item HARBOR-263 --json"
+    ],
+    "product_head": "cebd9384a4c3eac1ce810684833bf525c6db1d21"
+  },
+  "runtime_boundary": {
+    "real_browser": "not_used",
+    "production_pages": "not_used",
+    "sensitive_material": "not_accessed",
+    "external_writes": "not_performed"
+  }
+}
