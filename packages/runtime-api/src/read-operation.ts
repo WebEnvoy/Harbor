@@ -571,6 +571,7 @@ function samePublicSummary(left: LocalProviderReadProbePublicSummary, right: Loc
     left.surface === right.surface &&
     left.result_state === right.result_state &&
     left.response_status === right.response_status &&
+    left.result_count === right.result_count &&
     sameNormalizedSummary(left.normalized, right.normalized) &&
     sameStrings(left.detail_refs ?? [], right.detail_refs ?? []) &&
     sameStrings(left.source_signals, right.source_signals);
@@ -732,6 +733,7 @@ function isExpectedPublicSummary(entry: PinnedReadOperation, summary: LocalProvi
   if (entry.operation_id === "xhs_search_notes") {
     return summary.result_kind === "xiaohongshu_search_notes_surface" &&
       summary.surface === "search_result" &&
+      Number.isInteger(summary.result_count) && summary.result_count! > 0 && summary.result_count! <= 15 &&
       sameStrings(summary.source_signals, ["pinia_store", "xhs_search_read_network"]);
   }
   if (entry.operation_id === "xhs_read_note_detail") {

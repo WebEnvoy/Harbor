@@ -204,6 +204,7 @@ export interface LocalProviderReadProbePublicSummary {
   city_code?: string;
   business_code?: number;
   job_count?: number;
+  result_count?: number;
   detail_refs?: readonly string[];
   normalized?: LocalProviderDetailPublicSummary;
   source_signals: readonly string[];
