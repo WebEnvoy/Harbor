@@ -371,7 +371,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
     const source_refs = validation.source_kinds.map((kind) => ({ kind, ref: opaqueRef("source") }));
     const evidence_ref_kinds = [
       { kind: "snapshot_ref", ref: observation.screenshot_ref! },
-      ...(input.operation_id === "boss_job_search" ? [{ kind: "network_summary_ref", ref: opaqueRef("evidence") }] : [])
+      ...(input.operation_id === "boss_job_search" || input.operation_id === "boss_read_job_detail" ? [{ kind: "network_summary_ref", ref: opaqueRef("evidence") }] : [])
     ];
     return {
       status: "completed",
@@ -471,7 +471,9 @@ export function validateReadOperationProbe(
     const xhs = input.operation_id === "xhs_read_note_detail";
     return {
       status: "completed",
-      source_kinds: ["detail_page_summary"],
+      source_kinds: xhs
+        ? ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]
+        : ["network_summary"],
       public_summary: {
         schema_version: "harbor-read-operation-public-summary/v0",
         operation_id: input.operation_id,

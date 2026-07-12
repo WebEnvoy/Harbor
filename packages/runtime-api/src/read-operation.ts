@@ -21,6 +21,18 @@ export const LODE_262_ALLOWLIST_PIN = {
   }
 } as const;
 
+export const LODE_268_DETAIL_PIN = {
+  repository: "WebEnvoy/Lode",
+  issue: "#268",
+  merge_commit: "35a0af90b919979b673feeae721add6212c9687f",
+  asset_path: "registry/detail-runtime-consumption.json",
+  asset_sha256: "34e579dfe88bbaf7df37f4eacd566910ef35abb9ea316c27b3f65d7b6ca9f9f3",
+  truth_id: "lode.xhs-boss.detail-read.runtime-consumption",
+  schema_version: "lode.detail-runtime-consumption.v0",
+  asset_owner: "Lode",
+  runtime_execution: "out_of_scope"
+} as const;
+
 export type ReadOperationFailureClass =
   | "invalid_request"
   | "operation_not_allowlisted"
@@ -119,7 +131,7 @@ export interface CompletedReadOperation {
     status: "passed";
     reason: "managed_provider_read_probe_completed";
   };
-  lode_pin: typeof LODE_262_ALLOWLIST_PIN;
+  lode_pin: typeof LODE_262_ALLOWLIST_PIN | typeof LODE_268_DETAIL_PIN;
   public_boundary: ReadOperationPublicBoundary;
 }
 
@@ -306,7 +318,7 @@ const DETAIL_READ_OPERATIONS: readonly PinnedReadOperation[] = [
     required_harbor_fact_keys: ["identity.user_logged_in.confirmed", "page.note_detail.ready", "safety.challenge.absent"],
     failure_mapping_id: "xiaohongshu.read-note-detail.failure-mapping",
     required_failure_classes: ["not_logged_in", "safety_challenge", "page_not_ready", "site_changed", "empty_result"],
-    required_source_ref_kinds: ["detail_page_summary"],
+    required_source_ref_kinds: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"],
     required_evidence_ref_kinds: ["snapshot_ref", "post_check_ref"],
     post_check_id: "xiaohongshu.read-note-detail.post-check",
     required_post_check_fields: ["status", "reason", "source_refs", "evidence_refs"]
@@ -325,8 +337,8 @@ const DETAIL_READ_OPERATIONS: readonly PinnedReadOperation[] = [
     required_harbor_fact_keys: ["identity.boss_geek_logged_in.confirmed", "page.job_detail.ready", "safety.challenge.absent"],
     failure_mapping_id: "boss.read-job-detail.failure-mapping",
     required_failure_classes: ["not_logged_in", "safety_challenge", "page_not_ready", "site_changed", "empty_result"],
-    required_source_ref_kinds: ["detail_page_summary"],
-    required_evidence_ref_kinds: ["snapshot_ref", "post_check_ref"],
+    required_source_ref_kinds: ["network_summary"],
+    required_evidence_ref_kinds: ["snapshot_ref", "network_summary_ref", "post_check_ref"],
     post_check_id: "boss.read-job-detail.post-check",
     required_post_check_fields: ["status", "reason", "source_refs", "evidence_refs"]
   }
@@ -336,6 +348,7 @@ export function admitAllowlistedReadOperation(input: unknown): AdmittedReadOpera
   const request = parseRequest(input);
   if (typeof request === "string") return request;
   const detailEntry = DETAIL_READ_OPERATIONS.find((candidate) => candidate.site_id === request.site_id && candidate.operation_id === request.operation_id);
+  if (detailEntry && validateDetailTruthPin()) return "allowlist_pin_invalid";
   const pinFailure = detailEntry ? null : validatePinnedAllowlist();
   if (pinFailure) return pinFailure;
   const entry = detailEntry ?? PINNED_READ_OPERATIONS.find((candidate) => candidate.site_id === request.site_id && candidate.operation_id === request.operation_id);
@@ -411,7 +424,7 @@ function completeReadOperation(
       status: "passed",
       reason: "managed_provider_read_probe_completed"
     },
-    lode_pin: LODE_262_ALLOWLIST_PIN,
+    lode_pin: isDetailOperation(entry.operation_id) ? LODE_268_DETAIL_PIN : LODE_262_ALLOWLIST_PIN,
     public_boundary: PUBLIC_BOUNDARY
   };
 }
@@ -689,6 +702,26 @@ export function validatePinnedAllowlist(mirror: unknown = PINNED_READ_OPERATION_
   return null;
 }
 
+export function validateDetailTruthPin(): ReadOperationFailureClass | null {
+  if (
+    LODE_268_DETAIL_PIN.repository !== "WebEnvoy/Lode" ||
+    LODE_268_DETAIL_PIN.issue !== "#268" ||
+    LODE_268_DETAIL_PIN.merge_commit !== "35a0af90b919979b673feeae721add6212c9687f" ||
+    LODE_268_DETAIL_PIN.asset_path !== "registry/detail-runtime-consumption.json" ||
+    LODE_268_DETAIL_PIN.asset_sha256 !== "34e579dfe88bbaf7df37f4eacd566910ef35abb9ea316c27b3f65d7b6ca9f9f3" ||
+    LODE_268_DETAIL_PIN.truth_id !== "lode.xhs-boss.detail-read.runtime-consumption" ||
+    DETAIL_READ_OPERATIONS.length !== 2
+  ) return "allowlist_pin_invalid";
+  const xhs = DETAIL_READ_OPERATIONS.find((entry) => entry.operation_id === "xhs_read_note_detail");
+  const boss = DETAIL_READ_OPERATIONS.find((entry) => entry.operation_id === "boss_read_job_detail");
+  return xhs && boss &&
+    sameStrings(xhs.required_source_ref_kinds, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]) &&
+    sameStrings(xhs.required_evidence_ref_kinds, ["snapshot_ref", "post_check_ref"]) &&
+    sameStrings(boss.required_source_ref_kinds, ["network_summary"]) &&
+    sameStrings(boss.required_evidence_ref_kinds, ["snapshot_ref", "network_summary_ref", "post_check_ref"])
+    ? null : "allowlist_pin_invalid";
+}
+
 function isExpectedPublicSummary(entry: PinnedReadOperation, summary: LocalProviderReadProbePublicSummary): boolean {
   if (summary.schema_version !== "harbor-read-operation-public-summary/v0" || summary.operation_id !== entry.operation_id || summary.source_signals.length === 0) return false;
   if (summary.result_state !== "operation_read_response_observed" || !Number.isInteger(summary.response_status) || summary.response_status < 200 || summary.response_status >= 300) return false;
@@ -751,6 +784,10 @@ function isSiteId(value: unknown): value is AllowlistedReadOperationSite {
 
 function isOperationId(value: unknown): value is AllowlistedReadOperationId {
   return value === "xhs_search_notes" || value === "boss_job_search" || value === "xhs_read_note_detail" || value === "boss_read_job_detail";
+}
+
+function isDetailOperation(value: AllowlistedReadOperationId): boolean {
+  return value === "xhs_read_note_detail" || value === "boss_read_job_detail";
 }
 
 function canonicalJson(value: unknown): string {

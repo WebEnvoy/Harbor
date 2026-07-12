@@ -17,6 +17,8 @@ const DETAIL_REF_TTL_MS = 10 * 60 * 1000;
 
 export class DetailReadTargetStore {
   private readonly records = new Map<string, DetailReadTargetRecord>();
+  private readonly consumedRefs = new Set<string>();
+  private readonly expiredRefs = new Set<string>();
 
   register(input: {
     runtime_session_ref: string;
@@ -40,8 +42,7 @@ export class DetailReadTargetStore {
         consumed: false
       });
       const expiry = setTimeout(() => {
-        const record = this.records.get(detail_ref);
-        if (record) record.canonical_url = "";
+        if (this.records.delete(detail_ref)) this.expiredRefs.add(detail_ref);
       }, DETAIL_REF_TTL_MS);
       expiry.unref();
       refs.push(detail_ref);
@@ -57,15 +58,19 @@ export class DetailReadTargetStore {
     now?: number;
   }): DetailReadTargetRecord | DetailReadFailureClass {
     if (!/^detail_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.detail_ref)) return "detail_ref_invalid";
+    if (this.consumedRefs.has(input.detail_ref)) return "detail_ref_consumed";
+    if (this.expiredRefs.has(input.detail_ref)) return "detail_ref_expired";
     const record = this.records.get(input.detail_ref);
     if (!record) return "detail_ref_missing";
-    if (record.consumed) return "detail_ref_consumed";
-    if (record.expires_at <= (input.now ?? Date.now())) return "detail_ref_expired";
+    if (record.expires_at <= (input.now ?? Date.now())) {
+      this.records.delete(input.detail_ref);
+      this.expiredRefs.add(input.detail_ref);
+      return "detail_ref_expired";
+    }
     if (record.runtime_session_ref !== input.runtime_session_ref || record.site_id !== input.site_id || record.detail_operation_id !== input.operation_id) return "detail_ref_binding_mismatch";
-    const canonical_url = record.canonical_url;
-    record.canonical_url = "";
-    record.consumed = true;
-    return { ...record, canonical_url };
+    this.records.delete(input.detail_ref);
+    this.consumedRefs.add(input.detail_ref);
+    return { ...record, consumed: true };
   }
 }
 

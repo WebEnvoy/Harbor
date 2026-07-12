@@ -1104,20 +1104,30 @@ test("fails closed before probing when PATCH login state or release lacks a conf
 });
 
 test("consumes a BOSS detail ref only once from the same real-search session", async () => {
+  let failDetailProbe = false;
   const probe = trustLocalProviderReadProbe(async (input) => {
     if (input.operation_id === "boss_job_search") return {
       ...completedBossReadProbe(input),
       detail_targets: [{ canonical_url: "https://www.zhipin.com/job_detail/AbC_123.html" }]
     };
     if (input.operation_id === "boss_read_job_detail") {
-      const source = { kind: "detail_page_summary", ref: opaqueRef("source") };
+      if (failDetailProbe) return {
+        status: "unavailable",
+        failure_class: "network_resource_unavailable",
+        message: "Directed detail probe failure.",
+        retryable: true
+      };
+      const source = { kind: "network_summary", ref: opaqueRef("source") };
       return {
         status: "completed",
         observed_at: "2026-07-12T00:00:00.000Z",
         observed_origin: "https://www.zhipin.com",
         page: localReadPage(input.target_url),
         source_refs: [source],
-        evidence_ref_kinds: [{ kind: "snapshot_ref", ref: opaqueRef("evidence") }],
+        evidence_ref_kinds: [
+          { kind: "snapshot_ref", ref: opaqueRef("evidence") },
+          { kind: "network_summary_ref", ref: opaqueRef("evidence") }
+        ],
         public_summary_source_ref: source.ref,
         public_summary: {
           schema_version: "harbor-read-operation-public-summary/v0",
@@ -1166,6 +1176,9 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
     });
     assert.equal(detail.status, 201);
     assert.equal(detail.body.public_summary.result_kind, "boss_job_detail_surface");
+    assert.equal(detail.body.lode_pin.merge_commit, "35a0af90b919979b673feeae721add6212c9687f");
+    assert.equal(detail.body.source_refs[0].kind, "network_summary");
+    assert.deepEqual(detail.body.evidence_ref_kinds.map((entry: any) => entry.kind), ["snapshot_ref", "network_summary_ref", "post_check_ref"]);
     assert.equal(JSON.stringify(detail.body).includes("job_detail/"), false);
 
     const repeated = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
@@ -1178,6 +1191,23 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
     });
     assert.equal(directUrl.status, 400);
     assert.equal(directUrl.body.failure_class, "invalid_request");
+
+    const secondSearch = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_job_search", query: "AI", city_code: "101010100"
+    });
+    const [failureRef] = secondSearch.body.public_summary.detail_refs;
+    failDetailProbe = true;
+    const failed = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: failureRef
+    });
+    assert.equal(failed.status, 409);
+    assert.equal(failed.body.failure_class, "network_resource_unavailable");
+    assert.equal(JSON.stringify(failed.body).includes("AbC_123"), false);
+    const replayAfterFailure = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: failureRef
+    });
+    assert.equal(replayAfterFailure.status, 409);
+    assert.equal(replayAfterFailure.body.failure_class, "detail_ref_consumed");
   } finally {
     await running.close();
   }

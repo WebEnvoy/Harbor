@@ -27,6 +27,9 @@ test("binds opaque detail refs to one session, site, operation, ttl, and consump
   assert.equal(store.consume({ detail_ref: detailRef, runtime_session_ref: "session_b", site_id: "boss", operation_id: "boss_read_job_detail", now: 2_000 }), "detail_ref_binding_mismatch");
   const consumed = store.consume({ detail_ref: detailRef, runtime_session_ref: "session_a", site_id: "boss", operation_id: "boss_read_job_detail", now: 2_000 });
   assert.equal(typeof consumed, "object");
+  const internalRecords = (store as unknown as { records: Map<string, unknown> }).records;
+  assert.equal(internalRecords.has(detailRef), false);
+  assert.equal(JSON.stringify(store).includes("AbC_123"), false);
   assert.equal(store.consume({ detail_ref: detailRef, runtime_session_ref: "session_a", site_id: "boss", operation_id: "boss_read_job_detail", now: 2_001 }), "detail_ref_consumed");
 
   const [expired] = store.register({

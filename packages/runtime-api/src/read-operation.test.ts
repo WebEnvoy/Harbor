@@ -4,7 +4,9 @@ import {
   admitAllowlistedReadOperation,
   canonicalPinnedMirrorSha256,
   LODE_262_ALLOWLIST_PIN,
+  LODE_268_DETAIL_PIN,
   ReadOperationObservationStore,
+  validateDetailTruthPin,
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
@@ -18,6 +20,14 @@ test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(canonicalPinnedMirrorSha256(), LODE_262_ALLOWLIST_PIN.mirror_payload_sha256);
   assert.equal(validatePinnedAllowlist(), null);
   assert.equal(validatePinnedAllowlist({ entries: [] }), "allowlist_pin_invalid");
+});
+
+test("pins detail admission and completion to merged Lode #268 truth", () => {
+  assert.equal(LODE_268_DETAIL_PIN.merge_commit, "35a0af90b919979b673feeae721add6212c9687f");
+  assert.equal(LODE_268_DETAIL_PIN.asset_path, "registry/detail-runtime-consumption.json");
+  assert.equal(LODE_268_DETAIL_PIN.asset_sha256, "34e579dfe88bbaf7df37f4eacd566910ef35abb9ea316c27b3f65d7b6ca9f9f3");
+  assert.equal(LODE_268_DETAIL_PIN.truth_id, "lode.xhs-boss.detail-read.runtime-consumption");
+  assert.equal(validateDetailTruthPin(), null);
 });
 
 test("admits only the two pinned read-only operation identities", () => {
@@ -308,12 +318,30 @@ test("validates both detail surfaces against the exact search-bound target", () 
     operation_response_status: 200,
     operation_response_url: xhsInput.target_url
   };
-  assert.equal(validateReadOperationProbe(xhsInput, ready).status, "completed");
+  const xhsCompleted = validateReadOperationProbe(xhsInput, ready);
+  assert.equal(xhsCompleted.status, "completed");
+  if (xhsCompleted.status === "completed") assert.deepEqual(xhsCompleted.source_kinds, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]);
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pathname: "/explore/aaaaaaaaaaaaaaaaaaaaaaaa" })), "site_changed");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, rendered_surface: false })), "empty_result");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, operation_response_url: "https://evil.example/detail" })), "site_changed");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, login_like: true })), "not_logged_in");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, challenge_like: true })), "safety_challenge");
+
+  const bossInput = {
+    site_id: "boss" as const,
+    operation_id: "boss_read_job_detail" as const,
+    detail_ref: opaqueRef("detail"),
+    target_url: "https://www.zhipin.com/job_detail/AbC_123.html",
+    expected_origin: "https://www.zhipin.com"
+  };
+  const bossCompleted = validateReadOperationProbe(bossInput, {
+    ...ready,
+    origin: "https://www.zhipin.com",
+    pathname: "/job_detail/AbC_123.html",
+    operation_response_url: bossInput.target_url
+  });
+  assert.equal(bossCompleted.status, "completed");
+  if (bossCompleted.status === "completed") assert.deepEqual(bossCompleted.source_kinds, ["network_summary"]);
 });
 
 test("summarizes only a successful BOSS WAPI job list and fails closed for empty 2xx shells", () => {
