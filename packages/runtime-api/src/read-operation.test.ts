@@ -494,6 +494,7 @@ test("validates both detail surfaces against the exact search-bound target", () 
   const bossDetailResponse = {
     status: "completed" as const,
     title: "AI 工程师",
+    summary: "公开职位描述",
     description: "公开职位描述",
     job_status: "available",
     company_name: "公开公司",
@@ -526,6 +527,47 @@ test("validates both detail surfaces against the exact search-bound target", () 
   assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, boss_detail_response_url: "https://www.zhipin.com/wapi/zpgeek/job/detail.json?securityId=Other" })), "network_resource_unavailable");
   assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, boss_detail_response: { ...bossDetailResponse, title: "错误职位" } })), "site_changed");
   assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, normalized: { ...readyBossDetail.normalized, company: { name: "" } } })), "field_missing");
+
+  const longDescription = `负责真实浏览器任务与证据链路。${"持续改进可靠性与安全边界。".repeat(60)}`;
+  const longWapi = summarizeBossJobDetailResponse(JSON.stringify({
+    code: 0,
+    zpData: {
+      securityId: "AbC_123",
+      jobInfo: { jobName: "AI 工程师", postDescription: longDescription, jobStatus: "available" },
+      brandComInfo: { brandName: "公开公司" },
+      bossInfo: { name: "公开招聘者", title: "招聘经理" }
+    }
+  }), "AbC_123");
+  if (longWapi.status !== "completed") throw new Error("Long BOSS WAPI summary unexpectedly failed.");
+  assert.equal(longWapi.summary.length, 500);
+  assert.equal(longWapi.description.length > 500, true);
+  const evaluateBossDetail = new Function("document", "location", `return ${readProbeExpression("boss", "", undefined, "boss_read_job_detail")}`);
+  const domObservation = evaluateBossDetail({
+    readyState: "complete",
+    body: { innerText: longDescription },
+    querySelector: (selector: string) => {
+      if (selector.includes("captcha") || selector.includes("login")) return null;
+      if (selector.includes(".job-name")) return { textContent: "AI 工程师" };
+      if (selector.includes(".job-sec-text")) return { textContent: longDescription };
+      if (selector.includes(".company-info")) return { textContent: "公开公司" };
+      if (selector.includes(".boss-name")) return { textContent: "公开招聘者" };
+      if (selector.includes(".boss-info-attr")) return { textContent: "招聘经理" };
+      if (selector.includes(".job-detail-box")) return {};
+      return null;
+    }
+  }, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" });
+  assert.equal(domObservation.normalized.summary.length, 500);
+  assert.equal(domObservation.normalized.job.description, longDescription);
+  const longReady = {
+    ...readyBossDetail,
+    boss_detail_response: longWapi,
+    normalized: domObservation.normalized
+  };
+  assert.equal(validateReadOperationProbe(bossInput, longReady).status, "completed");
+  assert.equal(failureClass(validateReadOperationProbe(bossInput, {
+    ...longReady,
+    normalized: { ...longReady.normalized, job: { ...longReady.normalized.job, description: `${longDescription}不一致` } }
+  })), "site_changed");
 });
 
 test("summarizes only a successful BOSS WAPI job list and fails closed for empty 2xx shells", () => {

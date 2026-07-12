@@ -657,7 +657,7 @@ function validMetrics(value: XiaohongshuNoteDetailPublicSummary["interaction_met
 }
 
 function sameBossDetailSummary(value: LocalProviderDetailPublicSummary, source: BossJobDetailResponseSummary): boolean {
-  return value.kind === "boss_job_detail" && value.title === source.title && value.summary === source.description.slice(0, 500) &&
+  return value.kind === "boss_job_detail" && value.title === source.title && value.summary === source.summary &&
     value.job.title === source.title && value.job.description === source.description && value.job.status === source.job_status &&
     value.job.salary === source.salary && value.job.location === source.location && value.company.name === source.company_name &&
     value.recruiter.name === source.recruiter_name && value.recruiter.title === source.recruiter_title;
@@ -721,7 +721,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const salary = pick('.salary, [class*="salary"]', 100);
     const locationText = pick('.location-address, [class*="job-address"], [class*="location"]', 100);
     const status = /职位已关闭|停止招聘|已下线/.test(text) ? "closed" : "available";
-    const normalized = title && description && company && recruiter && recruiterTitle ? { kind: "boss_job_detail", canonical_url: canonicalUrl, title, summary: description.slice(0, 2000), job: { title, description, status, ...(salary ? { salary } : {}), ...(locationText ? { location: locationText } : {}) }, company: { name: company }, recruiter: { name: recruiter, title: recruiterTitle }, source_status: "located" } : undefined;
+    const normalized = title && description && company && recruiter && recruiterTitle ? { kind: "boss_job_detail", canonical_url: canonicalUrl, title, summary: description.slice(0, 500), job: { title, description, status, ...(salary ? { salary } : {}), ...(locationText ? { location: locationText } : {}) }, company: { name: company }, recruiter: { name: recruiter, title: recruiterTitle }, source_status: "located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, normalized };`}
   })()`;
   if (siteId === "boss") return `(() => {
@@ -812,6 +812,7 @@ interface BossJobSearchResponseSummary {
 interface BossJobDetailResponseSummary {
   status: "completed";
   title: string;
+  summary: string;
   description: string;
   job_status: string;
   salary?: string;
@@ -881,6 +882,7 @@ export function summarizeBossJobDetailResponse(body: string, targetId: string): 
   return {
     status: "completed",
     title,
+    summary: description.slice(0, 500),
     description,
     job_status,
     ...(salary ? { salary } : {}),
