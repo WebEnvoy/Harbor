@@ -10,7 +10,7 @@ import {
   type IdentityEnvironmentProviderBinding
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
-import { trustLocalProviderReadProbe } from "./read-operation-probe-trust.js";
+import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe } from "./read-operation-probe-trust.js";
 import type {
   BossJobDetailPublicSummary,
   LocalProviderLaunchInput,
@@ -21,6 +21,8 @@ import type {
   LocalProviderReadProbeInput,
   LocalProviderReadProbeResult,
   LocalProviderReadProbePublicSummary,
+  LocalProviderSiteResourceProbeInput,
+  LocalProviderSiteResourceProbeResult,
   LocalProviderScreenshotFacts,
   RuntimeErrorCode,
   RuntimeErrorFact,
@@ -74,6 +76,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         currentUrl = nextPage.current_url ?? url;
         return nextPage;
       },
+      probeSiteResource: trustLocalProviderSiteResourceProbe((probe) => probeProviderSiteResource(port, currentUrl, probe)),
       probeReadOperation: trustLocalProviderReadProbe(async (probe) => {
         const result = await probeProviderReadOperation(port, probe);
         if (result.page?.current_url) currentUrl = result.page.current_url;
@@ -92,6 +95,59 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     });
     return unavailable("launch_failed", diagnostic.app_summary, [...providerBindingFacts(providerBinding), ...profileStorage.facts]);
   }
+}
+
+const BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS = 3000;
+
+export async function probeProviderSiteResource(
+  port: string,
+  requestedUrl: string,
+  input: LocalProviderSiteResourceProbeInput,
+  deadlineMs = BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS
+): Promise<LocalProviderSiteResourceProbeResult> {
+  if (input.site_id !== "boss" || (input.task_kind !== "job_search" && input.task_kind !== "boss_job_search")) {
+    return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The local provider has no safe probe for this site resource.");
+  }
+  const deadline = AbortSignal.timeout(Math.max(1, Math.min(deadlineMs, BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS)));
+  const signal = input.signal ? AbortSignal.any([input.signal, deadline]) : deadline;
+  try {
+    const page = await activePage(port, requestedUrl, signal);
+    if (!page.webSocketDebuggerUrl) {
+      return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The BOSS page has no controlled CDP target.");
+    }
+    const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
+      await client.send("Runtime.enable");
+      const evaluated = await client.send("Runtime.evaluate", {
+        expression: readProbeExpression("boss", ""),
+        returnByValue: true
+      });
+      return (evaluated.result as { value?: ReadProbeObservation } | undefined)?.value;
+    }, signal);
+    return validateBossSpaResourceProbe(observation);
+  } catch {
+    return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The BOSS SPA could not be verified through the controlled CDP probe.");
+  }
+}
+
+export function validateBossSpaResourceProbe(observation: ReadProbeObservation | undefined): LocalProviderSiteResourceProbeResult {
+  if (!observation) return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The BOSS SPA probe returned no public observation.");
+  if (observation.challenge_like) return siteResourceProbeUnavailable("blocked", "safety_challenge", "The BOSS page shows a verification or safety challenge.");
+  if (observation.login_like) return siteResourceProbeUnavailable("blocked", "not_logged_in", "The BOSS page requires manual login.");
+  if (observation.origin !== "https://www.zhipin.com" || observation.pathname !== "/web/geek/job") {
+    return siteResourceProbeUnavailable("unavailable", "page_not_ready", "The active page is not the canonical BOSS job-search surface.");
+  }
+  if (!observation.ready || !observation.vue_owned || !observation.rendered_surface || !observation.job_cards_valid || !observation.job_card_count) {
+    return siteResourceProbeUnavailable("unavailable", "page_not_ready", "The canonical BOSS page has no verified SPA job-search surface.");
+  }
+  return { status: "available", observed_at: new Date().toISOString(), evidence_ref: opaqueRef("validation") };
+}
+
+function siteResourceProbeUnavailable(
+  status: "blocked" | "unavailable" | "unknown",
+  failure_class: Extract<LocalProviderSiteResourceProbeResult, { status: "blocked" | "unavailable" | "unknown" }>["failure_class"],
+  message: string
+): LocalProviderSiteResourceProbeResult {
+  return { status, failure_class, message };
 }
 
 export function createFixtureLauncher(status: "ready" | "unavailable" | "profile_locked" | "session_lost" = "ready"): LocalProviderLauncher {
@@ -424,6 +480,9 @@ interface ReadProbeObservation {
   search?: string;
   ready?: boolean;
   rendered_surface?: boolean;
+  vue_owned?: boolean;
+  job_card_count?: number;
+  job_cards_valid?: boolean;
   login_like?: boolean;
   challenge_like?: boolean;
   vue_ready?: boolean;
@@ -668,8 +727,8 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const text = document.body?.innerText || "";
     const clean = (value, max) => typeof value === "string" ? value.replace(/\\s+/g, " ").trim().slice(0, max) : "";
     const pick = (selectors, max) => clean(document.querySelector(selectors)?.textContent, max);
-    const challenge = /验证码|安全验证|访问异常|captcha|verify/i.test(text) || Boolean(document.querySelector('[class*="captcha"], [class*="verify"]'));
-    const login = /登录后|扫码登录|手机号登录/.test(text) || Boolean(document.querySelector('.login-dialog, [class*="login"] form'));
+    const challenge = /验证码|安全验证|访问异常|captcha|verify/i.test(text) || Boolean(document.querySelector('[class*="captcha"], [class*="verify"], [class*="security-check"]'));
+    const login = /登录后|扫码登录|手机号登录/.test(text) || Boolean(document.querySelector('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
     const canonicalUrl = location.origin + location.pathname;
     const rendered = ${operationId === "xhs_read_note_detail"
       ? "Boolean(document.querySelector('#detail-desc, .note-detail-mask, [class*=note-content], [class*=interaction-container]'))"
@@ -726,15 +785,44 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
   })()`;
   if (siteId === "boss") return `(() => {
     const text = document.body?.innerText || "";
-    const challenge = /验证码|安全验证|访问异常|captcha|verify/i.test(text) || Boolean(document.querySelector('[class*="captcha"], [class*="verify"]'));
-    const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/web/user/') || Boolean(document.querySelector('.login-dialog, [class*="login"] form'));
-    const app = document.querySelector('#wrap, #app, .job-search-wrapper');
+    const challenge = /验证码|安全验证|访问异常|captcha|verify/i.test(text) || Boolean(document.querySelector('[class*="captcha"], [class*="verify"], [class*="security-check"]'));
+    const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/web/user/') || Boolean(document.querySelector('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
+    const app = document.querySelector('#wrap, #app');
+    const vue3App = app?.__vue_app__;
+    const rootComponent = app?._vnode?.component;
+    const mountedElement = rootComponent?.vnode?.el || rootComponent?.subTree?.el;
+    const vue3Owned = typeof vue3App?.version === 'string' &&
+      typeof vue3App?.config?.globalProperties === 'object' &&
+      vue3App?._container === app &&
+      rootComponent === vue3App?._instance &&
+      rootComponent?.appContext?.app === vue3App &&
+      Boolean(mountedElement && (mountedElement === app || app.contains(mountedElement)));
+    const vue2Instance = app?.__vue__;
+    const vue2Owned = Boolean(vue2Instance?._isMounted === true && vue2Instance?.$root === vue2Instance && vue2Instance?.$el === app);
+    const vueOwned = vue3Owned || vue2Owned;
+    const list = app?.querySelector('.job-list-box, .job-list, [class*="job-list"]');
+    const cards = list ? Array.from(list.querySelectorAll('.job-card-wrapper, li.job-card-box, [ka^="search_list_"]')).slice(0, 20) : [];
+    const validCards = cards.length > 0 && cards.every((card) => {
+      if (!app.contains(list) || !list.contains(card)) return false;
+      const jobName = (card.querySelector('.job-name, .job-title, [class*="job-name"]')?.textContent || '').trim();
+      const companyName = (card.querySelector('.company-name, [class*="company-name"]')?.textContent || '').trim();
+      const link = card.querySelector('a[href*="/job_detail/"]');
+      let validLink = false;
+      try {
+        const href = new URL(link?.getAttribute('href') || '', location.origin);
+        validLink = href.origin === location.origin && href.pathname.startsWith('/job_detail/');
+      } catch {}
+      return jobName.length > 0 && jobName.length <= 200 && companyName.length > 0 && companyName.length <= 200 && validLink;
+    });
     return {
       origin: location.origin,
       pathname: location.pathname,
       search: location.search,
-      ready: document.readyState !== 'loading' && Boolean(app),
-      rendered_surface: Boolean(document.querySelector('.job-list-box, .job-card-wrapper, [ka^="search_list_"]')),
+      ready: document.readyState !== 'loading' && vueOwned && Boolean(list) && app.contains(list),
+      vue_owned: vueOwned,
+      rendered_surface: vueOwned && Boolean(list) && app.contains(list) && validCards,
+      job_card_count: cards.length,
+      job_cards_valid: validCards,
       login_like: login,
       challenge_like: challenge
     };
@@ -972,14 +1060,14 @@ async function captureProviderScreenshot(port: string, requested_url: string): P
   }
 }
 
-async function activePage(port: string, requested_url: string): Promise<CdpPageTarget> {
-  const page = selectPage(await pageTargets(port), requested_url);
+async function activePage(port: string, requested_url: string, signal?: AbortSignal): Promise<CdpPageTarget> {
+  const page = selectPage(await pageTargets(port, signal), requested_url);
   if (!page) throw new Error("CDP page target is unavailable.");
   return page;
 }
 
-async function pageTargets(port: string): Promise<CdpPageTarget[]> {
-  const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+async function pageTargets(port: string, signal?: AbortSignal): Promise<CdpPageTarget[]> {
+  const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal });
   if (!response.ok) throw new Error(`CDP page-list probe failed: ${response.status}`);
   return (await response.json()) as CdpPageTarget[];
 }
@@ -1009,22 +1097,43 @@ async function readPageTitle(webSocketUrl: string, requested_url: string): Promi
   });
 }
 
-async function withCdp<T>(webSocketUrl: string, callback: (client: CdpClient) => Promise<T>): Promise<T> {
+async function withCdp<T>(webSocketUrl: string, callback: (client: CdpClient) => Promise<T>, signal?: AbortSignal): Promise<T> {
   const ws = new WebSocket(webSocketUrl);
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Timed out connecting to CDP websocket.")), 5000);
-    ws.addEventListener("open", () => {
+    let settled = false;
+    const cleanup = () => {
       clearTimeout(timer);
-      resolve();
-    }, { once: true });
-    ws.addEventListener("error", () => {
-      clearTimeout(timer);
-      reject(new Error("CDP websocket connection failed."));
-    }, { once: true });
+      signal?.removeEventListener("abort", onAbort);
+      ws.removeEventListener("open", onOpen);
+      ws.removeEventListener("error", onError);
+    };
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve();
+    };
+    const onAbort = () => {
+      ws.close();
+      finish(new Error("CDP probe aborted."));
+    };
+    const onOpen = () => finish();
+    const onError = () => finish(new Error("CDP websocket connection failed."));
+    const timer = setTimeout(() => {
+      ws.close();
+      finish(new Error("Timed out connecting to CDP websocket."));
+    }, 5000);
+    ws.addEventListener("open", onOpen, { once: true });
+    ws.addEventListener("error", onError, { once: true });
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
   });
+  const client = new CdpClient(ws, signal);
   try {
-    return await callback(new CdpClient(ws));
+    return await callback(client);
   } finally {
+    client.dispose();
     ws.close();
   }
 }
@@ -1038,8 +1147,9 @@ class CdpClient {
   }>();
   private readonly listeners = new Map<string, Set<(params: Record<string, unknown>) => void>>();
 
-  constructor(private readonly ws: WebSocket) {
+  constructor(private readonly ws: WebSocket, private readonly signal?: AbortSignal) {
     ws.addEventListener("message", this.handleMessage);
+    signal?.addEventListener("abort", this.handleAbort, { once: true });
   }
 
   on(method: string, listener: (params: Record<string, unknown>) => void): () => void {
@@ -1053,6 +1163,7 @@ class CdpClient {
   }
 
   send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+    if (this.signal?.aborted) return Promise.reject(new Error(`CDP command aborted: ${method}`));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -1079,6 +1190,21 @@ class CdpClient {
     if (!payload.method) return;
     for (const listener of this.listeners.get(payload.method) ?? []) listener(payload.params ?? {});
   };
+
+  private readonly handleAbort = () => {
+    for (const [id, pending] of this.pending) {
+      this.pending.delete(id);
+      clearTimeout(pending.timer);
+      pending.reject(new Error("CDP probe aborted."));
+    }
+    this.ws.close();
+  };
+
+  dispose(): void {
+    this.signal?.removeEventListener("abort", this.handleAbort);
+    this.ws.removeEventListener("message", this.handleMessage);
+    this.handleAbort();
+  }
 }
 
 function fixtureScreenshot(seed: string): LocalProviderScreenshotFacts {

@@ -174,6 +174,24 @@ export interface LocalProviderReadProbeInput {
   expected_origin: string;
 }
 
+export interface LocalProviderSiteResourceProbeInput {
+  site_id: "boss";
+  task_kind: "job_search" | "boss_job_search";
+  signal?: AbortSignal;
+}
+
+export type LocalProviderSiteResourceProbeResult =
+  | {
+      status: "available";
+      observed_at: string;
+      evidence_ref: string;
+    }
+  | {
+      status: "blocked" | "unavailable" | "unknown";
+      failure_class: "not_logged_in" | "safety_challenge" | "page_not_ready" | "provider_probe_unavailable";
+      message: string;
+    };
+
 export interface LocalProviderReadProbePublicSummary {
   schema_version: "harbor-read-operation-public-summary/v0";
   operation_id: AllowlistedReadOperationId;
@@ -272,6 +290,7 @@ export type LocalProviderLaunchResult =
       facts: RuntimeFact[];
       execution_surface?: "local_provider" | "fixture";
       openUrl: (url: string) => Promise<LocalProviderPageFacts>;
+      probeSiteResource?: (input: LocalProviderSiteResourceProbeInput) => Promise<LocalProviderSiteResourceProbeResult>;
       probeReadOperation?: (input: LocalProviderReadProbeInput) => Promise<LocalProviderReadProbeResult>;
       captureScreenshot: () => Promise<LocalProviderScreenshotFacts | RuntimeErrorFact>;
       close: () => Promise<void>;
