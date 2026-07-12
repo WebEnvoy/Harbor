@@ -1,27 +1,15 @@
-# HARBOR-252 Spec
+# HARBOR-252 Specification
 
-## Scenarios
+- Suite Path: full
 
-### S-001 Search-Origin Detail Ref
+## Acceptance
 
-A successful same-session Xiaohongshu/BOSS search may expose only opaque detail refs for canonical same-site targets reduced by the trusted provider probe.
+1. XHS detail accepts only an opaque same-session search target and preserves existing TTL/single-use behavior.
+2. Pinned operation requirements exactly consume Lode merge 66d79b4 source/evidence kinds: pinia_store_summary, network_summary, dom_snapshot_summary, snapshot_ref and post_check_ref.
+3. Capture/completion proof rejects missing, extra, duplicated, mutated or mismatched source/evidence/post-check refs.
+4. Public output remains bounded refs-only and does not expose raw DOM, HAR, network body, screenshot bytes, profile, Cookie/token or CDP endpoint.
+5. BOSS production remains disabled/deferred and is not accessed.
 
-### S-002 One-Shot Detail Read
+## Evidence Boundary
 
-A detail operation consumes exactly one unexpired ref bound to the same session, site, and detail operation and returns public summary/evidence/post-check refs only.
-
-### S-003 Fail Closed
-
-Forged, cross-session, cross-site, expired, repeated, arbitrary-URL, login, challenge, SPA drift, empty-detail, origin-drift, and authority-race cases cannot mint completion evidence.
-
-## Acceptance Criteria
-
-- AC-001: callers cannot submit note/job/security IDs or target URLs.
-- AC-002: canonical targets are reduced from a trusted real search probe and held only in process memory behind opaque refs.
-- AC-003: refs are session/site/operation/TTL bound and consumed once before the awaited detail probe.
-- AC-004: detail completion requires exact target navigation, a rendered detail surface, screenshot ref, source ref, and post-check.
-- AC-005: no raw credential, profile, Cookie/token, DOM/HAR/network body, CDP endpoint, or screenshot bytes are returned or persisted.
-
-## Non-Goals
-
-- No Core/App integration, Lode #268 closeout, live E2E, automatic login, write action, bulk collection, or risk-control bypass.
+Contract tests prove Harbor-Lode alignment only. Closing #252 additionally requires merged packaged App XHS search-to-detail live E2E.

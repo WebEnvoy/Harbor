@@ -245,11 +245,11 @@
   ],
   "fact_chain": {
     "mode": "active",
-    "read_entry": "loom fact-chain --target . --item HARBOR-268 --json",
+    "read_entry": "loom fact-chain --target . --item HARBOR-252 --json",
     "entry_points": {
-      "current_item_id": "HARBOR-268",
-      "work_item": ".loom/work-items/HARBOR-268.md",
-      "recovery_entry": ".loom/progress/HARBOR-268.md",
+      "current_item_id": "HARBOR-252",
+      "work_item": ".loom/work-items/HARBOR-252.md",
+      "recovery_entry": ".loom/progress/HARBOR-252.md",
       "status_surface": ".loom/status/current.md"
     }
   },

@@ -1,7 +1,10 @@
-# Evidence Map
+# HARBOR-252 Evidence Map
 
-| Evidence id | Type | Source locator | Consumes | Binding | Freshness | Consumer boundary | Remediation direction |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| EV-001 | behavior_evidence | .loom/specs/HARBOR-252/spec.md | S-001 S-002 S-003 | HARBOR-252 contract | present | build/review only | Refresh on behavior changes. |
-| EV-002 | test_evidence | local verification | typecheck, 38-test detail/server targeted suite, and 73-test full suite | current working tree | present | implementation only, not live E2E | Rerun after every code change. |
-| EV-003 | dependency_evidence | https://github.com/WebEnvoy/Lode/pull/271 | corrected capability/output truth | merge 66d79b4 / registry dca2761b | present | static truth only; does not prove Harbor live success | Recheck if Lode truth changes. |
+| Evidence ID | Evidence Type | Source Locator | Consumes | Binding | Freshness | Consumer Boundary | Remediation Direction |
+|---|---|---|---|---|---|---|---|
+| EV-001 | issue_tree_evidence | https://github.com/WebEnvoy/Harbor/issues/252 | corrected XHS-only scope | HARBOR-252 scope | present | review/PR only | Re-read if issue changes. |
+| EV-002 | upstream_fact_evidence | https://github.com/WebEnvoy/Lode/pull/271 | merge 66d79b4 detail truth | source/evidence kinds | present | static Lode truth only | Re-read after Lode changes. |
+| EV-003 | behavior_evidence | packages/runtime-api/src/read-operation.ts | exact capture/completion/post-check binding | HARBOR-252 acceptance | present | Harbor behavior only | Refresh after behavior changes. |
+| EV-004 | test_evidence | packages/runtime-api/src/read-operation.test.ts | producer/capture/mutation regressions | HARBOR-252 validation | present | local tests; no live proof | Refresh after tests change. |
+| EV-005 | fresh_verification_input | .loom/progress/HARBOR-252.md | EV-003 EV-004 | current product-head validation | present | PR readiness only | Refresh after head/validation change. |
+| EV-006 | build_evidence | .loom/specs/HARBOR-252/build-evidence.json | delegated implementation/review integration | HARBOR-252 build | present | merge checkpoint only | Refresh after integration changes. |
