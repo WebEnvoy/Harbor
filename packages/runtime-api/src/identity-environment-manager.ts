@@ -227,9 +227,17 @@ export class LocalIdentityEnvironmentManager {
       login.recovery_required
     ) return false;
 
+    const previousSessionRef = record.user_confirmed_session_ref;
+    const previousUpdatedAt = record.updated_at;
     record.user_confirmed_session_ref = runtime_session_ref;
     record.updated_at = new Date().toISOString();
-    this.persist();
+    try {
+      this.persist();
+    } catch (cause) {
+      record.user_confirmed_session_ref = previousSessionRef;
+      record.updated_at = previousUpdatedAt;
+      throw cause;
+    }
     return true;
   }
 

@@ -44,3 +44,34 @@ test("user confirmation clears only the authentication gate for a restricted Chr
   assert.equal(completed.status.blocking_reasons.includes("fingerprint_conflict"), true);
   assert.equal(completed.environment_summary.provider_id, "chrome_official");
 });
+
+test("rebinds only valid user-confirmed authentication and rolls back on persistence failure", () => {
+  let failPersistence = false;
+  const manager = new LocalIdentityEnvironmentManager({
+    persist_records: () => {
+      if (failPersistence) throw new Error("persistence unavailable");
+    }
+  });
+  const created = manager.create({
+    identity_environment_ref: "identity-env_rebind",
+    execution_identity_ref: "execution-identity_rebind",
+    profile_ref: "profile_rebind",
+    site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+    login_state: "manual_auth_required",
+    manual_authentication_state: "required",
+    storage_state: "present"
+  });
+
+  assert.equal(manager.rebindUserConfirmedManagedSession(created.identity_environment_ref, "session_unconfirmed"), false);
+  assert.ok(manager.completeManualAuthentication(created.identity_environment_ref, "session_confirmed"));
+  assert.equal(manager.rebindUserConfirmedManagedSession(created.identity_environment_ref, "session_rebound"), true);
+  assert.equal(manager.hasUserConfirmedManagedSession(created.identity_environment_ref, "session_rebound"), true);
+
+  failPersistence = true;
+  assert.throws(
+    () => manager.rebindUserConfirmedManagedSession(created.identity_environment_ref, "session_not_persisted"),
+    /persistence unavailable/
+  );
+  assert.equal(manager.hasUserConfirmedManagedSession(created.identity_environment_ref, "session_rebound"), true);
+  assert.equal(manager.hasUserConfirmedManagedSession(created.identity_environment_ref, "session_not_persisted"), false);
+});
