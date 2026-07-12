@@ -1,0 +1,20 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-252",
+  "decision": "allow",
+  "kind": "code_review",
+  "summary": "Independent current-head review found no P0-P3 after exact Lode kinds, Pinia/WAPI field binding, challenge detection, and bounded detail-ref lifecycle corrections.",
+  "reviewer": "codex-main-controller",
+  "authored_at": "2026-07-12T06:12:00Z",
+  "reviewed_head": "5b4aa2ed056fc07553a0367a4c5e2e258dbc1119",
+  "reviewed_validation_summary": "2026-07-12T06:12Z: At head `5b4aa2ed056fc07553a0367a4c5e2e258dbc1119`, 38 targeted and 73 full tests, `pnpm typecheck`, `pnpm build`, and `git diff --check` passed. Independent review confirmed exact Lode source/evidence kinds, XHS current-note Pinia/DOM agreement, full challenge detection, bounded session-cleared tombstones, target-bound BOSS detail WAPI plus DOM agreement, 500-character summary and 4000-character description bounds, opaque detail refs, and sensitive-material exclusion. Lode merge `66d79b4e600565a00515b1c801e84291edc7b0c1` and registry digest `dca2761b7feb09a0ab86f7202e153da3c97b21a75299af6adaf64eade319deef` were verified. No production-page action or external write occurred.",
+  "reviewed_validation_summary_hash": "d42b20bb238331992797a9a001327566ae17f16cc7a2e355d042c73a2cd14723",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-252.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": ["Require merged Core/App two-site live detail E2E before closing #252."],
+  "consumed_inputs": {"work_item": ".loom/work-items/HARBOR-252.md", "recovery_entry": ".loom/progress/HARBOR-252.md", "status_surface": ".loom/status/current.md", "build_checkpoint": "pass", "suite_evidence_map": ".loom/specs/HARBOR-252/evidence-map.md", "suite_task_carriers": [".loom/specs/HARBOR-252/task-carrier.md"]},
+  "semantic_review_disposition": {"status": "passed", "reason": "Independent current-head review approved the bounded refs-only detail operation implementation."}
+}

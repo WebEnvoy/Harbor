@@ -3,13 +3,13 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-252
-- Current Checkpoint: implementation
-- Current Stop: PR #255 product head `f64f42def37e628621b3a951bd06da3f3818530f` implements bounded public summaries, XHS public note_id, and BOSS opaque detail_ref; PR is Draft because the final Lode detail truth is not merged.
-- Next Step: Wait for Lode #268 correction PR #271 to merge, then update the exact merge commit/registry digest, rerun validation, and perform current-head code/spec review. Do not merge or close #252.
-- Blockers: Lode #268 correction PR #271 is Draft; prior merge `35a0af90b919979b673feeae721add6212c9687f` and digest `34e579d...` are partial evidence only and cannot approve Harbor merge.
+- Current Checkpoint: merge
+- Current Stop: Product head `5b4aa2ed056fc07553a0367a4c5e2e258dbc1119` passed all targeted/full validation and independent current-head code/spec review against merged Lode truth.
+- Next Step: Consume hosted merge gate and perform controlled merge; keep #252 open until merged Core/App live XHS and BOSS detail E2E produces refs.
+- Blockers: None recorded.
 - Recovery Boundary: No real browser/profile/page action; no Cookie/token/raw profile/DOM/HAR/network body persistence; no publish/send/apply/greet/save/submit; no bulk collection or risk-control bypass.
 - Current Lane: Harbor #252 detail read operations.
-- Latest Validation Summary: 2026-07-12 at product head `f64f42def37e628621b3a951bd06da3f3818530f`: `pnpm typecheck`, `pnpm test` (70/70), `pnpm build`, and `git diff --check` passed. XHS Vue/Pinia readiness, public note_id without xsec token, BOSS opaque detail_ref without securityId/encryptJobId, bounded normalized summaries, target deletion, probe-failure replay rejection, and refs-only responses are covered. Final Lode pin validation remains pending PR #271 merge. No production page/profile/account action occurred.
+- Latest Validation Summary: 2026-07-12T06:12Z: At head `5b4aa2ed056fc07553a0367a4c5e2e258dbc1119`, 38 targeted and 73 full tests, `pnpm typecheck`, `pnpm build`, and `git diff --check` passed. Independent review confirmed exact Lode source/evidence kinds, XHS current-note Pinia/DOM agreement, full challenge detection, bounded session-cleared tombstones, target-bound BOSS detail WAPI plus DOM agreement, 500-character summary and 4000-character description bounds, opaque detail refs, and sensitive-material exclusion. Lode merge `66d79b4e600565a00515b1c801e84291edc7b0c1` and registry digest `dca2761b7feb09a0ab86f7202e153da3c97b21a75299af6adaf64eade319deef` were verified. No production-page action or external write occurred.
 
 ## Execution Ledger
 
