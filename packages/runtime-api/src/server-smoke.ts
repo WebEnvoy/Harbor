@@ -11,6 +11,7 @@ interface StartupLine {
 }
 
 const endpointsChecked: string[] = [];
+const supervisorToken = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const xhsNoteUrl = "https://www.xiaohongshu.com/explore/0123456789abcdef01234567";
 const xhsProbe = validateReadOperationProbe({
   site_id: "xiaohongshu",
@@ -42,7 +43,8 @@ const child = spawn("pnpm", ["start:runtime"], {
   env: {
     ...process.env,
     HARBOR_RUNTIME_PORT: "0",
-    HARBOR_RUNTIME_PROVIDER: "fixture"
+    HARBOR_RUNTIME_PROVIDER: "fixture",
+    HARBOR_MANUAL_AUTH_SUPERVISOR_TOKEN: supervisorToken
   },
   stdio: ["ignore", "pipe", "pipe"]
 });
@@ -93,10 +95,10 @@ try {
     url: "https://example.test/runtime-api-smoke",
     control_owner: "agent",
     holder_ref: "api-smoke"
-  });
+  }, true);
   assert.equal(session.lifecycle_state, "active");
 
-  const snapshot = await postJson(startup.url, `/runtime/sessions/${session.runtime_session_ref}/snapshot`, {});
+  const snapshot = await postJson(startup.url, `/runtime/sessions/${session.runtime_session_ref}/snapshot`, {}, true);
   assert.equal(snapshot.status, "captured");
   assert.equal(snapshot.evidence_refs.length > 0, true);
 
@@ -114,7 +116,7 @@ try {
     fields: [
       { label: "Title", input_kind: "text", required: true, sensitivity: "public", value_state: "present" }
     ]
-  });
+  }, true);
   assert.equal(writePrecheck.schema_version, "harbor-write-precheck-facts/v0");
   assert.equal(writePrecheck.submitted, false);
   assert.equal(writePrecheck.pre_write_guard.no_submit_guard, "active");
@@ -149,11 +151,14 @@ async function getJson(baseUrl: string, path: string): Promise<any> {
   return response.json();
 }
 
-async function postJson(baseUrl: string, path: string, body: unknown): Promise<any> {
+async function postJson(baseUrl: string, path: string, body: unknown, authorized = false): Promise<any> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     body: JSON.stringify(body),
-    headers: { "content-type": "application/json" }
+    headers: {
+      "content-type": "application/json",
+      ...(authorized ? { authorization: `Bearer ${supervisorToken}` } : {})
+    }
   });
   endpointsChecked.push(`POST ${path}`);
   assert.equal(response.status === 200 || response.status === 201, true);
