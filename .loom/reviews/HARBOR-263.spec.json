@@ -1,0 +1,28 @@
+{
+  "schema_version": "loom-review/v1",
+  "item_id": "HARBOR-263",
+  "decision": "allow",
+  "kind": "spec_review",
+  "summary": "The spec is bounded to shared session controller lifecycle and explicitly requires XHS-only live closeout with no BOSS production rerun.",
+  "reviewer": "codex-main-controller",
+  "authored_at": "2026-07-12T09:59:00Z",
+  "reviewed_head": "74c4e26778371e66deefb11aae9959418ad58f5d",
+  "reviewed_validation_summary": "2026-07-12T09:59Z: Product head `cebd9384a4c3eac1ce810684833bf525c6db1d21` and carrier head `74c4e26778371e66deefb11aae9959418ad58f5d` passed `pnpm typecheck`, `pnpm build`, focused lifecycle tests 6/6, `pnpm test` 85/85, and `git diff --check`. Independent review found no product correctness/security issue; the scope-carrier finding is resolved by limiting post-merge live closeout to two separately submitted Xiaohongshu reads on the same confirmed headed session and prohibiting BOSS production reruns.",
+  "reviewed_validation_summary_hash": "ccc11096dadaea7d71d03491cc2a73c123299fb4dffaf6dd0ce9d32f23abeb04",
+  "validation_summary_source": "recovery.latest_validation_summary",
+  "validation_summary_locator": ".loom/progress/HARBOR-263.md",
+  "fallback_to": null,
+  "findings": [],
+  "blocking_issues": [],
+  "follow_ups": ["BOSS production operation restoration remains deferred under Harbor #264."],
+  "consumed_inputs": {
+    "work_item": ".loom/work-items/HARBOR-263.md",
+    "recovery_entry": ".loom/progress/HARBOR-263.md",
+    "status_surface": ".loom/status/current.md",
+    "build_checkpoint": "pass",
+    "suite_spec": ".loom/specs/HARBOR-263/spec.md",
+    "suite_plan": ".loom/specs/HARBOR-263/plan.md",
+    "suite_implementation_contract": ".loom/specs/HARBOR-263/implementation-contract.md",
+    "suite_evidence_map": ".loom/specs/HARBOR-263/evidence-map.md"
+  }
+}

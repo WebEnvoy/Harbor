@@ -10,7 +10,7 @@
 - Recovery Entry: .loom/progress/HARBOR-263.md
 - Review Entry: .loom/reviews/HARBOR-263.json
 - Validation Entry: pnpm typecheck; pnpm build; targeted tests; pnpm test; git diff --check
-- Closing Condition: Merge the HARBOR-263 PR after hosted gate; close only after packaged App proves two separately submitted reads on the same confirmed session.
+- Closing Condition: Merge PR #269 after current-head review and hosted gate; close only after packaged App proves two separately submitted Xiaohongshu reads on the same confirmed headed session. Do not rerun BOSS production pages.
 
 ## Associated Artifacts
 
