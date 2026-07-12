@@ -116,10 +116,10 @@ const bossLiveEvidence = "status" in bossLiveCapture && bossLiveCapture.status =
   : bossLiveCapture;
 const xhsSiteResourceFacts = "status" in managedBrowserSession || managedBrowserSession.lifecycle_state !== "active"
   ? managedBrowserSession
-  : runtime.getSiteResourceFacts(managedBrowserSession.runtime_session_ref, { site_id: "xiaohongshu", task_kind: "search_notes" });
+  : await runtime.getSiteResourceFacts(managedBrowserSession.runtime_session_ref, { site_id: "xiaohongshu", task_kind: "search_notes" });
 const bossSiteResourceFacts = "status" in bossBrowserSession || bossBrowserSession.lifecycle_state !== "active"
   ? bossBrowserSession
-  : runtime.getSiteResourceFacts(bossBrowserSession.runtime_session_ref, { site_id: "boss", task_kind: "job_search" });
+  : await runtime.getSiteResourceFacts(bossBrowserSession.runtime_session_ref, { site_id: "boss", task_kind: "job_search" });
 const managedBrowserStopped = "status" in managedBrowserSession || managedBrowserSession.lifecycle_state === "failed"
   ? managedBrowserSession
   : await runtime.stopSession(managedBrowserSession.runtime_session_ref, { control_owner: "agent" });

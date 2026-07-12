@@ -3,29 +3,29 @@
 ## Derived Fact Chain View
 
 - Item ID: HARBOR-251
-- Goal: Execute the Lode #262 pinned `boss_job_search` operation once through an admitted managed local-provider session and return refs-only output or structured failure.
-- Scope: BOSS canonical target admission, concrete read probe validation, directed runtime tests, and HARBOR-251 carriers.
-- Execution Path: work/harbor-251-boss-read-operation
+- Goal: Make the pinned `boss_job_search` operation reachable by verifying the BOSS SPA through a safe pre-admission probe while deferring exact WAPI proof to the operation probe.
+- Scope: BOSS `job_search` site-resource safe probe, refs-only fact mapping, directed runtime tests, and HARBOR-251 item-specific carriers.
+- Execution Path: work/harbor-251-boss-resource-probe
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-251.md
 - Review Entry: .loom/reviews/HARBOR-251.json
 - Validation Entry: pnpm typecheck; targeted tests; pnpm test; git diff --check
-- Closing Condition: Create and push a ready PR covering #251; do not merge or close issues.
-- Current Checkpoint: pre-review
-- Current Stop: PR #253 semantic review P1/P2 findings are fixed with directed and full local validation.
-- Next Step: Push the new head and return it for main-thread semantic re-review; do not author a review artifact here.
+- Closing Condition: Create and push a Draft PR covering the pre-admission correction; keep #251 open for merged App/Core live evidence.
+- Current Checkpoint: merge
+- Current Stop: Product head `d307f9a6738421235b95009587efdae3b75c73e0` passed targeted/full validation and independent current-head code/spec review after all safe-probe findings were resolved.
+- Next Step: Consume the hosted merge gate and perform controlled merge; keep #251 open until merged-package real BOSS run/result/evidence/post-check succeeds.
 - Blockers: None recorded.
-- Latest Validation Summary: 2026-07-11: BOSS admission/probe/WAPI summary tests passed; `pnpm typecheck`, full `pnpm test` (63/63), and `git diff --check` passed. Tests cover query/city drift, login wall, challenge, SPA readiness, business code, empty 2xx shell, bounded summary, and network-summary ref binding. No production browser/account/page action occurred.
+- Latest Validation Summary: 2026-07-12T05:48Z: At head `d307f9a6738421235b95009587efdae3b75c73e0`, 36 targeted and 68 full tests, `pnpm typecheck`, `pnpm build`, and `git diff --check` passed. Independent review confirmed standard Vue 3 mounted container/component/app identity, shape-complete fake rejection, full-page login/challenge detection, one bounded abortable `/json/list` plus CDP probe deadline, client-disconnect cancellation, WAPI-deferred truth, and refs-only output. No production-page action or external write occurred.
 - Recovery Boundary: No production operation, automatic login, external write, batch collection, or sensitive material access.
-- Current Lane: Harbor #251 BOSS one-shot read operation.
+- Current Lane: HARBOR-251 safe BOSS SPA pre-admission probe.
 
 ## Runtime Evidence
 
-- Run Entry: Contract and directed probe tests only; no production site action is performed in this implementation lane.
-- Logs Entry: pnpm build; directed node tests; pnpm typecheck; pnpm test; git diff --check.
-- Diagnostics Entry: packages/runtime-api/src/read-operation.ts; packages/runtime-api/src/local-provider-launcher.ts; packages/runtime-api/src/server.test.ts
-- Verification Entry: .loom/progress/HARBOR-251.md
-- Lane Entry: HARBOR-251
+- Run Entry: merged-package real BOSS replay pending after merge
+- Logs Entry: targeted and full pnpm test/build output
+- Diagnostics Entry: packages/runtime-api/src/local-provider-launcher.ts; packages/runtime-api/src/site-runtime-facts.ts; packages/runtime-api/src/server.ts
+- Verification Entry: .loom/specs/HARBOR-251/evidence-map.md
+- Lane Entry: .loom/specs/HARBOR-251/plan.md
 
 ## Sources
 
