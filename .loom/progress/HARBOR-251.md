@@ -3,13 +3,13 @@
 ## Dynamic Facts
 
 - Item ID: HARBOR-251
-- Current Checkpoint: pre-review
-- Current Stop: PR #253 semantic review P1/P2 findings are fixed with directed and full local validation.
-- Next Step: Push the new head and return it for main-thread semantic re-review; do not author a review artifact here.
+- Current Checkpoint: merge
+- Current Stop: Product head `d307f9a6738421235b95009587efdae3b75c73e0` passed targeted/full validation and independent current-head code/spec review after all safe-probe findings were resolved.
+- Next Step: Consume the hosted merge gate and perform controlled merge; keep #251 open until merged-package real BOSS run/result/evidence/post-check succeeds.
 - Blockers: None recorded.
 - Recovery Boundary: No production operation, automatic login, external write, batch collection, or sensitive material access.
-- Current Lane: Harbor #251 BOSS one-shot read operation.
-- Latest Validation Summary: 2026-07-11: BOSS admission/probe/WAPI summary tests passed; `pnpm typecheck`, full `pnpm test` (63/63), and `git diff --check` passed. Tests cover query/city drift, login wall, challenge, SPA readiness, business code, empty 2xx shell, bounded summary, and network-summary ref binding. No production browser/account/page action occurred.
+- Current Lane: HARBOR-251 safe BOSS SPA pre-admission probe.
+- Latest Validation Summary: 2026-07-12T05:48Z: At head `d307f9a6738421235b95009587efdae3b75c73e0`, 36 targeted and 68 full tests, `pnpm typecheck`, `pnpm build`, and `git diff --check` passed. Independent review confirmed standard Vue 3 mounted container/component/app identity, shape-complete fake rejection, full-page login/challenge detection, one bounded abortable `/json/list` plus CDP probe deadline, client-disconnect cancellation, WAPI-deferred truth, and refs-only output. No production-page action or external write occurred.
 
 ## Execution Ledger
 
