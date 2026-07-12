@@ -52,9 +52,10 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
   ];
   await removeStaleDevtoolsPort(profileStorage.profileDir);
   const child = spawn(browserPath, args, { stdio: "ignore" });
+  const launchDeadline = Date.now() + Math.max(1, input.timeout_ms);
   try {
-    const port = await waitForDevtoolsPort(profileStorage.profileDir, input.timeout_ms);
-    const readbackSignal = AbortSignal.timeout(Math.max(1, input.timeout_ms));
+    const port = await waitForDevtoolsPort(profileStorage.profileDir, launchDeadline);
+    const readbackSignal = AbortSignal.timeout(remainingLaunchTime(launchDeadline));
     const version = await fetchVersion(port, readbackSignal);
     const page = await readPageFacts(port, input.url, readbackSignal);
     let currentUrl = page.current_url ?? input.url;
@@ -266,9 +267,8 @@ async function prepareProfileStorage(profileStorageRef: string | undefined): Pro
   };
 }
 
-async function waitForDevtoolsPort(profileDir: string, timeoutMs: number): Promise<string> {
+async function waitForDevtoolsPort(profileDir: string, deadline: number): Promise<string> {
   const portFile = join(profileDir, "DevToolsActivePort");
-  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const [port] = (await readFile(portFile, "utf8")).trim().split("\n");
@@ -278,6 +278,12 @@ async function waitForDevtoolsPort(profileDir: string, timeoutMs: number): Promi
     }
   }
   throw new Error("Timed out waiting for local browser CDP readiness.");
+}
+
+function remainingLaunchTime(deadline: number): number {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error("Timed out reading local browser CDP readiness.");
+  return remaining;
 }
 
 async function removeStaleDevtoolsPort(profileDir: string): Promise<void> {
