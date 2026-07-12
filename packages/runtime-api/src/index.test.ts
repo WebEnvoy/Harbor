@@ -33,7 +33,7 @@ function providerFixture(paths: Record<string, { executable?: boolean; text?: st
   };
 }
 
-function capturingLauncher(launches: LocalProviderLaunchInput[]): LocalProviderLauncher {
+function capturingLauncher(launches: LocalProviderLaunchInput[], closes?: string[]): LocalProviderLauncher {
   return async (input) => {
     launches.push({ ...input });
     return {
@@ -74,7 +74,7 @@ function capturingLauncher(launches: LocalProviderLaunchInput[]): LocalProviderL
         captured_at: new Date().toISOString(),
         facts: []
       }),
-      close: async () => {}
+      close: async () => { closes?.push(input.profile_ref); }
     };
   };
 }
@@ -754,6 +754,203 @@ test("reuses, locks, releases, and stops identity environment sessions", async (
   assert.equal(stopped.lifecycle_state, "closed");
   assert.equal(stopped.control_lock.state, "closed");
   assert.equal(detailTargets.consume({ detail_ref: stopRef, runtime_session_ref: opened.runtime_session_ref, site_id: "boss", operation_id: "boss_read_job_detail", now: 4_000 }), "detail_ref_expired");
+});
+
+test("replaces visibility-incompatible identity sessions without leaking viewer or control state", async () => {
+  const launches: LocalProviderLaunchInput[] = [];
+  const closes: string[] = [];
+  const runtime = new HarborRuntime(capturingLauncher(launches, closes));
+  const identity_environment = runtime.getLocalIdentityEnvironmentFacts({
+    ...providerFixture({ [cloakPath]: { executable: true } }),
+    identity_environment_ref: "identity-env_visibility",
+    execution_identity_ref: "execution-identity_visibility",
+    profile_ref: "profile_visibility",
+    site: {
+      site_id: "boss",
+      origin: "https://www.zhipin.com",
+      display_name: "BOSS 直聘"
+    },
+    login_state: "logged_in",
+    storage_state: "present"
+  });
+
+  const core = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com",
+    control_owner: "core_task"
+  });
+  assert.equal("status" in core, false);
+  if ("status" in core) throw new Error("headless Core session should open");
+  assert.equal(launches[0]?.headless, true);
+  assert.equal(core.availability.viewer, "unsupported");
+
+  const blockedManual = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/job",
+    control_owner: "user"
+  });
+  assert.equal("status" in blockedManual, true);
+  if (!("status" in blockedManual)) throw new Error("manual session must not replace an active Core session");
+  assert.equal(blockedManual.failure_class, "session_locked");
+  assert.equal(launches.length, 1);
+  assert.equal(closes.length, 0);
+
+  const releasedCore = runtime.releaseSession(core.runtime_session_ref, { control_owner: "core_task" });
+  assert.equal("status" in releasedCore, false);
+  if ("status" in releasedCore) throw new Error("Core session should release before manual replacement");
+  const manual = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/job",
+    control_owner: "user"
+  });
+  assert.equal("status" in manual, false);
+  if ("status" in manual) throw new Error("manual visible session should replace released headless Core session");
+  assert.notEqual(manual.runtime_session_ref, core.runtime_session_ref);
+  assert.deepEqual(launches.map((launch) => launch.headless), [true, false]);
+  assert.ok(launches[0]?.profile_storage_ref);
+  assert.equal(launches[1]?.profile_storage_ref, launches[0]?.profile_storage_ref);
+  assert.deepEqual(closes, ["profile_visibility"]);
+  assert.equal(manual.control_owner, "user");
+  assert.equal(manual.control_lock.state, "held");
+  assert.equal(manual.availability.viewer, "available");
+  assert.equal(manual.viewer_entry?.transport, "local_window");
+
+  const closedCore = runtime.getSession(core.runtime_session_ref);
+  assert.equal(closedCore?.lifecycle_state, "closed");
+  assert.equal(closedCore?.control_owner, "none");
+  assert.equal(closedCore?.control_lock.state, "closed");
+  assert.equal(closedCore?.availability.viewer, "unavailable");
+  const closedViewer = runtime.getViewerControlFacts(core.runtime_session_ref);
+  assert.equal("status" in closedViewer, false);
+  if ("status" in closedViewer) throw new Error("closed viewer facts should remain readable");
+  assert.equal(closedViewer.viewer.availability, "expired");
+  assert.equal(closedViewer.control.owner, "none");
+
+  const reusedManual = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/recommend",
+    control_owner: "user"
+  });
+  assert.equal("status" in reusedManual, false);
+  if ("status" in reusedManual) throw new Error("compatible manual session should be reused");
+  assert.equal(reusedManual.runtime_session_ref, manual.runtime_session_ref);
+  assert.equal(launches.length, 2);
+  assert.equal(closes.length, 1);
+
+  const blockedCore = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/job",
+    control_owner: "core_task"
+  });
+  assert.equal("status" in blockedCore, true);
+  if (!("status" in blockedCore)) throw new Error("Core must not replace a user-held visible session");
+  assert.equal(blockedCore.failure_class, "session_locked");
+  assert.equal(launches.length, 2);
+  assert.equal(closes.length, 1);
+
+  const stopped = await runtime.stopSession(manual.runtime_session_ref, { control_owner: "user" });
+  assert.equal("status" in stopped, false);
+  if ("status" in stopped) throw new Error("manual session should stop cleanly");
+  assert.equal(stopped.control_lock.state, "closed");
+  assert.equal(closes.length, 2);
+});
+
+test("replaces a headed Core session when Core requests headless execution", async () => {
+  const launches: LocalProviderLaunchInput[] = [];
+  const closes: string[] = [];
+  const runtime = new HarborRuntime(capturingLauncher(launches, closes));
+  const identity_environment = runtime.getLocalIdentityEnvironmentFacts({
+    ...providerFixture({ [cloakPath]: { executable: true } }),
+    identity_environment_ref: "identity-env_core-visibility",
+    execution_identity_ref: "execution-identity_core-visibility",
+    profile_ref: "profile_core-visibility",
+    site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS 直聘" },
+    login_state: "logged_in",
+    storage_state: "present"
+  });
+  const headed = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com",
+    control_owner: "core_task",
+    headless: false
+  });
+  assert.equal("status" in headed, false);
+  if ("status" in headed) throw new Error("headed Core session should open");
+
+  const otherHolder = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/job",
+    control_owner: "core_task",
+    holder_ref: "different_core_operation"
+  });
+  assert.equal("status" in otherHolder, true);
+  if (!("status" in otherHolder)) throw new Error("different holder must not replace an active headed Core session");
+  assert.equal(otherHolder.failure_class, "session_locked");
+  assert.equal(launches.length, 1);
+  assert.equal(closes.length, 0);
+
+  const headless = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/job",
+    control_owner: "core_task"
+  });
+  assert.equal("status" in headless, false);
+  if ("status" in headless) throw new Error("headless Core session should replace incompatible headed session");
+  assert.notEqual(headless.runtime_session_ref, headed.runtime_session_ref);
+  assert.deepEqual(launches.map((launch) => launch.headless), [false, true]);
+  assert.deepEqual(closes, ["profile_core-visibility"]);
+  assert.equal(runtime.getSession(headed.runtime_session_ref)?.control_lock.state, "closed");
+  assert.equal(headless.availability.viewer, "unsupported");
+  assert.equal(headless.control_owner, "core_task");
+
+  const reused = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/recommend",
+    control_owner: "core_task"
+  });
+  assert.equal("status" in reused, false);
+  if ("status" in reused) throw new Error("compatible headless Core session should be reused");
+  assert.equal(reused.runtime_session_ref, headless.runtime_session_ref);
+  assert.equal(launches.length, 2);
+});
+
+test("does not launch a replacement when incompatible session cleanup fails", async () => {
+  const launches: LocalProviderLaunchInput[] = [];
+  const launcher = capturingLauncher(launches);
+  const runtime = new HarborRuntime(async (input) => {
+    const result = await launcher(input);
+    if (result.status !== "ready") return result;
+    return { ...result, close: async () => { throw new Error("fixture cleanup failed"); } };
+  });
+  const identity_environment = runtime.getLocalIdentityEnvironmentFacts({
+    ...providerFixture({ [cloakPath]: { executable: true } }),
+    identity_environment_ref: "identity-env_cleanup-failure",
+    execution_identity_ref: "execution-identity_cleanup-failure",
+    profile_ref: "profile_cleanup-failure",
+    site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS 直聘" },
+    login_state: "logged_in",
+    storage_state: "present"
+  });
+  const core = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com",
+    control_owner: "core_task"
+  });
+  assert.equal("status" in core, false);
+  if ("status" in core) throw new Error("initial Core session should open");
+  runtime.releaseSession(core.runtime_session_ref, { control_owner: "core_task" });
+
+  const replacement = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/job",
+    control_owner: "user"
+  });
+  assert.equal("status" in replacement, true);
+  if (!("status" in replacement)) throw new Error("cleanup failure must block replacement launch");
+  assert.equal(replacement.failure_class, "session_cleanup_failed");
+  assert.equal(launches.length, 1);
+  assert.equal(runtime.getSession(core.runtime_session_ref)?.lifecycle_state, "idle");
+  assert.equal(runtime.getSession(core.runtime_session_ref)?.control_lock.state, "released");
 });
 
 test("returns structured failure for invalid target URLs", async () => {

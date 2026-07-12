@@ -14,6 +14,7 @@ export type RuntimeErrorCode =
   | "launch_failed"
   | "url_unreachable"
   | "session_locked"
+  | "session_cleanup_failed"
   | "cdp_unavailable"
   | "profile_locked"
   | "session_lost"
@@ -72,7 +73,7 @@ export interface RuntimeControlLockFacts {
 
 export interface RuntimeSessionUnavailable {
   status: "unavailable";
-  failure_class: "identity_environment_unavailable" | "session_locked" | "session_missing" | "url_unreachable";
+  failure_class: "identity_environment_unavailable" | "session_locked" | "session_cleanup_failed" | "session_missing" | "url_unreachable";
   message: string;
   retryable: boolean;
   current_error: RuntimeErrorFact;

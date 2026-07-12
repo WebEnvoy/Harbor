@@ -72,6 +72,7 @@ export type {
 
 export interface RuntimeSessionRecord {
   facts: RuntimeSessionFacts;
+  headless: boolean;
   identity_binding: {
     profile_storage_ref: string | null;
   };
@@ -176,6 +177,7 @@ export class RuntimeSessionStore {
     );
     this.records.set(runtime_session_ref, {
       facts,
+      headless,
       identity_binding: {
         profile_storage_ref: input.profile_storage_ref ?? null
       },
@@ -215,18 +217,38 @@ export class RuntimeSessionStore {
 
     const owner = input.control_owner ?? "agent";
     const holder = input.holder_ref ?? owner;
-    const reusable = input.reuse_existing === false
+    const headless = input.headless ?? owner !== "user";
+    const existing = input.reuse_existing === false
       ? null
-      : this.findReusableSession(
+      : this.findIdentitySession(
         identityEnvironment.profile_ref,
         identityEnvironment.identity_environment_ref,
         identityEnvironment.execution_identity_ref
       );
-    if (reusable) {
-      const conflict = this.acquireControl(reusable, owner, holder);
+    if (existing && (
+      existing.headless === headless ||
+      (owner === "core_task" && !existing.headless &&
+        (existing.read_operation_user_release_pending || existing.read_operation_user_confirmed))
+    )) {
+      const conflict = this.acquireControl(existing, owner, holder);
       if (conflict) return conflict;
-      if (reusable.openUrl) this.applyPageFacts(reusable, input.url, await reusable.openUrl(input.url));
-      return snapshot(reusable.facts);
+      if (existing.openUrl) this.applyPageFacts(existing, input.url, await existing.openUrl(input.url));
+      return snapshot(existing.facts);
+    }
+
+    if (existing) {
+      if (
+        existing.read_operation_user_release_pending &&
+        owner !== "core_task" &&
+        !(owner === "user" && existing.headless && !headless)
+      ) return lockConflict(existing, owner);
+      if (hasControlConflict(existing, owner, holder)) return lockConflict(existing, owner);
+      try {
+        const closed = await this.closeSession(existing.facts.runtime_session_ref);
+        if (closed?.lifecycle_state !== "closed") return cleanupFailed();
+      } catch {
+        return cleanupFailed();
+      }
     }
 
     return this.createSession({
@@ -237,7 +259,8 @@ export class RuntimeSessionStore {
       profile_ref: identityEnvironment.profile_ref,
       profile_storage_ref: identityEnvironment.browser_storage.profile_storage_ref,
       control_owner: owner,
-      holder_ref: holder
+      holder_ref: holder,
+      headless
     });
   }
 
@@ -448,7 +471,7 @@ export class RuntimeSessionStore {
     return probe(input);
   }
 
-  private findReusableSession(
+  private findIdentitySession(
     profile_ref: string,
     identity_environment_ref: string,
     execution_identity_ref: string
@@ -469,7 +492,7 @@ export class RuntimeSessionStore {
   }
 
   private acquireControl(record: RuntimeSessionRecord, owner: ControlOwner, holder_ref: string): RuntimeSessionUnavailable | null {
-    if (record.facts.control_lock.state === "held" && record.facts.control_lock.owner !== owner) return lockConflict(record, owner);
+    if (hasControlConflict(record, owner, holder_ref)) return lockConflict(record, owner);
     if (record.read_operation_user_release_pending && owner !== "core_task") return lockConflict(record, owner);
     const now = new Date().toISOString();
     record.facts.lifecycle_state = "active";
@@ -533,6 +556,18 @@ function lockConflict(record: RuntimeSessionRecord, requestedOwner: ControlOwner
   record.facts.current_error = current_error;
   record.facts.control_lock.conflict_error = current_error;
   return unavailableSession("session_locked", current_error);
+}
+
+function hasControlConflict(record: RuntimeSessionRecord, owner: ControlOwner, holder_ref: string): boolean {
+  return record.facts.control_lock.state === "held" &&
+    (record.facts.control_lock.owner !== owner || record.facts.control_lock.holder_ref !== holder_ref);
+}
+
+function cleanupFailed(): RuntimeSessionUnavailable {
+  return unavailableSession(
+    "session_cleanup_failed",
+    error("session_cleanup_failed", "The incompatible Runtime Session could not be closed safely.", true)
+  );
 }
 
 function validateRuntimeUrl(url: string): RuntimeErrorFact | null {

@@ -4,7 +4,7 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher } from "./index.js";
+import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher, type LocalProviderLaunchInput } from "./index.js";
 import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe, type ReadOperationProbe, type SiteResourceProbe } from "./read-operation-probe-trust.js";
 import { opaqueRef } from "./refs.js";
 import { startHarborRuntimeServer as startUnconfiguredHarborRuntimeServer } from "./server.js";
@@ -564,6 +564,71 @@ test("confirms a user-held local provider without a viewer and hands the release
       city_code: "101010100"
     });
     assert.equal(consumed.body.failure_class, "session_user_controlled");
+  } finally {
+    await running.close();
+  }
+});
+
+test("never reuses a released headless user-action session for manual visibility but preserves headed Core handoff", async () => {
+  const launches: LocalProviderLaunchInput[] = [];
+  const closes: string[] = [];
+  const fixture = createFixtureLauncher("ready");
+  const runtime = new HarborRuntime(async (input) => {
+    launches.push({ ...input });
+    const launch = await fixture(input);
+    if (launch.status !== "ready") return launch;
+    return {
+      ...launch,
+      execution_surface: "local_provider",
+      close: async () => { closes.push(input.profile_ref); }
+    };
+  });
+  const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_visibility-handoff"));
+    const core = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_visibility-handoff",
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "core_task"
+    });
+    assert.equal(launches[0]?.headless, true);
+    runtime.recordHandoff(core.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    const confirmedCore = await fetch(`${running.url}/runtime/sessions/${core.runtime_session_ref}/manual-authentication-completed`, {
+      method: "POST",
+      headers: manualAuthHeaders()
+    });
+    assert.equal(confirmedCore.status, 200);
+    await postJson(`${running.url}/runtime/sessions/${core.runtime_session_ref}/release`, { control_owner: "user" });
+
+    const manual = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_visibility-handoff",
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "user"
+    });
+    assert.notEqual(manual.runtime_session_ref, core.runtime_session_ref);
+    assert.deepEqual(launches.map((launch) => launch.headless), [true, false]);
+    assert.equal(manual.control_owner, "user");
+    assert.equal(manual.availability.viewer, "available");
+    assert.equal(manual.viewer_entry.transport, "local_window");
+    assert.equal(runtime.getSession(core.runtime_session_ref)?.lifecycle_state, "closed");
+    assert.equal(closes.length, 1);
+
+    const confirmedManual = await fetch(`${running.url}/runtime/sessions/${manual.runtime_session_ref}/manual-authentication-completed`, {
+      method: "POST",
+      headers: manualAuthHeaders()
+    });
+    assert.equal(confirmedManual.status, 200);
+    await postJson(`${running.url}/runtime/sessions/${manual.runtime_session_ref}/release`, { control_owner: "user" });
+    const handedToCore = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_visibility-handoff",
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "core_task"
+    });
+    assert.equal(handedToCore.runtime_session_ref, manual.runtime_session_ref);
+    assert.equal(handedToCore.availability.viewer, "available");
+    assert.equal(handedToCore.control_owner, "core_task");
+    assert.equal(launches.length, 2);
+    assert.equal(closes.length, 1);
   } finally {
     await running.close();
   }
