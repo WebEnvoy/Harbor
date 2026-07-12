@@ -634,6 +634,60 @@ test("never reuses a released headless user-action session for manual visibility
   }
 });
 
+test("rebinds persisted user-confirmed authentication to a fresh headed session before Core handoff", async () => {
+  const persistence_path = join(mkdtempSync(join(tmpdir(), "harbor-persisted-headed-handoff-")), "identity-environments.json");
+  const first = await startHarborRuntimeServer({
+    port: 0,
+    runtime: new HarborRuntime(unsupportedViewerLauncher("local_provider"), { persistence_path }),
+    manual_authentication_supervisor_token: supervisorToken()
+  });
+  try {
+    await postJson(`${first.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_persisted-headed-handoff"));
+    const initial = await postJson(`${first.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_persisted-headed-handoff",
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "user"
+    });
+    const confirmed = await fetch(`${first.url}/runtime/sessions/${initial.runtime_session_ref}/manual-authentication-completed`, {
+      method: "POST",
+      headers: manualAuthHeaders()
+    });
+    assert.equal(confirmed.status, 200);
+  } finally {
+    await first.close();
+  }
+
+  const launches: LocalProviderLaunchInput[] = [];
+  const fixture = createFixtureLauncher("ready");
+  const secondRuntime = new HarborRuntime(async (input) => {
+    launches.push({ ...input });
+    const launch = await fixture(input);
+    return launch.status === "ready" ? { ...launch, execution_surface: "local_provider" } : launch;
+  }, { persistence_path });
+  const second = await startHarborRuntimeServer({ port: 0, runtime: secondRuntime });
+  try {
+    const manual = await postJson(`${second.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_persisted-headed-handoff",
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "user"
+    });
+    assert.equal(launches[0]?.headless, false);
+    await postJson(`${second.url}/runtime/sessions/${manual.runtime_session_ref}/release`, { control_owner: "user" });
+
+    const core = await postJson(`${second.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_persisted-headed-handoff",
+      url: "https://www.zhipin.com/web/geek/job?query=frontend",
+      control_owner: "core_task"
+    });
+    assert.equal(core.runtime_session_ref, manual.runtime_session_ref);
+    assert.equal(core.control_owner, "core_task");
+    assert.equal(core.viewer_entry.transport, "local_window");
+    assert.equal(launches.length, 1);
+  } finally {
+    await second.close();
+  }
+});
+
 test("rejects direct user confirmation for fixture, unknown, and non-user local-provider sessions", async () => {
   for (const [surface, owner] of [["fixture", "user"], [undefined, "user"], ["local_provider", "agent"]] as const) {
     const runtime = new HarborRuntime(unsupportedViewerLauncher(surface));
