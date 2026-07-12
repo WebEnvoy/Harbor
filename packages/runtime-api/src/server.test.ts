@@ -648,7 +648,7 @@ test("never reuses a released headless user-action session for manual visibility
   }
 });
 
-test("rebinds persisted user-confirmed authentication to a fresh headed session before Core handoff", async () => {
+test("rebinds persisted user-confirmed authentication directly to a fresh headed Core session", async () => {
   const persistence_path = join(mkdtempSync(join(tmpdir(), "harbor-persisted-headed-handoff-")), "identity-environments.json");
   const first = await startHarborRuntimeServer({
     port: 0,
@@ -672,7 +672,7 @@ test("rebinds persisted user-confirmed authentication to a fresh headed session 
   }
 
   const launches: LocalProviderLaunchInput[] = [];
-  const fixture = createFixtureLauncher("ready");
+  const fixture = successfulBossReadLauncher;
   const secondRuntime = new HarborRuntime(async (input) => {
     launches.push({ ...input });
     const launch = await fixture(input);
@@ -680,22 +680,23 @@ test("rebinds persisted user-confirmed authentication to a fresh headed session 
   }, { persistence_path });
   const second = await startHarborRuntimeServer({ port: 0, runtime: secondRuntime });
   try {
-    const manual = await postJson(`${second.url}/runtime/identity-environment-sessions`, {
-      identity_environment_ref: "identity-env_persisted-headed-handoff",
-      url: "https://www.zhipin.com/web/geek/job",
-      control_owner: "user"
-    });
-    assert.equal(launches[0]?.headless, false);
-    await postJson(`${second.url}/runtime/sessions/${manual.runtime_session_ref}/release`, { control_owner: "user" });
-
     const core = await postJson(`${second.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_persisted-headed-handoff",
       url: "https://www.zhipin.com/web/geek/job?query=frontend",
-      control_owner: "core_task"
+      control_owner: "core_task",
+      headless: false
     });
-    assert.equal(core.runtime_session_ref, manual.runtime_session_ref);
+    assert.equal(launches[0]?.headless, false);
+    const read = await postReadOperation(`${second.url}/runtime/sessions/${core.runtime_session_ref}/read-operations`, {
+      site_id: "boss",
+      operation_id: "boss_job_search",
+      query: "frontend",
+      city_code: "101010100"
+    });
     assert.equal(core.control_owner, "core_task");
     assert.equal(core.viewer_entry.transport, "local_window");
+    assert.equal(read.status, 409);
+    assert.equal(read.body.failure_class, "evidence_refs_missing");
     assert.equal(launches.length, 1);
   } finally {
     await second.close();

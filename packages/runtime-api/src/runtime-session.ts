@@ -392,6 +392,11 @@ export class RuntimeSessionStore {
     return !!record && hasHeldUserLock(record) && record.execution_surface === "local_provider";
   }
 
+  isPersistedAuthenticationRebindableCoreSession(runtime_session_ref: string): boolean {
+    const record = this.records.get(runtime_session_ref);
+    return !!record && !record.headless && record.execution_surface === "local_provider" && hasHeldCoreLock(record);
+  }
+
   markReadOperationUserConfirmed(runtime_session_ref: string): void {
     const record = this.records.get(runtime_session_ref);
     if (!record || (!this.isTrustedUserHeldSession(runtime_session_ref) && !this.isSupervisorConfirmableLocalProviderUserSession(runtime_session_ref))) return;
@@ -399,6 +404,14 @@ export class RuntimeSessionStore {
     record.read_operation_user_confirmed = true;
     record.read_operation_user_release_pending = false;
     record.read_operation_user_handoff = false;
+  }
+
+  markReadOperationPersistedAuthenticationRebound(runtime_session_ref: string): void {
+    const record = this.records.get(runtime_session_ref);
+    if (!record || record.headless || record.execution_surface !== "local_provider" || !hasHeldCoreLock(record)) return;
+    record.read_operation_user_confirmed = true;
+    record.read_operation_user_release_pending = false;
+    record.read_operation_user_handoff = true;
   }
 
   getValidationRuntimeFacts(runtime_session_ref: string): ValidationRuntimeFacts | null {
@@ -617,6 +630,12 @@ function isInteractiveUserViewer(facts: RuntimeSessionFacts): boolean {
 function hasHeldUserLock(record: RuntimeSessionRecord): boolean {
   return record.facts.control_owner === "user" &&
     record.facts.control_lock.owner === "user" &&
+    record.facts.control_lock.state === "held";
+}
+
+function hasHeldCoreLock(record: RuntimeSessionRecord): boolean {
+  return record.facts.control_owner === "core_task" &&
+    record.facts.control_lock.owner === "core_task" &&
     record.facts.control_lock.state === "held";
 }
 

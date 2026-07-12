@@ -51,21 +51,22 @@ test("binds Xiaohongshu detail feed evidence to the selected note", () => {
   assert.equal(xhsFeedResponseMatchesTarget("not-json", noteId), false);
 });
 
-test("rejects detail click points that hit nested interactive controls", () => {
-  const targetUrl = "https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=opaque";
-  const rect = { width: 100, height: 100, top: 10, left: 10, right: 110, bottom: 110 };
-  const anchor = {
-    href: targetUrl,
-    getAttribute: () => targetUrl,
-    getBoundingClientRect: () => rect,
-    querySelectorAll: () => [],
-    contains: () => true
-  };
-  const nestedButton = {
-    closest: (selector: string) => selector.startsWith("button") ? nestedButton : selector === "a" ? anchor : null
-  };
+test("accepts only a same-card same-note navigation hit point", () => {
+  const noteId = "0123456789abcdef01234567";
+  const targetUrl = `https://www.xiaohongshu.com/explore/${noteId}`;
+  const card = { getBoundingClientRect: () => ({ left: 10, top: 10, width: 100, height: 100 }), contains: () => true };
+  const targetAnchor = { href: targetUrl, getAttribute: () => targetUrl, closest: () => card };
   const evaluate = new Function("document", "location", "innerWidth", "innerHeight", `return ${xhsDetailClickPointExpression(targetUrl)}`);
-  assert.equal(evaluate({ querySelectorAll: () => [anchor], elementFromPoint: () => nestedButton }, { origin: "https://www.xiaohongshu.com" }, 500, 500), undefined);
+  const pointFor = (href: string, independentControl = false) => {
+    const hitLink = { href, getAttribute: () => href };
+    const hit = { closest: (selector: string) => selector === "a" ? hitLink : independentControl ? {} : null };
+    return evaluate({ querySelectorAll: () => [targetAnchor], elementFromPoint: () => hit }, { origin: "https://www.xiaohongshu.com" }, 500, 500);
+  };
+  assert.deepEqual(pointFor(`https://www.xiaohongshu.com/search_result/${noteId}`), { x: 60, y: 30 });
+  assert.equal(pointFor(`https://evil.test/search_result/${noteId}`), undefined);
+  assert.equal(pointFor(`https://user:pass@www.xiaohongshu.com/search_result/${noteId}`), undefined);
+  assert.equal(pointFor("https://www.xiaohongshu.com/search_result/fedcba987654321001234567"), undefined);
+  assert.equal(pointFor(`https://www.xiaohongshu.com/search_result/${noteId}`, true), undefined);
 });
 
 test("keeps signed detail navigation private in public page facts", () => {

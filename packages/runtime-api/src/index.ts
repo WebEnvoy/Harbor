@@ -411,7 +411,7 @@ export class HarborRuntime {
       };
     }
     const session = await this.runtimeSessions.openIdentityEnvironmentSession({ ...input, identity_environment });
-    this.bindPersistedAuthenticationToHeadedUserSession(identity_environment, session, input);
+    this.bindPersistedAuthenticationToHeadedSession(identity_environment, session, input);
     return session;
   }
 
@@ -435,11 +435,11 @@ export class HarborRuntime {
       identity_environment,
       url: defaultIdentitySiteUrl(identity_environment.site_binding.site_id, identity_environment.site_binding.origin)
     });
-    this.bindPersistedAuthenticationToHeadedUserSession(identity_environment, session, input);
+    this.bindPersistedAuthenticationToHeadedSession(identity_environment, session, input);
     return session;
   }
 
-  private bindPersistedAuthenticationToHeadedUserSession(
+  private bindPersistedAuthenticationToHeadedSession(
     identity_environment: LocalIdentityEnvironmentFacts,
     session: RuntimeSessionFacts | RuntimeSessionUnavailable,
     input: Pick<OpenIdentityEnvironmentSessionInput, "control_owner" | "headless">
@@ -447,17 +447,20 @@ export class HarborRuntime {
     if ("status" in session) return;
     const record = this.runtimeSessions.getRecord(session.runtime_session_ref);
     if (
-      input.control_owner !== "user" ||
+      (input.control_owner !== "user" && input.control_owner !== "core_task") ||
       input.headless === true ||
       !record ||
       !sameManagedIdentity(record, identity_environment) ||
-      !this.runtimeSessions.isSupervisorConfirmableLocalProviderUserSession(session.runtime_session_ref)
+      (input.control_owner === "user"
+        ? !this.runtimeSessions.isSupervisorConfirmableLocalProviderUserSession(session.runtime_session_ref)
+        : !this.runtimeSessions.isPersistedAuthenticationRebindableCoreSession(session.runtime_session_ref))
     ) return;
     if (!this.identityEnvironments.rebindUserConfirmedManagedSession(
       identity_environment.identity_environment_ref,
       session.runtime_session_ref
     )) return;
-    this.runtimeSessions.markReadOperationUserConfirmed(session.runtime_session_ref);
+    if (input.control_owner === "user") this.runtimeSessions.markReadOperationUserConfirmed(session.runtime_session_ref);
+    else this.runtimeSessions.markReadOperationPersistedAuthenticationRebound(session.runtime_session_ref);
   }
 
   getIdentityConsistencyFacts(input: IdentityConsistencyFactsInput): IdentityConsistencyFacts {

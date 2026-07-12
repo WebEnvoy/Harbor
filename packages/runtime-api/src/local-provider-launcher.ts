@@ -60,6 +60,8 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     const version = await fetchVersion(port, readbackSignal);
     const page = await readPageFacts(port, input.url, readbackSignal);
     let currentUrl = page.current_url ?? input.url;
+    let retainedXhsSearchTargetId: string | undefined;
+    let readOperationTail = Promise.resolve();
     const evidence_ref = opaqueRef("validation");
     return {
       status: "ready",
@@ -81,12 +83,30 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
       },
       probeSiteResource: trustLocalProviderSiteResourceProbe((probe) => probeProviderSiteResource(port, currentUrl, probe)),
       probeReadOperation: trustLocalProviderReadProbe(async (probe) => {
-        const result = await probeProviderReadOperation(port, probe);
-        if (result.page?.current_url) currentUrl = result.page.current_url;
-        return result;
+        const previous = readOperationTail;
+        let release!: () => void;
+        readOperationTail = new Promise<void>((resolve) => { release = resolve; });
+        await previous;
+        try {
+          if (probe.operation_id === "xhs_search_notes" && retainedXhsSearchTargetId) {
+            await closeProviderPage(port, retainedXhsSearchTargetId).catch(() => undefined);
+            retainedXhsSearchTargetId = undefined;
+          }
+          const result = await probeProviderReadOperation(port, probe, retainedXhsSearchTargetId, (targetId) => {
+            retainedXhsSearchTargetId = targetId;
+          });
+          if (probe.operation_id === "xhs_read_note_detail") retainedXhsSearchTargetId = undefined;
+          if (result.page?.current_url) currentUrl = result.page.current_url;
+          return result;
+        } finally {
+          release();
+        }
       }),
       captureScreenshot: () => captureProviderScreenshot(port, currentUrl),
-      close: () => closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent)
+      close: async () => {
+        if (retainedXhsSearchTargetId) await closeProviderPage(port, retainedXhsSearchTargetId).catch(() => undefined);
+        await closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent);
+      }
     };
   } catch (error) {
     await closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent);
@@ -337,10 +357,22 @@ async function openProviderUrl(port: string, url: string, signal?: AbortSignal):
   }
 }
 
-async function probeProviderReadOperation(port: string, input: LocalProviderReadProbeInput): Promise<LocalProviderReadProbeResult> {
+async function probeProviderReadOperation(
+  port: string,
+  input: LocalProviderReadProbeInput,
+  retainedXhsSearchTargetId?: string,
+  retainXhsSearchTarget: (targetId: string) => void = () => {}
+): Promise<LocalProviderReadProbeResult> {
   try {
-    const page = await createBlankProviderPage(port);
+    const retainedPage = input.operation_id === "xhs_read_note_detail" && input.navigation_source_url && retainedXhsSearchTargetId
+      ? (await pageTargets(port)).find((candidate) => candidate.id === retainedXhsSearchTargetId)
+      : undefined;
+    if (input.operation_id === "xhs_read_note_detail" && !retainedPage) {
+      return probeUnavailable("page_not_ready", "The search page bound to this detail ref is no longer available.", true);
+    }
+    const page = retainedPage ?? await createBlankProviderPage(port);
     if (!page.id || !page.webSocketDebuggerUrl) throw new Error("Read-operation page has no target id or CDP websocket.");
+    let keepPage = false;
     const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.enable");
       await client.send("Runtime.enable");
@@ -378,7 +410,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         ) operationResponse = { requestId, status, url: response!.url as string };
       });
       if (input.operation_id === "xhs_read_note_detail" && input.navigation_source_url) {
-        await client.send("Page.navigate", { url: input.navigation_source_url });
+        await client.send("Page.bringToFront");
         let clickPoint: { x: number; y: number } | undefined;
         for (let attempt = 0; attempt < 20 && !clickPoint; attempt++) {
           const evaluated = await client.send("Runtime.evaluate", {
@@ -401,7 +433,8 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         navigationStarted = true;
         await client.send("Page.navigate", { url: input.target_url });
       }
-      for (let attempt = 0; attempt < 20; attempt++) {
+      const maxProbeAttempts = 40;
+      for (let attempt = 0; attempt < maxProbeAttempts; attempt++) {
         if (blockedRedirect) {
           stopObservingNetwork();
           stopIntercepting();
@@ -429,10 +462,14 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         } } | undefined)?.value;
         const observedResponse = operationResponse as { requestId: string; status: number; url: string } | null;
         const observedBossDetailResponse = bossDetailResponse as { requestId: string; status: number; url: string } | null;
-        if (value?.origin && (value.challenge_like || value.login_like)) {
+        if (value?.origin && (value.challenge_like || (value.login_like && attempt === maxProbeAttempts - 1))) {
           stopObservingNetwork();
           stopIntercepting();
           return { validation: validateReadOperationProbe(input, value) };
+        }
+        if (value?.login_like) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          continue;
         }
         if (value?.origin && value.ready && observedResponse !== null && (input.operation_id !== "boss_read_job_detail" || observedBossDetailResponse !== null)) {
           if (input.operation_id === "xhs_read_note_detail") {
@@ -466,6 +503,10 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           });
           if (validation.status === "unavailable") return { validation };
           const screenshot = await captureProbeScreenshot(client);
+          if (input.operation_id === "xhs_search_notes") {
+            keepPage = true;
+            retainXhsSearchTarget(page.id!);
+          }
           return screenshot ? {
             validation,
             screenshot_ref: screenshot.screenshot_ref
@@ -476,7 +517,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       stopObservingNetwork();
       stopIntercepting();
       return null;
-    }).finally(() => closeProviderPage(port, page.id!));
+    }).finally(() => keepPage ? undefined : closeProviderPage(port, page.id!));
     const pageFacts = readOperationPageFacts(input.operation_id, input.target_url);
     if (!observation) return probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts);
     if (observation.blocked_redirect) return probeUnavailable("origin_drift", "A cross-origin document redirect was blocked before navigation.", false, pageFacts);
@@ -802,7 +843,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const text = document.body?.innerText || "";
     const clean = (value, max) => typeof value === "string" || typeof value === "number" ? String(value).replace(/\\s+/g, " ").trim().slice(0, max) : "";
     const pick = (selectors, max) => clean(document.querySelector(selectors)?.textContent, max);
-    const visibleSurface = (selectors) => typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll(selectors)).some((element) => {
+    const visibleSurfaceElement = (element) => {
       const view = document.defaultView;
       if (!view) return false;
       if (typeof element.checkVisibility === 'function' && !element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
@@ -810,7 +851,8 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       const rect = element.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 &&
         rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < view.innerHeight && rect.left < view.innerWidth;
-    });
+    };
+    const visibleSurface = (selectors) => typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll(selectors)).some(visibleSurfaceElement);
     const challengeSurface = visibleSurface('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]');
     const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge|security check|verification required|complete verification/i.test(text) || challengeSurface;
     const login = ${operationId === "xhs_read_note_detail"
@@ -956,7 +998,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const listFailure = feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";
-    const visibleSurface = (selectors) => typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll(selectors)).some((element) => {
+    const visibleSurfaceElement = (element) => {
       const view = document.defaultView;
       if (!view) return false;
       if (typeof element.checkVisibility === 'function' && !element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
@@ -964,9 +1006,11 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       const rect = element.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 &&
         rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < view.innerHeight && rect.left < view.innerWidth;
-    });
+    };
+    const visibleSurface = (selectors) => typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll(selectors)).some(visibleSurfaceElement);
     const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge/i.test(text) || visibleSurface('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"]');
-    const login = location.pathname.startsWith('/login') || visibleSurface('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]');
+    const authenticated = Array.from(document.querySelectorAll('a, div, span')).some((element) => element.textContent?.trim() === '我' && visibleSurfaceElement(element));
+    const login = !authenticated && (location.pathname.startsWith('/login') || visibleSurface('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
     return {
       origin: location.origin,
       pathname: location.pathname,
@@ -985,25 +1029,39 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
 
 export function xhsDetailClickPointExpression(targetUrl: string): string {
   const expectedUrl = new URL(targetUrl);
+  const noteId = expectedUrl.pathname.split("/").filter(Boolean).at(-1) ?? "";
   return `(() => {
-    const expectedHref = ${JSON.stringify(expectedUrl.href)};
+    const expectedOrigin = ${JSON.stringify(expectedUrl.origin)};
+    const expectedPath = ${JSON.stringify(expectedUrl.pathname)};
+    const expectedNoteId = ${JSON.stringify(noteId)};
     const anchors = Array.from(document.querySelectorAll('a[href*="/explore/"]'));
     const anchor = anchors.find((candidate) => {
       try {
         const url = new URL(candidate.getAttribute('href') || candidate.href || '', location.origin);
-        return !url.username && !url.password && url.href === expectedHref;
+        const keys = [...url.searchParams.keys()];
+        return url.origin === expectedOrigin && url.pathname === expectedPath && !url.username && !url.password && !url.hash &&
+          keys.every((key) => key === 'xsec_token' || key === 'xsec_source') &&
+          url.searchParams.getAll('xsec_token').length <= 1 && url.searchParams.getAll('xsec_source').length <= 1;
       }
       catch { return false; }
     });
     if (!anchor) return undefined;
-    for (const element of [anchor, ...anchor.querySelectorAll('*')]) {
-      const rect = element.getBoundingClientRect();
-      if (rect.width <= 20 || rect.height <= 20 || rect.bottom <= 0 || rect.right <= 0 || rect.top >= innerHeight || rect.left >= innerWidth) continue;
+    const card = anchor.closest('section.note-item');
+    if (!card) return undefined;
+    const rect = card.getBoundingClientRect();
+    for (const yFraction of [0.2, 0.35, 0.5]) {
       const x = Math.max(1, Math.min(innerWidth - 1, rect.left + rect.width / 2));
-      const y = Math.max(1, Math.min(innerHeight - 1, rect.top + rect.height / 2));
+      const y = Math.max(1, Math.min(innerHeight - 1, rect.top + rect.height * yFraction));
       const hit = document.elementFromPoint(x, y);
-      const independentControl = hit?.closest('button, [role="button"], input, select, textarea, label, [contenteditable="true"]');
-      if (hit && !independentControl && anchor.contains(hit) && hit.closest('a') === anchor) return { x, y };
+      if (!hit || !card.contains(hit) || hit.closest('button, [role="button"], input, select, textarea, label, [contenteditable="true"]')) continue;
+      const hitLink = hit.closest('a');
+      if (!hitLink) continue;
+      try {
+        const hitUrl = new URL(hitLink.getAttribute('href') || hitLink.href || '', location.origin);
+        const hitPath = hitUrl.pathname;
+        if (hitUrl.origin === expectedOrigin && !hitUrl.username && !hitUrl.password && !hitUrl.hash &&
+          (hitPath === expectedPath || hitPath === '/search_result/' + expectedNoteId)) return { x, y };
+      } catch {}
     }
     return undefined;
   })()`;
