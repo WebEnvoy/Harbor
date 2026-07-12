@@ -125,11 +125,12 @@ const server = createServer((request, response) => {
   response.statusCode = 404;
   response.end(JSON.stringify({ error: "not_found" }));
 });
-server.listen(0, "127.0.0.1", () => {
+const startServer = () => server.listen(0, "127.0.0.1", () => {
   const address = server.address();
   if (!address || typeof address === "string") process.exit(3);
   writeFileSync(join(profileDir, "DevToolsActivePort"), String(address.port) + "\\n/devtools/browser/fake\\n");
 });
+setTimeout(startServer, Number(process.env.HARBOR_FAKE_BROWSER_PORT_DELAY_MS || 0));
 process.on("SIGTERM", () => server.close(() => process.exit(0)));
 process.on("SIGINT", () => server.close(() => process.exit(0)));
 setInterval(() => {}, 10000);
@@ -645,6 +646,7 @@ test("bounds provider version and page-list readback while preserving redirect f
   const previousRedirectUrl = process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL;
   const previousRedirectTitle = process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE;
   const previousWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
+  const previousPortDelay = process.env.HARBOR_FAKE_BROWSER_PORT_DELAY_MS;
   const originalWebSocket = globalThis.WebSocket;
   const browserPath = writeFakeBrowserExecutable(dir);
   process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
@@ -668,6 +670,21 @@ test("bounds provider version and page-list readback while preserving redirect f
         await result.close();
       }
     }
+
+    process.env.HARBOR_FAKE_BROWSER_HANG_PATH = "/json/version";
+    process.env.HARBOR_FAKE_BROWSER_PORT_DELAY_MS = "300";
+    const delayedStartedAt = Date.now();
+    const delayedVersion = await launchLocalDedicatedProvider({
+      browser_path: browserPath,
+      headless: false,
+      timeout_ms: 500,
+      url: "https://www.zhipin.com/web/geek/job",
+      profile_ref: "profile_delayed-version-timeout",
+      provider_ref: "provider_fake"
+    });
+    assert.equal(delayedVersion.status, "unavailable");
+    assert.ok(Date.now() - delayedStartedAt < 700, "port readiness and version readback must share one launch deadline");
+    delete process.env.HARBOR_FAKE_BROWSER_PORT_DELAY_MS;
 
     delete process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
     process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL = "https://www.zhipin.com/web/passport/zp/verify.html?code=35";
@@ -743,6 +760,8 @@ test("bounds provider version and page-list readback while preserving redirect f
     else process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE = previousRedirectTitle;
     if (previousWebSocketUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
     else process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = previousWebSocketUrl;
+    if (previousPortDelay === undefined) delete process.env.HARBOR_FAKE_BROWSER_PORT_DELAY_MS;
+    else process.env.HARBOR_FAKE_BROWSER_PORT_DELAY_MS = previousPortDelay;
     rmSync(dir, { recursive: true, force: true });
   }
 });
