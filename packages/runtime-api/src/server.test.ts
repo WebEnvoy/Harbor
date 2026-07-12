@@ -1117,18 +1117,15 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
         message: "Directed detail probe failure.",
         retryable: true
       };
-      const source = { kind: "network_summary", ref: opaqueRef("source") };
+      const sources = ["wapi_job_detail_summary", "dom_snapshot_summary"].map((kind) => ({ kind, ref: opaqueRef("source") }));
       return {
         status: "completed",
         observed_at: "2026-07-12T00:00:00.000Z",
         observed_origin: "https://www.zhipin.com",
         page: localReadPage(input.target_url),
-        source_refs: [source],
-        evidence_ref_kinds: [
-          { kind: "snapshot_ref", ref: opaqueRef("evidence") },
-          { kind: "network_summary_ref", ref: opaqueRef("evidence") }
-        ],
-        public_summary_source_ref: source.ref,
+        source_refs: sources,
+        evidence_ref_kinds: [{ kind: "snapshot_ref", ref: opaqueRef("evidence") }],
+        public_summary_source_ref: sources[0]!.ref,
         public_summary: {
           schema_version: "harbor-read-operation-public-summary/v0",
           operation_id: "boss_read_job_detail",
@@ -1149,7 +1146,7 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
               kind: "boss_job_detail_ref",
               detail_ref: input.detail_ref!,
               url: "https://www.zhipin.com/job_detail/AbC_123.html",
-              field_sources: ["network_summary", "dom_snapshot_summary"]
+              field_sources: ["wapi_job_detail_summary", "dom_snapshot_summary"]
             },
             source_status: "located"
           },
@@ -1200,8 +1197,8 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
     assert.equal("encryptJobId" in detail.body.public_summary.normalized, false);
     assert.equal(detail.body.public_summary.normalized.source_citation.detail_ref, detailRef);
     assert.equal(detail.body.lode_pin.merge_commit, "66d79b4e600565a00515b1c801e84291edc7b0c1");
-    assert.equal(detail.body.source_refs[0].kind, "network_summary");
-    assert.deepEqual(detail.body.evidence_ref_kinds.map((entry: any) => entry.kind), ["snapshot_ref", "network_summary_ref", "post_check_ref"]);
+    assert.deepEqual(detail.body.source_refs.map((entry: any) => entry.kind), ["wapi_job_detail_summary", "dom_snapshot_summary"]);
+    assert.deepEqual(detail.body.evidence_ref_kinds.map((entry: any) => entry.kind), ["snapshot_ref"]);
     assert.equal(detail.body.public_summary.normalized.canonical_url, "https://www.zhipin.com/job_detail/AbC_123.html");
     assert.equal(JSON.stringify(detail.body).includes("securityId"), false);
     assert.equal(JSON.stringify(detail.body).includes("encryptJobId"), false);

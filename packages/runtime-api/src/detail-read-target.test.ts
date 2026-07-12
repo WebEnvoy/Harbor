@@ -41,3 +41,32 @@ test("binds opaque detail refs to one session, site, operation, ttl, and consump
   });
   assert.equal(store.consume({ detail_ref: expired, runtime_session_ref: "session_a", site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", now: 1_000 + 10 * 60 * 1000 }), "detail_ref_expired");
 });
+
+test("bounds tombstones and clears active refs with the session lifecycle", () => {
+  const store = new DetailReadTargetStore();
+  const [releasedRef] = store.register({
+    runtime_session_ref: "session_release",
+    site_id: "boss",
+    search_operation_id: "boss_job_search",
+    targets: [{ canonical_url: "https://www.zhipin.com/job_detail/Release_1.html" }],
+    now: 1_000
+  });
+  store.clearSession("session_release", 2_000);
+  assert.equal(store.consume({ detail_ref: releasedRef, runtime_session_ref: "session_release", site_id: "boss", operation_id: "boss_read_job_detail", now: 2_001 }), "detail_ref_expired");
+  assert.equal((store as unknown as { records: Map<string, unknown> }).records.size, 0);
+
+  for (let index = 0; index < 4_200; index += 1) {
+    const [detailRef] = store.register({
+      runtime_session_ref: "session_volume",
+      site_id: "boss",
+      search_operation_id: "boss_job_search",
+      targets: [{ canonical_url: `https://www.zhipin.com/job_detail/Volume_${index}.html` }],
+      now: 3_000 + index
+    });
+    assert.equal(typeof store.consume({ detail_ref: detailRef, runtime_session_ref: "session_volume", site_id: "boss", operation_id: "boss_read_job_detail", now: 3_000 + index }), "object");
+  }
+  const tombstones = (store as unknown as { tombstones: Map<string, unknown> }).tombstones;
+  assert.equal(tombstones.size, 4_096);
+  store.clearSession("session_volume", 3_000 + 10 * 60 * 1_000 + 4_200);
+  assert.equal(tombstones.size, 0);
+});

@@ -348,11 +348,15 @@ export class HarborRuntime {
   }
 
   releaseSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): RuntimeSessionFacts | RuntimeSessionUnavailable {
-    return this.runtimeSessions.releaseSession(runtime_session_ref, input);
+    const result = this.runtimeSessions.releaseSession(runtime_session_ref, input);
+    if (!("status" in result)) this.detailReadTargets.clearSession(runtime_session_ref);
+    return result;
   }
 
   async stopSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): Promise<RuntimeSessionFacts | RuntimeSessionUnavailable> {
-    return this.runtimeSessions.stopSession(runtime_session_ref, input);
+    const result = await this.runtimeSessions.stopSession(runtime_session_ref, input);
+    if (!("status" in result)) this.detailReadTargets.clearSession(runtime_session_ref);
+    return result;
   }
 
   getBrowserProviderStatus(input: BrowserProviderDetectionInput = {}): BrowserProviderCatalog {
@@ -819,7 +823,9 @@ export class HarborRuntime {
   }
 
   async closeSession(runtime_session_ref: string): Promise<RuntimeSessionFacts | null> {
-    return this.runtimeSessions.closeSession(runtime_session_ref);
+    const result = await this.runtimeSessions.closeSession(runtime_session_ref);
+    if (result) this.detailReadTargets.clearSession(runtime_session_ref);
+    return result;
   }
 }
 

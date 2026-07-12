@@ -377,7 +377,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
     const source_refs = validation.source_kinds.map((kind) => ({ kind, ref: opaqueRef("source") }));
     const evidence_ref_kinds = [
       { kind: "snapshot_ref", ref: observation.screenshot_ref! },
-      ...(input.operation_id === "boss_job_search" || input.operation_id === "boss_read_job_detail" ? [{ kind: "network_summary_ref", ref: opaqueRef("evidence") }] : [])
+      ...(input.operation_id === "boss_job_search" ? [{ kind: "network_summary_ref", ref: opaqueRef("evidence") }] : [])
     ];
     return {
       status: "completed",
@@ -386,7 +386,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       page: pageFacts,
       source_refs,
       evidence_ref_kinds,
-      public_summary_source_ref: source_refs.find((source) => source.kind === "network_summary")?.ref ?? source_refs[0]!.ref,
+      public_summary_source_ref: source_refs.find((source) => source.kind === "network_summary" || source.kind === "wapi_job_detail_summary")?.ref ?? source_refs[0]!.ref,
       public_summary: validation.public_summary,
       detail_targets: validation.detail_urls?.map((canonical_url) => ({ canonical_url }))
     };
@@ -485,8 +485,8 @@ export function validateReadOperationProbe(
     return {
       status: "completed",
       source_kinds: xhs
-        ? ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]
-        : ["network_summary"],
+        ? ["pinia_store_summary", "network_summary"]
+        : ["wapi_job_detail_summary", "dom_snapshot_summary"],
       public_summary: {
         schema_version: "harbor-read-operation-public-summary/v0",
         operation_id: input.operation_id,
@@ -580,7 +580,7 @@ function validateDetailNormalizedSummary(
         kind: "xhs_note_detail_ref",
         note_id: value.note_id,
         url: canonical_url,
-        field_sources: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]
+        field_sources: ["pinia_store_summary", "network_summary"]
       },
       source_status: value.source_status
     };
@@ -610,7 +610,7 @@ function validateDetailNormalizedSummary(
       kind: "boss_job_detail_ref",
       detail_ref: input.detail_ref,
       url: canonical_url,
-      field_sources: ["network_summary", "dom_snapshot_summary"]
+      field_sources: ["wapi_job_detail_summary", "dom_snapshot_summary"]
     },
     source_status: value.source_status
   };
@@ -634,7 +634,7 @@ function validMetrics(value: XiaohongshuNoteDetailPublicSummary["interaction_met
 
 export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id"], query: string, cityCode?: string, operationId?: LocalProviderReadProbeInput["operation_id"]): string {
   if (operationId === "xhs_read_note_detail" || operationId === "boss_read_job_detail") return `(() => {
-    const text = (document.body?.innerText || "").slice(0, 2000);
+    const text = document.body?.innerText || "";
     const clean = (value, max) => typeof value === "string" ? value.replace(/\\s+/g, " ").trim().slice(0, max) : "";
     const pick = (selectors, max) => clean(document.querySelector(selectors)?.textContent, max);
     const challenge = /验证码|安全验证|访问异常|captcha|verify/i.test(text) || Boolean(document.querySelector('[class*="captcha"], [class*="verify"]'));
@@ -648,7 +648,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const vue = app?.__vue_app__;
     const pinia = window.__PINIA__ || window.__pinia || vue?.config?.globalProperties?.$pinia;
     const stores = pinia?._s;
-    const piniaReady = stores instanceof Map && Array.from(stores.keys()).some((key) => /note|feed|detail/i.test(String(key)));
+    const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
     const title = pick('.note-content .title, #detail-title, [class*="note-title"]', 200);
     const body = pick('#detail-desc, .note-content .desc, [class*="note-desc"]', 4000);
     const author = pick('.author-container .name, .author-wrapper .name, [class*="author"] [class*="name"]', 100);
@@ -661,7 +661,25 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const collects = pick('[class*="collect"] [class*="count"], .collect-wrapper .count', 40);
     const shares = pick('[class*="share"] [class*="count"], .share-wrapper .count', 40);
     const noteId = location.pathname.split('/').filter(Boolean).at(-1) || "";
-    const normalized = title && body && author && authorId && profileUrl && likes && comments && collects && shares && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 2000), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: { likes, comments, collects, shares }, source_status: "located" } : undefined;
+    const noteStores = stores instanceof Map ? Array.from(stores.entries()).filter(([key]) => /note|detail/i.test(String(key))) : [];
+    const matchesStore = ([, candidate]) => {
+      const state = unwrap(candidate?.$state) || candidate;
+      const details = [unwrap(state?.currentNote), unwrap(state?.noteDetail), unwrap(state?.detail), unwrap(state?.note), state].filter((value) => value && typeof value === "object");
+      return details.some((detail) => {
+        const storeAuthor = unwrap(detail.author) || unwrap(detail.user) || {};
+        const storeMetrics = unwrap(detail.interaction_metrics) || unwrap(detail.interactInfo) || unwrap(detail.metrics) || {};
+        return clean(unwrap(detail.note_id) || unwrap(detail.noteId) || unwrap(detail.id), 64) === noteId &&
+          clean(unwrap(detail.title), 200) === title && clean(unwrap(detail.body_summary) || unwrap(detail.desc) || unwrap(detail.description) || unwrap(detail.body), 4000) === body &&
+          clean(unwrap(storeAuthor.display_name) || unwrap(storeAuthor.nickname) || unwrap(storeAuthor.name), 100) === author &&
+          clean(unwrap(storeAuthor.author_id) || unwrap(storeAuthor.userId) || unwrap(storeAuthor.id), 100) === authorId &&
+          clean(unwrap(storeMetrics.likes) || unwrap(storeMetrics.likedCount), 40) === likes &&
+          clean(unwrap(storeMetrics.comments) || unwrap(storeMetrics.commentCount), 40) === comments &&
+          clean(unwrap(storeMetrics.collects) || unwrap(storeMetrics.collectedCount), 40) === collects &&
+          clean(unwrap(storeMetrics.shares) || unwrap(storeMetrics.shareCount), 40) === shares;
+      });
+    };
+    const piniaReady = noteStores.some(matchesStore);
+    const normalized = piniaReady && title && body && author && authorId && profileUrl && likes && comments && collects && shares && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 2000), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: { likes, comments, collects, shares }, source_status: "located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
       : `
     const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);
@@ -676,7 +694,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, normalized };`}
   })()`;
   if (siteId === "boss") return `(() => {
-    const text = (document.body?.innerText || "").slice(0, 2000);
+    const text = document.body?.innerText || "";
     const challenge = /验证码|安全验证|访问异常|captcha|verify/i.test(text) || Boolean(document.querySelector('[class*="captcha"], [class*="verify"]'));
     const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/web/user/') || Boolean(document.querySelector('.login-dialog, [class*="login"] form'));
     const app = document.querySelector('#wrap, #app, .job-search-wrapper');

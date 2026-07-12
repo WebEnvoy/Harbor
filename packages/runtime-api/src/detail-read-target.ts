@@ -14,11 +14,16 @@ interface DetailReadTargetRecord {
 }
 
 const DETAIL_REF_TTL_MS = 10 * 60 * 1000;
+const DETAIL_REF_TOMBSTONE_LIMIT = 4096;
+
+interface DetailReadTombstone {
+  failure: "detail_ref_expired" | "detail_ref_consumed";
+  expires_at: number;
+}
 
 export class DetailReadTargetStore {
   private readonly records = new Map<string, DetailReadTargetRecord>();
-  private readonly consumedRefs = new Set<string>();
-  private readonly expiredRefs = new Set<string>();
+  private readonly tombstones = new Map<string, DetailReadTombstone>();
 
   register(input: {
     runtime_session_ref: string;
@@ -27,6 +32,8 @@ export class DetailReadTargetStore {
     targets: readonly LocalProviderReadProbeDetailTarget[];
     now?: number;
   }): string[] {
+    const now = input.now ?? Date.now();
+    this.pruneTombstones(now);
     const detail_operation_id = input.search_operation_id === "xhs_search_notes" ? "xhs_read_note_detail" : "boss_read_job_detail";
     const refs: string[] = [];
     for (const target of input.targets.slice(0, 15)) {
@@ -38,11 +45,11 @@ export class DetailReadTargetStore {
         site_id: input.site_id,
         detail_operation_id,
         canonical_url: target.canonical_url,
-        expires_at: (input.now ?? Date.now()) + DETAIL_REF_TTL_MS,
+        expires_at: now + DETAIL_REF_TTL_MS,
         consumed: false
       });
       const expiry = setTimeout(() => {
-        if (this.records.delete(detail_ref)) this.expiredRefs.add(detail_ref);
+        if (this.records.delete(detail_ref)) this.addTombstone(detail_ref, "detail_ref_expired", Date.now());
       }, DETAIL_REF_TTL_MS);
       expiry.unref();
       refs.push(detail_ref);
@@ -57,20 +64,48 @@ export class DetailReadTargetStore {
     operation_id: AllowlistedReadOperationId;
     now?: number;
   }): DetailReadTargetRecord | DetailReadFailureClass {
+    const now = input.now ?? Date.now();
+    this.pruneTombstones(now);
     if (!/^detail_ref_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.detail_ref)) return "detail_ref_invalid";
-    if (this.consumedRefs.has(input.detail_ref)) return "detail_ref_consumed";
-    if (this.expiredRefs.has(input.detail_ref)) return "detail_ref_expired";
+    const tombstone = this.tombstones.get(input.detail_ref);
+    if (tombstone) return tombstone.failure;
     const record = this.records.get(input.detail_ref);
     if (!record) return "detail_ref_missing";
-    if (record.expires_at <= (input.now ?? Date.now())) {
+    if (record.expires_at <= now) {
       this.records.delete(input.detail_ref);
-      this.expiredRefs.add(input.detail_ref);
+      this.addTombstone(input.detail_ref, "detail_ref_expired", now);
       return "detail_ref_expired";
     }
     if (record.runtime_session_ref !== input.runtime_session_ref || record.site_id !== input.site_id || record.detail_operation_id !== input.operation_id) return "detail_ref_binding_mismatch";
     this.records.delete(input.detail_ref);
-    this.consumedRefs.add(input.detail_ref);
+    this.addTombstone(input.detail_ref, "detail_ref_consumed", now);
     return { ...record, consumed: true };
+  }
+
+  clearSession(runtimeSessionRef: string, now = Date.now()): void {
+    this.pruneTombstones(now);
+    for (const [detailRef, record] of this.records) {
+      if (record.runtime_session_ref !== runtimeSessionRef) continue;
+      this.records.delete(detailRef);
+      this.addTombstone(detailRef, "detail_ref_expired", now);
+    }
+  }
+
+  private addTombstone(detailRef: string, failure: DetailReadTombstone["failure"], now: number): void {
+    this.tombstones.delete(detailRef);
+    this.tombstones.set(detailRef, { failure, expires_at: now + DETAIL_REF_TTL_MS });
+    while (this.tombstones.size > DETAIL_REF_TOMBSTONE_LIMIT) {
+      const oldest = this.tombstones.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.tombstones.delete(oldest);
+    }
+  }
+
+  private pruneTombstones(now: number): void {
+    for (const [detailRef, tombstone] of this.tombstones) {
+      if (tombstone.expires_at > now) continue;
+      this.tombstones.delete(detailRef);
+    }
   }
 }
 

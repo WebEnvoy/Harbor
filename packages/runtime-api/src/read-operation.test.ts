@@ -33,6 +33,8 @@ test("pins detail admission and completion to merged Lode #268 truth", () => {
   assert.equal(boss.entry.package_ref, "lode://site-capability/boss/read-job-detail@0.1.1");
   assert.equal(boss.entry.lock_ref, "lode://lock/site-capability/boss/read-job-detail@0.1.1");
   assert.equal(boss.entry.version, "0.1.1");
+  assert.deepEqual(boss.entry.required_source_ref_kinds, ["wapi_job_detail_summary", "dom_snapshot_summary"]);
+  assert.deepEqual(boss.entry.required_evidence_ref_kinds, ["snapshot_ref"]);
 });
 
 test("admits only the two pinned read-only operation identities", () => {
@@ -163,7 +165,15 @@ test("observes BOSS SPA, login wall, and challenge state without returning page 
 
 test("observes XHS detail Vue and note Pinia readiness without returning store contents", () => {
   const evaluate = new Function("window", "document", "location", `return ${readProbeExpression("xiaohongshu", "", undefined, "xhs_read_note_detail")}`);
-  const pinia = { _s: new Map([["noteDetail", { private: "must-not-return" }]]) };
+  const piniaNote = {
+    note_id: "0123456789abcdef01234567",
+    title: "公开标题",
+    body_summary: "公开正文摘要",
+    author: { display_name: "公开作者", author_id: "author_123" },
+    interaction_metrics: { likes: "10", comments: "2", collects: "3", shares: "1" },
+    private: "must-not-return"
+  };
+  const pinia = { _s: new Map([["noteDetail", { $state: { currentNote: piniaNote } }]]) };
   const app = { __vue_app__: { config: { globalProperties: { $pinia: pinia } } } };
   const document = {
     readyState: "complete",
@@ -197,6 +207,33 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   const withoutNoteStore = evaluate({ __PINIA__: { _s: new Map([["search", {}]]) } }, { ...document, querySelector: (selector: string) => selector === "#app" ? { __vue_app__: { config: { globalProperties: {} } } } : document.querySelector(selector) }, location);
   assert.equal(withoutNoteStore.vue_ready, true);
   assert.equal(withoutNoteStore.pinia_ready, false);
+
+  const mismatchedStore = { _s: new Map([["noteDetail", { $state: { currentNote: { ...piniaNote, note_id: "fedcba987654321001234567" } } }]]) };
+  const mismatchedApp = { __vue_app__: { config: { globalProperties: { $pinia: mismatchedStore } } } };
+  const mismatched = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? mismatchedApp : document.querySelector(selector) }, location);
+  assert.equal(mismatched.pinia_ready, false);
+  assert.equal(mismatched.normalized, undefined);
+
+  const dummyStore = { _s: new Map([["noteDetail", { $state: { currentNote: { ...piniaNote, title: "注入标题" } } }]]) };
+  const dummyApp = { __vue_app__: { config: { globalProperties: { $pinia: dummyStore } } } };
+  const dummy = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? dummyApp : document.querySelector(selector) }, location);
+  assert.equal(dummy.pinia_ready, false);
+  assert.equal(dummy.normalized, undefined);
+});
+
+test("detects late challenge and login overlays for both detail sites", () => {
+  const lateChallenge = `${"公开内容".repeat(1000)}访问异常，请完成安全验证`;
+  const lateLogin = `${"公开内容".repeat(1000)}扫码登录`;
+  const xhsEvaluate = new Function("window", "document", "location", `return ${readProbeExpression("xiaohongshu", "", undefined, "xhs_read_note_detail")}`);
+  const bossEvaluate = new Function("document", "location", `return ${readProbeExpression("boss", "", undefined, "boss_read_job_detail")}`);
+  const document = { readyState: "complete", body: { innerText: lateChallenge }, querySelector: () => null };
+  assert.equal(xhsEvaluate({}, document, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).challenge_like, true);
+  assert.equal(bossEvaluate(document, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
+  assert.equal(xhsEvaluate({}, { ...document, body: { innerText: lateLogin } }, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).login_like, true);
+  assert.equal(bossEvaluate({ ...document, body: { innerText: lateLogin } }, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).login_like, true);
+  const overlayDocument = { ...document, body: { innerText: "公开详情" }, querySelector: (selector: string) => selector.includes("captcha") ? {} : null };
+  assert.equal(xhsEvaluate({}, overlayDocument, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).challenge_like, true);
+  assert.equal(bossEvaluate(overlayDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
 });
 
 test("does not construct post-check provenance from missing or arbitrary source labels", () => {
@@ -277,7 +314,7 @@ test("completes XHS detail only with bounded public fields and all Lode source r
   const admitted = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: opaqueRef("detail_ref") });
   if (typeof admitted === "string") throw new Error("XHS detail admission unexpectedly failed.");
   const store = new ReadOperationObservationStore();
-  const sources = ["pinia_store_summary", "network_summary", "dom_snapshot_summary"].map((kind) => ({ kind, ref: opaqueRef("source") }));
+  const sources = ["pinia_store_summary", "network_summary"].map((kind) => ({ kind, ref: opaqueRef("source") }));
   const publicSummary = {
     schema_version: "harbor-read-operation-public-summary/v0" as const,
     operation_id: "xhs_read_note_detail" as const,
@@ -298,7 +335,7 @@ test("completes XHS detail only with bounded public fields and all Lode source r
         kind: "xhs_note_detail_ref" as const,
         note_id: "0123456789abcdef01234567",
         url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
-        field_sources: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]
+        field_sources: ["pinia_store_summary", "network_summary"]
       },
       source_status: "located" as const
     },
@@ -322,7 +359,10 @@ test("completes XHS detail only with bounded public fields and all Lode source r
   assert.equal(completed.public_summary.normalized?.kind, "xiaohongshu_note_detail");
   assert.equal(completed.public_summary.normalized?.kind === "xiaohongshu_note_detail" && completed.public_summary.normalized.note_id, "0123456789abcdef01234567");
   assert.equal(completed.public_summary.normalized?.kind === "xiaohongshu_note_detail" && completed.public_summary.normalized.source_citation.kind, "xhs_note_detail_ref");
-  assert.deepEqual(completed.source_refs.map((entry) => entry.kind), ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]);
+  assert.deepEqual(completed.source_refs.map((entry) => entry.kind), ["pinia_store_summary", "network_summary"]);
+  assert.deepEqual(completed.evidence_ref_kinds.map((entry) => entry.kind), ["snapshot_ref"]);
+  assert.deepEqual(store.get(proof.post_check_ref)?.post_check?.source_refs, proof.source_refs);
+  assert.deepEqual(store.get(proof.post_check_ref)?.post_check?.evidence_refs, proof.evidence_refs);
   assert.equal(JSON.stringify(completed).includes("xsec_token"), false);
   assert.equal(store.complete(admitted.entry, {
     ...proof,
@@ -433,7 +473,7 @@ test("validates both detail surfaces against the exact search-bound target", () 
   };
   const xhsCompleted = validateReadOperationProbe(xhsInput, ready);
   assert.equal(xhsCompleted.status, "completed");
-  if (xhsCompleted.status === "completed") assert.deepEqual(xhsCompleted.source_kinds, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]);
+  if (xhsCompleted.status === "completed") assert.deepEqual(xhsCompleted.source_kinds, ["pinia_store_summary", "network_summary"]);
   if (xhsCompleted.status === "completed") assert.equal(xhsCompleted.public_summary.normalized?.canonical_url.includes("xsec"), false);
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pinia_ready: false })), "page_not_ready");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, vue_ready: false })), "page_not_ready");
@@ -468,7 +508,7 @@ test("validates both detail surfaces against the exact search-bound target", () 
     }
   });
   assert.equal(bossCompleted.status, "completed");
-  if (bossCompleted.status === "completed") assert.deepEqual(bossCompleted.source_kinds, ["network_summary"]);
+  if (bossCompleted.status === "completed") assert.deepEqual(bossCompleted.source_kinds, ["wapi_job_detail_summary", "dom_snapshot_summary"]);
   assert.equal(failureClass(validateReadOperationProbe(bossInput, {
     ...ready,
     origin: "https://www.zhipin.com",

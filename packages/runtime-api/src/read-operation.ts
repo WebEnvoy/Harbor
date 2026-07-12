@@ -302,8 +302,8 @@ const PINNED_READ_OPERATIONS: readonly PinnedReadOperation[] = [
   }
 ];
 
-// HARBOR-252 freezes this provisional consumer boundary while Lode #268 remains
-// open. It is intentionally separate from the immutable Lode #262 search pin.
+// HARBOR-252 keeps the merged Lode #268 detail contract separate from the
+// immutable Lode #262 search pin.
 const DETAIL_READ_OPERATIONS: readonly PinnedReadOperation[] = [
   {
     site_id: "xiaohongshu",
@@ -319,8 +319,8 @@ const DETAIL_READ_OPERATIONS: readonly PinnedReadOperation[] = [
     required_harbor_fact_keys: ["identity.user_logged_in.confirmed", "page.note_detail.ready", "safety.challenge.absent"],
     failure_mapping_id: "xiaohongshu.read-note-detail.failure-mapping",
     required_failure_classes: ["not_logged_in", "safety_challenge", "page_not_ready", "site_changed", "empty_result"],
-    required_source_ref_kinds: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"],
-    required_evidence_ref_kinds: ["snapshot_ref", "post_check_ref"],
+    required_source_ref_kinds: ["pinia_store_summary", "network_summary"],
+    required_evidence_ref_kinds: ["snapshot_ref"],
     post_check_id: "xiaohongshu.read-note-detail.post-check",
     required_post_check_fields: ["status", "reason", "source_refs", "evidence_refs"]
   },
@@ -338,8 +338,8 @@ const DETAIL_READ_OPERATIONS: readonly PinnedReadOperation[] = [
     required_harbor_fact_keys: ["identity.boss_geek_logged_in.confirmed", "page.job_detail.ready", "safety.challenge.absent"],
     failure_mapping_id: "boss.read-job-detail.failure-mapping",
     required_failure_classes: ["not_logged_in", "safety_challenge", "page_not_ready", "site_changed", "empty_result"],
-    required_source_ref_kinds: ["network_summary"],
-    required_evidence_ref_kinds: ["snapshot_ref", "network_summary_ref", "post_check_ref"],
+    required_source_ref_kinds: ["wapi_job_detail_summary", "dom_snapshot_summary"],
+    required_evidence_ref_kinds: ["snapshot_ref"],
     post_check_id: "boss.read-job-detail.post-check",
     required_post_check_fields: ["status", "reason", "source_refs", "evidence_refs"]
   }
@@ -447,8 +447,8 @@ export class ReadOperationObservationStore {
     if (input.observed_origin !== input.entry.allowed_origin) return "origin_drift";
     if (!isExpectedPublicSummary(input.entry, input.public_summary)) return "public_summary_missing";
     if (!hasRequiredObservedRefs(input.source_refs, input.entry.required_source_ref_kinds)) return "source_refs_missing";
-    const requiredEvidenceKinds = input.entry.required_evidence_ref_kinds.filter((kind) => kind !== "post_check_ref");
-    if (!hasRequiredObservedRefs(input.evidence_ref_kinds, requiredEvidenceKinds)) return "evidence_refs_missing";
+    const observedEvidenceKinds = input.entry.required_evidence_ref_kinds.filter((kind) => kind !== "post_check_ref");
+    if (!hasRequiredObservedRefs(input.evidence_ref_kinds, observedEvidenceKinds)) return "evidence_refs_missing";
     if (!input.source_refs.some((source) => source.ref === input.public_summary_source_ref)) return "public_summary_missing";
 
     const source_refs = [...input.source_refs];
@@ -479,8 +479,9 @@ export class ReadOperationObservationStore {
       }
     });
     this.records.set(post_check_ref, postCheck);
-    evidence_ref_kinds.push({ kind: "post_check_ref", ref: post_check_ref });
-    if (!input.entry.required_evidence_ref_kinds.every((kind) => evidence_ref_kinds.some((ref) => ref.kind === kind))) return "evidence_refs_missing";
+    if (input.entry.required_evidence_ref_kinds.includes("post_check_ref")) {
+      evidence_ref_kinds.push({ kind: "post_check_ref", ref: post_check_ref });
+    }
     return {
       operation_ref: input.operation_ref,
       runtime_session_ref: input.runtime_session_ref,
@@ -717,11 +718,11 @@ export function validateDetailTruthPin(): ReadOperationFailureClass | null {
   const xhs = DETAIL_READ_OPERATIONS.find((entry) => entry.operation_id === "xhs_read_note_detail");
   const boss = DETAIL_READ_OPERATIONS.find((entry) => entry.operation_id === "boss_read_job_detail");
   return xhs && boss &&
-    sameStrings(xhs.required_source_ref_kinds, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]) &&
-    sameStrings(xhs.required_evidence_ref_kinds, ["snapshot_ref", "post_check_ref"]) &&
+    sameStrings(xhs.required_source_ref_kinds, ["pinia_store_summary", "network_summary"]) &&
+    sameStrings(xhs.required_evidence_ref_kinds, ["snapshot_ref"]) &&
     boss.package_ref === "lode://site-capability/boss/read-job-detail@0.1.1" && boss.lock_ref === "lode://lock/site-capability/boss/read-job-detail@0.1.1" && boss.version === "0.1.1" &&
-    sameStrings(boss.required_source_ref_kinds, ["network_summary"]) &&
-    sameStrings(boss.required_evidence_ref_kinds, ["snapshot_ref", "network_summary_ref", "post_check_ref"])
+    sameStrings(boss.required_source_ref_kinds, ["wapi_job_detail_summary", "dom_snapshot_summary"]) &&
+    sameStrings(boss.required_evidence_ref_kinds, ["snapshot_ref"])
     ? null : "allowlist_pin_invalid";
 }
 
@@ -807,7 +808,7 @@ function validXhsDetailSummary(value: LocalProviderReadProbePublicSummary["norma
     value.author.profile_url === `https://www.xiaohongshu.com/user/profile/${value.author.author_id}` &&
     Object.values(value.interaction_metrics).every((entry) => validBoundedText(entry, 40)) &&
     value.source_citation.kind === "xhs_note_detail_ref" && value.source_citation.note_id === value.note_id && value.source_citation.url === value.canonical_url &&
-    validFieldSources(value.source_citation.field_sources, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]) &&
+    validFieldSources(value.source_citation.field_sources, ["pinia_store_summary", "network_summary"]) &&
     (value.source_status === "located" || value.source_status === "partially_located");
 }
 
@@ -818,7 +819,7 @@ function validBossDetailSummary(value: LocalProviderReadProbePublicSummary["norm
     validBoundedText(value.job.description, 4000) && validBoundedText(value.job.status, 100) && validOptionalText(value.job.salary, 100) && validOptionalText(value.job.location, 100) &&
     validBoundedText(value.company.name, 200) && validBoundedText(value.recruiter.name, 100) && validBoundedText(value.recruiter.title, 100) &&
     value.source_citation.kind === "boss_job_detail_ref" && value.source_citation.detail_ref === value.detail_ref && value.source_citation.url === value.canonical_url &&
-    validFieldSources(value.source_citation.field_sources, ["network_summary", "dom_snapshot_summary"]) &&
+    validFieldSources(value.source_citation.field_sources, ["wapi_job_detail_summary", "dom_snapshot_summary"]) &&
     (value.source_status === "located" || value.source_status === "partially_located");
 }
 
