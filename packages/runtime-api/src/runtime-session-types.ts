@@ -176,6 +176,7 @@ export interface LocalProviderReadProbeInput {
 export interface LocalProviderSiteResourceProbeInput {
   site_id: "boss";
   task_kind: "job_search" | "boss_job_search";
+  signal?: AbortSignal;
 }
 
 export type LocalProviderSiteResourceProbeResult =

@@ -773,7 +773,7 @@ export class HarborRuntime {
     return this.getWritePrecheckFacts(runtime_session_ref, input);
   }
 
-  async getSiteResourceFacts(runtime_session_ref: string, input: SiteResourceFactsInput = {}): Promise<SiteResourceFacts | SiteResourceFactsUnavailable> {
+  async getSiteResourceFacts(runtime_session_ref: string, input: SiteResourceFactsInput = {}, signal?: AbortSignal): Promise<SiteResourceFacts | SiteResourceFactsUnavailable> {
     const record = this.runtimeSessions.getRecord(runtime_session_ref);
     if (!record) return missingSiteRuntimeSession(runtime_session_ref, input);
     const capture = this.captureSnapshot(runtime_session_ref, {
@@ -786,7 +786,7 @@ export class HarborRuntime {
     });
     const taskKind = input.task_kind?.trim().toLowerCase().replace(/-/g, "_") ?? (input.site_id === "boss" ? "job_search" : undefined);
     const siteProbe = input.site_id === "boss" && (taskKind === "job_search" || taskKind === "boss_job_search")
-      ? await this.runtimeSessions.probeSiteResource(runtime_session_ref, { site_id: "boss", task_kind: taskKind })
+      ? await this.runtimeSessions.probeSiteResource(runtime_session_ref, { site_id: "boss", task_kind: taskKind, signal })
       : undefined;
     return createSiteResourceFacts(record.facts, input, capture, siteProbe);
   }

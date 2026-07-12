@@ -217,6 +217,43 @@ test("maps trusted BOSS login and challenge probes to blocking admission facts",
   }
 });
 
+test("aborts the BOSS site-resource probe when the HTTP client disconnects", async () => {
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => { markStarted = resolve; });
+  let markAborted!: () => void;
+  const aborted = new Promise<void>((resolve) => { markAborted = resolve; });
+  let backgroundCompleted = false;
+  const siteProbe = trustLocalProviderSiteResourceProbe((input) => new Promise((resolve) => {
+    markStarted();
+    const timer = setTimeout(() => {
+      backgroundCompleted = true;
+      resolve({ status: "unknown", failure_class: "provider_probe_unavailable", message: "unexpected background completion" });
+    }, 500);
+    input.signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      markAborted();
+      resolve({ status: "unknown", failure_class: "provider_probe_unavailable", message: "client disconnected" });
+    }, { once: true });
+  }));
+  const readProbe = trustLocalProviderReadProbe(async (probe) => completedBossReadProbe(probe));
+  const runtime = new HarborRuntime(createBossReadLauncher(readProbe, siteProbe));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    const session = await runtime.createSession({ url: "https://www.zhipin.com/web/geek/job" });
+    const target = new URL(`${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=boss&task_kind=job_search`);
+    const request = httpRequest({ hostname: target.hostname, port: Number(target.port), path: `${target.pathname}${target.search}`, method: "GET" });
+    request.on("error", () => undefined);
+    request.end();
+    await started;
+    request.destroy();
+    await Promise.race([aborted, new Promise((_, reject) => setTimeout(() => reject(new Error("Client disconnect did not abort site-resource probe.")), 250))]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(backgroundCompleted, false);
+  } finally {
+    await running.close();
+  }
+});
+
 test("returns canonical public 404 session owner responses", async () => {
   const missingRuntime = new HarborRuntime(createFixtureLauncher("ready"));
   const missingServer = await startHarborRuntimeServer({ port: 0, runtime: missingRuntime });

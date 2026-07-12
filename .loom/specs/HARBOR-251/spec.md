@@ -24,7 +24,8 @@ Origin/path/query drift, missing authentication or session authority, challenges
 - AC-002: plural/other paths, non-HTTPS origins, cross-origin targets, cross-query/city targets, login walls, challenges, unready SPA surfaces, and non-exact WAPI responses fail closed.
 - AC-003: completion requires WAPI HTTP 2xx, business `code === 0`, and a non-empty job object list; output remains a bounded public query/city/code/count summary plus refs only.
 - AC-004: no XHS behavior or shared session/auth boundary is rewritten.
-- AC-005: ready SPA passes; login, challenge, blank, unrendered, and unprobeable pages remain blocked, unavailable, or unknown without raw DOM/network/Cookie/token/profile output.
+- AC-005: only a Vue-owned canonical root containing a nonempty bounded set of structurally valid public job cards passes; injected/empty/unrelated nodes, login, challenge, blank, unrendered, and unprobeable pages remain blocked, unavailable, or unknown without raw DOM/network/Cookie/token/profile output.
+- AC-006: one bounded deadline and propagated client-disconnect signal cover page-list fetch, WebSocket connection, and CDP commands; no probe continues after the caller disconnects.
 
 ## Non-Goals
 

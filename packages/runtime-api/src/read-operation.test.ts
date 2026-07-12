@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import test from "node:test";
 import {
   admitAllowlistedReadOperation,
@@ -8,7 +9,7 @@ import {
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
-import { readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe } from "./local-provider-launcher.js";
+import { probeProviderSiteResource, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe } from "./local-provider-launcher.js";
 
 test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
@@ -81,6 +82,9 @@ test("accepts only a rendered canonical BOSS SPA surface for pre-admission", () 
     pathname: "/web/geek/job",
     ready: true,
     rendered_surface: true,
+    vue_owned: true,
+    job_card_count: 1,
+    job_cards_valid: true,
     login_like: false,
     challenge_like: false
   });
@@ -146,23 +150,89 @@ test("correlates the official Vue Pinia search store without exposing store cont
 test("observes BOSS SPA, login wall, and challenge state without returning page text", () => {
   const evaluate = new Function("document", "location", `return ${readProbeExpression("boss", "AI", "101010100")}`);
   const location = { origin: "https://www.zhipin.com", pathname: "/web/geek/job", search: "?query=AI&city=101010100" };
-  const document = {
-    readyState: "complete",
-    body: { innerText: "公开职位列表" },
-    querySelector: (selector: string) => selector.includes("#wrap") || selector.includes(".job-list-box") ? {} : null
-  };
+  const document = bossSpaDocument();
   assert.deepEqual(evaluate(document, location), {
     origin: location.origin,
     pathname: location.pathname,
     search: location.search,
     ready: true,
     rendered_surface: true,
+    vue_owned: true,
+    job_card_count: 1,
+    job_cards_valid: true,
     login_like: false,
     challenge_like: false
   });
-  assert.equal(evaluate({ ...document, body: { innerText: "扫码登录" } }, location).login_like, true);
-  assert.equal(evaluate({ ...document, body: { innerText: "访问异常，请完成安全验证" } }, location).challenge_like, true);
+  assert.equal(evaluate(bossSpaDocument({ text: `${"公开职位 ".repeat(400)}访问异常，请完成安全验证` }), location).challenge_like, true);
+  assert.equal(evaluate(bossSpaDocument({ loginOverlay: true }), location).login_like, true);
+  assert.equal(evaluate(bossSpaDocument({ challengeOverlay: true }), location).challenge_like, true);
+  assert.equal(evaluate(bossSpaDocument({ vueOwned: false }), location).rendered_surface, false);
+  assert.equal(evaluate(bossSpaDocument({ fakeVueState: true }), location).rendered_surface, false);
+  assert.equal(evaluate(bossSpaDocument({ rootOwnsList: false }), location).rendered_surface, false);
+  assert.equal(evaluate(bossSpaDocument({ cards: [] }), location).rendered_surface, false);
+  assert.equal(evaluate(bossSpaDocument({ validCard: false }), location).rendered_surface, false);
+  assert.equal(JSON.stringify(evaluate(bossSpaDocument({ text: "private-marker" }), location)).includes("private-marker"), false);
 });
+
+test("bounds the entire BOSS site-resource probe when the CDP page list never responds", async () => {
+  const server = createServer(() => undefined);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Test server did not expose a TCP port.");
+  const startedAt = Date.now();
+  try {
+    const result = await probeProviderSiteResource(String(address.port), "https://www.zhipin.com/web/geek/job", {
+      site_id: "boss",
+      task_kind: "job_search"
+    }, 50);
+    assert.equal(result.status, "unknown");
+    assert.equal("failure_class" in result ? result.failure_class : null, "provider_probe_unavailable");
+    assert(Date.now() - startedAt < 500, "site-resource deadline should abort a never-responding /json/list request");
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+function bossSpaDocument(options: {
+  text?: string;
+  vueOwned?: boolean;
+  fakeVueState?: boolean;
+  rootOwnsList?: boolean;
+  cards?: unknown[];
+  validCard?: boolean;
+  loginOverlay?: boolean;
+  challengeOverlay?: boolean;
+} = {}) {
+  const card = {
+    querySelector(selector: string) {
+      if (selector.includes("job-name")) return { textContent: options.validCard === false ? "" : "AI 产品经理" };
+      if (selector.includes("company-name")) return { textContent: "示例科技" };
+      if (selector.startsWith("a[")) return options.validCard === false ? null : { getAttribute: () => "/job_detail/example.html" };
+      return null;
+    }
+  };
+  const cards = (options.cards ?? [card]) as typeof card[];
+  const list = {
+    querySelectorAll: () => cards,
+    contains: (candidate: unknown) => cards.includes(candidate as typeof card)
+  };
+  const root = {
+    ...(options.vueOwned === false ? {} : options.fakeVueState ? { __vue_app__: {} } : { __vue_app__: { version: "3", config: { globalProperties: {} } } }),
+    querySelector: () => list,
+    contains: (candidate: unknown) => options.rootOwnsList !== false && candidate === list
+  };
+  return {
+    readyState: "complete",
+    body: { innerText: options.text ?? "公开职位列表" },
+    querySelector(selector: string) {
+      if (selector.includes("captcha") || selector.includes("security-check")) return options.challengeOverlay ? {} : null;
+      if (selector.includes("login-dialog")) return options.loginOverlay ? {} : null;
+      if (selector === "#wrap, #app") return root;
+      return null;
+    }
+  };
+}
 
 test("does not construct post-check provenance from missing or arbitrary source labels", () => {
   const admitted = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", city_code: "101010100" });

@@ -219,7 +219,17 @@ async function routeSession(
   }
   if (action === "site-resource-facts" && method === "GET") {
     const requestUrl = new URL(request.url ?? "/", "http://harbor.local");
-    writeJson(response, 200, await runtime.getSiteResourceFacts(runtimeSessionRef, siteResourceFactsInput(requestUrl)));
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    request.once("aborted", abort);
+    response.once("close", abort);
+    try {
+      const facts = await runtime.getSiteResourceFacts(runtimeSessionRef, siteResourceFactsInput(requestUrl), controller.signal);
+      if (!response.destroyed) writeJson(response, 200, facts);
+    } finally {
+      request.removeListener("aborted", abort);
+      response.removeListener("close", abort);
+    }
     return;
   }
   if (action === "write-precheck-facts" && method === "POST") {
