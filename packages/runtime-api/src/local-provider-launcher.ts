@@ -10,6 +10,7 @@ import {
   type IdentityEnvironmentProviderBinding
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
+import { publicReadOperationTargetUrl } from "./read-operation.js";
 import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe } from "./read-operation-probe-trust.js";
 import type {
   BossJobDetailPublicSummary,
@@ -376,8 +377,30 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           requestId && isOperationReadNetworkUrl(input, response?.url)
         ) operationResponse = { requestId, status, url: response!.url as string };
       });
-      navigationStarted = true;
-      await client.send("Page.navigate", { url: input.target_url });
+      if (input.operation_id === "xhs_read_note_detail" && input.navigation_source_url) {
+        await client.send("Page.navigate", { url: input.navigation_source_url });
+        let clickPoint: { x: number; y: number } | undefined;
+        for (let attempt = 0; attempt < 20 && !clickPoint; attempt++) {
+          const evaluated = await client.send("Runtime.evaluate", {
+            expression: xhsDetailClickPointExpression(input.target_url),
+            returnByValue: true
+          });
+          clickPoint = (evaluated.result as { value?: { x?: unknown; y?: unknown } } | undefined)?.value as { x: number; y: number } | undefined;
+          if (!Number.isFinite(clickPoint?.x) || !Number.isFinite(clickPoint?.y)) clickPoint = undefined;
+          if (!clickPoint) await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        if (!clickPoint) {
+          stopObservingNetwork();
+          stopIntercepting();
+          return null;
+        }
+        navigationStarted = true;
+        await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: clickPoint.x, y: clickPoint.y, button: "left", clickCount: 1 });
+        await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: clickPoint.x, y: clickPoint.y, button: "left", clickCount: 1 });
+      } else {
+        navigationStarted = true;
+        await client.send("Page.navigate", { url: input.target_url });
+      }
       for (let attempt = 0; attempt < 20; attempt++) {
         if (blockedRedirect) {
           stopObservingNetwork();
@@ -412,6 +435,18 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           return { validation: validateReadOperationProbe(input, value) };
         }
         if (value?.origin && value.ready && observedResponse !== null && (input.operation_id !== "boss_read_job_detail" || observedBossDetailResponse !== null)) {
+          if (input.operation_id === "xhs_read_note_detail") {
+            const targetId = new URL(input.target_url).pathname.split("/").filter(Boolean).at(-1) ?? "";
+            const matchesTarget = await xhsDetailResponseMatchesTarget(client, observedResponse.requestId, targetId);
+            if (matchesTarget === null) {
+              await new Promise((resolve) => setTimeout(resolve, 250));
+              continue;
+            }
+            if (!matchesTarget) {
+              operationResponse = null;
+              continue;
+            }
+          }
           stopObservingNetwork();
           stopIntercepting();
           const bossResponse = input.operation_id === "boss_job_search"
@@ -442,7 +477,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       stopIntercepting();
       return null;
     }).finally(() => closeProviderPage(port, page.id!));
-    const pageFacts = readOperationPageFacts(input.target_url);
+    const pageFacts = readOperationPageFacts(input.operation_id, input.target_url);
     if (!observation) return probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts);
     if (observation.blocked_redirect) return probeUnavailable("origin_drift", "A cross-origin document redirect was blocked before navigation.", false, pageFacts);
     if (observation.evidence_missing) return probeUnavailable("evidence_refs_missing", "The local provider could not capture required refs-only evidence.", true, pageFacts);
@@ -464,7 +499,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       evidence_ref_kinds,
       public_summary_source_ref: source_refs.find((source) => source.kind === "network_summary" || source.kind === "wapi_job_detail_summary")?.ref ?? source_refs[0]!.ref,
       public_summary: validation.public_summary,
-      detail_targets: validation.detail_urls?.map((canonical_url) => ({ canonical_url }))
+      detail_targets: validation.detail_urls?.map((canonical_url) => ({ canonical_url, source_url: input.target_url }))
     };
   } catch (cause) {
     return probeUnavailable(
@@ -662,7 +697,10 @@ function validXhsSearchTargets(values: readonly string[]): boolean {
   return values.every((value) => {
     try {
       const url = new URL(value);
-      return url.origin === "https://www.xiaohongshu.com" && !url.username && !url.password && !url.search && !url.hash && /^\/explore\/[a-f0-9]{24}$/i.test(url.pathname);
+      return url.origin === "https://www.xiaohongshu.com" && !url.username && !url.password && !url.hash &&
+        /^\/explore\/[a-f0-9]{24}$/i.test(url.pathname) &&
+        [...url.searchParams.keys()].every((key) => key === "xsec_token" || key === "xsec_source") &&
+        url.searchParams.getAll("xsec_token").length <= 1 && url.searchParams.getAll("xsec_source").length <= 1;
     } catch {
       return false;
     }
@@ -762,18 +800,22 @@ function sameBossDetailSummary(value: LocalProviderDetailPublicSummary, source: 
 export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id"], query: string, cityCode?: string, operationId?: LocalProviderReadProbeInput["operation_id"]): string {
   if (operationId === "xhs_read_note_detail" || operationId === "boss_read_job_detail") return `(() => {
     const text = document.body?.innerText || "";
-    const clean = (value, max) => typeof value === "string" ? value.replace(/\\s+/g, " ").trim().slice(0, max) : "";
+    const clean = (value, max) => typeof value === "string" || typeof value === "number" ? String(value).replace(/\\s+/g, " ").trim().slice(0, max) : "";
     const pick = (selectors, max) => clean(document.querySelector(selectors)?.textContent, max);
-    const challengeSurface = typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]')).some((element) => {
+    const visibleSurface = (selectors) => typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll(selectors)).some((element) => {
       const view = document.defaultView;
       if (!view) return false;
+      if (typeof element.checkVisibility === 'function' && !element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
       const style = view.getComputedStyle(element);
       const rect = element.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 &&
         rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < view.innerHeight && rect.left < view.innerWidth;
     });
+    const challengeSurface = visibleSurface('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]');
     const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge|security check|verification required|complete verification/i.test(text) || challengeSurface;
-    const login = /登录后|扫码登录|手机号登录/.test(text) || Boolean(document.querySelector('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
+    const login = ${operationId === "xhs_read_note_detail"
+      ? "location.pathname.startsWith('/login') || visibleSurface('.login-dialog, [class*=\"login\"] form, [class*=\"login\"] [class*=\"qrcode\"]')"
+      : "location.pathname.startsWith('/web/user/') || visibleSurface('.login-dialog, [class*=\"login\"] form, [class*=\"login\"] [class*=\"qrcode\"]')"};
     const canonicalUrl = location.origin + location.pathname;
     const rendered = ${operationId === "xhs_read_note_detail"
       ? "Boolean(document.querySelector('#detail-desc, .note-detail-mask, [class*=note-content], [class*=interaction-container]'))"
@@ -784,37 +826,32 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const pinia = window.__PINIA__ || window.__pinia || vue?.config?.globalProperties?.$pinia;
     const stores = pinia?._s;
     const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
-    const title = pick('.note-content .title, #detail-title, [class*="note-title"]', 200);
-    const body = pick('#detail-desc, .note-content .desc, [class*="note-desc"]', 4000);
-    const author = pick('.author-container .name, .author-wrapper .name, [class*="author"] [class*="name"]', 100);
-    const authorLink = document.querySelector('a[href^="/user/profile/"], a[href*="xiaohongshu.com/user/profile/"]');
-    const profilePath = authorLink ? new URL(authorLink.getAttribute('href'), location.origin).pathname : "";
-    const authorId = profilePath.startsWith('/user/profile/') ? profilePath.slice('/user/profile/'.length).split('/')[0] : "";
-    const profileUrl = authorId ? location.origin + '/user/profile/' + authorId : "";
-    const likes = pick('[class*="like"] [class*="count"], .like-wrapper .count', 40);
-    const comments = pick('[class*="comment"] [class*="count"], .comment-wrapper .count', 40);
-    const collects = pick('[class*="collect"] [class*="count"], .collect-wrapper .count', 40);
-    const shares = pick('[class*="share"] [class*="count"], .share-wrapper .count', 40);
     const noteId = location.pathname.split('/').filter(Boolean).at(-1) || "";
     const noteStores = stores instanceof Map ? Array.from(stores.entries()).filter(([key]) => /note|detail/i.test(String(key))) : [];
-    const matchesStore = ([, candidate]) => {
+    const storeDetails = noteStores.flatMap(([, candidate]) => {
       const state = unwrap(candidate?.$state) || candidate;
-      const details = [unwrap(state?.currentNote), unwrap(state?.noteDetail), unwrap(state?.detail), unwrap(state?.note), state].filter((value) => value && typeof value === "object");
-      return details.some((detail) => {
-        const storeAuthor = unwrap(detail.author) || unwrap(detail.user) || {};
-        const storeMetrics = unwrap(detail.interaction_metrics) || unwrap(detail.interactInfo) || unwrap(detail.metrics) || {};
-        return clean(unwrap(detail.note_id) || unwrap(detail.noteId) || unwrap(detail.id), 64) === noteId &&
-          clean(unwrap(detail.title), 200) === title && clean(unwrap(detail.body_summary) || unwrap(detail.desc) || unwrap(detail.description) || unwrap(detail.body), 4000) === body &&
-          clean(unwrap(storeAuthor.display_name) || unwrap(storeAuthor.nickname) || unwrap(storeAuthor.name), 100) === author &&
-          clean(unwrap(storeAuthor.author_id) || unwrap(storeAuthor.userId) || unwrap(storeAuthor.id), 100) === authorId &&
-          clean(unwrap(storeMetrics.likes) || unwrap(storeMetrics.likedCount), 40) === likes &&
-          clean(unwrap(storeMetrics.comments) || unwrap(storeMetrics.commentCount), 40) === comments &&
-          clean(unwrap(storeMetrics.collects) || unwrap(storeMetrics.collectedCount), 40) === collects &&
-          clean(unwrap(storeMetrics.shares) || unwrap(storeMetrics.shareCount), 40) === shares;
-      });
-    };
-    const piniaReady = noteStores.some(matchesStore);
-    const normalized = piniaReady && title && body && author && authorId && profileUrl && likes && comments && collects && shares && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 2000), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: { likes, comments, collects, shares }, source_status: "located" } : undefined;
+      const detailMap = unwrap(state?.noteDetailMap);
+      const mapped = detailMap instanceof Map ? detailMap.get(noteId) : detailMap?.[noteId];
+      return [unwrap(mapped?.note), unwrap(state?.currentNote), unwrap(state?.noteDetail), unwrap(state?.detail), unwrap(state?.note), state]
+        .filter((value) => value && typeof value === "object");
+    });
+    const storeDetail = storeDetails.find((detail) => clean(unwrap(detail.note_id) || unwrap(detail.noteId) || unwrap(detail.id), 64) === noteId);
+    const storeAuthor = unwrap(storeDetail?.author) || unwrap(storeDetail?.user) || {};
+    const storeMetrics = unwrap(storeDetail?.interaction_metrics) || unwrap(storeDetail?.interactInfo) || unwrap(storeDetail?.metrics) || {};
+    const domTitle = pick('.note-content .title, #detail-title, [class*="note-title"]', 200);
+    const title = clean(unwrap(storeDetail?.title), 200) || domTitle;
+    const body = clean(unwrap(storeDetail?.body_summary) || unwrap(storeDetail?.desc) || unwrap(storeDetail?.description) || unwrap(storeDetail?.body), 4000) || pick('#detail-desc, .note-content .desc, [class*="note-desc"]', 4000);
+    const author = clean(unwrap(storeAuthor.display_name) || unwrap(storeAuthor.nickname) || unwrap(storeAuthor.name), 100) || pick('.author-container .name, .author-wrapper .name, [class*="author"] [class*="name"]', 100);
+    const authorLink = document.querySelector('a[href^="/user/profile/"], a[href*="xiaohongshu.com/user/profile/"]');
+    const profilePath = authorLink ? new URL(authorLink.getAttribute('href'), location.origin).pathname : "";
+    const authorId = clean(unwrap(storeAuthor.author_id) || unwrap(storeAuthor.userId) || unwrap(storeAuthor.id), 100) || (profilePath.startsWith('/user/profile/') ? profilePath.slice('/user/profile/'.length).split('/')[0] : "");
+    const profileUrl = authorId ? location.origin + '/user/profile/' + authorId : "";
+    const likes = clean(unwrap(storeMetrics.likes) || unwrap(storeMetrics.likedCount), 40) || pick('[class*="like"] [class*="count"], .like-wrapper .count', 40);
+    const comments = clean(unwrap(storeMetrics.comments) || unwrap(storeMetrics.commentCount), 40) || pick('[class*="comment"] [class*="count"], .comment-wrapper .count', 40);
+    const collects = clean(unwrap(storeMetrics.collects) || unwrap(storeMetrics.collectedCount), 40) || pick('[class*="collect"] [class*="count"], .collect-wrapper .count', 40);
+    const shares = clean(unwrap(storeMetrics.shares) || unwrap(storeMetrics.shareCount), 40) || pick('[class*="share"] [class*="count"], .share-wrapper .count', 40);
+    const piniaReady = Boolean(storeDetail) && Boolean(title && body && author && authorId && likes && comments && collects && shares) && (!domTitle || domTitle === title);
+    const normalized = piniaReady && title && body && author && authorId && profileUrl && likes && comments && collects && shares && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 500), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: { likes, comments, collects, shares }, source_status: "located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
       : `
     const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);
@@ -830,16 +867,18 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
   })()`;
   if (siteId === "boss") return `(() => {
     const text = document.body?.innerText || "";
-    const challengeSurface = Array.from(document.querySelectorAll('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]')).some((element) => {
+    const visibleSurface = (selectors) => Array.from(document.querySelectorAll(selectors)).some((element) => {
       const view = document.defaultView;
       if (!view) return false;
+      if (typeof element.checkVisibility === 'function' && !element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
       const style = view.getComputedStyle(element);
       const rect = element.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 &&
         rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < view.innerHeight && rect.left < view.innerWidth;
     });
+    const challengeSurface = visibleSurface('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]');
     const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge|security check|verification required|complete verification/i.test(text) || challengeSurface;
-    const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/web/user/') || Boolean(document.querySelector('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
+    const login = location.pathname.startsWith('/web/user/') || visibleSurface('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]');
     const app = document.querySelector('#wrap, #app');
     const vue3App = app?.__vue_app__;
     const rootComponent = app?._vnode?.component;
@@ -899,33 +938,35 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     };
     const candidates = boundedFeeds.map(noteCandidate);
     const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note').map((candidate) => candidate.id);
-    const feedIds = allFeedIds.slice(0, 15);
-    const malformedFeed = candidates.some((candidate) => candidate.kind === 'malformed');
-    const duplicateFeed = new Set(allFeedIds).size !== allFeedIds.length;
-    const anchors = typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href*="/explore/"]')).slice(0, 60) : [];
+    const feedIds = Array.from(new Set(allFeedIds)).slice(0, 15);
+    const anchors = typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href*="/explore/"]')) : [];
     const pageTargets = new Map();
-    let invalidPageTarget = false;
-    let duplicatePageTarget = false;
     for (const anchor of anchors) {
       try {
         const url = new URL(anchor.getAttribute?.('href') || anchor.href || '', location.origin);
         const match = new RegExp('^/explore/([a-f0-9]{24})$', 'i').exec(url.pathname);
-        if (url.origin !== location.origin || url.username || url.password || !match) {
-          invalidPageTarget = true;
-          continue;
-        }
+        if (url.origin !== location.origin || url.username || url.password || !match) continue;
         const id = match[1].toLowerCase();
-        if (pageTargets.has(id)) duplicatePageTarget = true;
-        pageTargets.set(id, location.origin + '/explore/' + id);
-      } catch { invalidPageTarget = true; }
+        if (!feedIds.includes(id)) continue;
+        const current = pageTargets.get(id);
+        if (!current || (!new URL(current).search && url.search)) pageTargets.set(id, url.toString());
+      } catch {}
     }
     const detailUrls = feedIds.flatMap((id) => pageTargets.has(id) ? [pageTargets.get(id)] : []);
-    const structuralDrift = malformedFeed || duplicateFeed || invalidPageTarget || duplicatePageTarget;
-    const listFailure = structuralDrift ? 'site_changed' : feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 ? 'page_not_ready' : undefined;
+    const listFailure = feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";
-    const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge/i.test(text) || Boolean(document.querySelector?.('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"]'));
-    const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/login') || Boolean(document.querySelector?.('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
+    const visibleSurface = (selectors) => typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll(selectors)).some((element) => {
+      const view = document.defaultView;
+      if (!view) return false;
+      if (typeof element.checkVisibility === 'function' && !element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+      const style = view.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 &&
+        rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < view.innerHeight && rect.left < view.innerWidth;
+    });
+    const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge/i.test(text) || visibleSurface('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"]');
+    const login = location.pathname.startsWith('/login') || visibleSurface('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]');
     return {
       origin: location.origin,
       pathname: location.pathname,
@@ -940,6 +981,62 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       challenge_like: challenge
     };
   })()`;
+}
+
+export function xhsDetailClickPointExpression(targetUrl: string): string {
+  const expectedUrl = new URL(targetUrl);
+  return `(() => {
+    const expectedHref = ${JSON.stringify(expectedUrl.href)};
+    const anchors = Array.from(document.querySelectorAll('a[href*="/explore/"]'));
+    const anchor = anchors.find((candidate) => {
+      try {
+        const url = new URL(candidate.getAttribute('href') || candidate.href || '', location.origin);
+        return !url.username && !url.password && url.href === expectedHref;
+      }
+      catch { return false; }
+    });
+    if (!anchor) return undefined;
+    for (const element of [anchor, ...anchor.querySelectorAll('*')]) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 20 || rect.height <= 20 || rect.bottom <= 0 || rect.right <= 0 || rect.top >= innerHeight || rect.left >= innerWidth) continue;
+      const x = Math.max(1, Math.min(innerWidth - 1, rect.left + rect.width / 2));
+      const y = Math.max(1, Math.min(innerHeight - 1, rect.top + rect.height / 2));
+      const hit = document.elementFromPoint(x, y);
+      const independentControl = hit?.closest('button, [role="button"], input, select, textarea, label, [contenteditable="true"]');
+      if (hit && !independentControl && anchor.contains(hit) && hit.closest('a') === anchor) return { x, y };
+    }
+    return undefined;
+  })()`;
+}
+
+const MAX_XHS_DETAIL_RESPONSE_BYTES = 512 * 1024;
+
+async function xhsDetailResponseMatchesTarget(client: CdpClient, requestId: string, targetId: string): Promise<boolean | null> {
+  try {
+    const response = await client.send("Network.getResponseBody", { requestId });
+    const encoded = typeof response.body === "string" ? response.body : "";
+    const bytes = response.base64Encoded === true ? Buffer.from(encoded, "base64") : Buffer.from(encoded, "utf8");
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_XHS_DETAIL_RESPONSE_BYTES) return false;
+    return xhsFeedResponseMatchesTarget(bytes.toString("utf8"), targetId);
+  } catch {
+    return null;
+  }
+}
+
+export function xhsFeedResponseMatchesTarget(body: string, targetId: string): boolean {
+  if (!/^[a-f0-9]{24}$/i.test(targetId)) return false;
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  if (!isPlainRecord(value) || !isPlainRecord(value.data) || !Array.isArray(value.data.items)) return false;
+  return value.data.items.some((entry) => {
+    if (!isPlainRecord(entry)) return false;
+    const card = isPlainRecord(entry.note_card) ? entry.note_card : isPlainRecord(entry.noteCard) ? entry.noteCard : null;
+    return [entry.id, entry.note_id, entry.noteId, card?.id, card?.note_id, card?.noteId].includes(targetId);
+  });
 }
 
 function hasExactPublicQuery(search: unknown, key: string, expected: string): boolean {
@@ -958,7 +1055,15 @@ function hasExactBossSearch(search: unknown, query: string, cityCode: string): b
 
 function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: unknown): boolean {
   if (typeof value !== "string") return false;
-  if (input.operation_id === "xhs_read_note_detail" || input.operation_id === "boss_read_job_detail") return value === input.target_url;
+  if (input.operation_id === "xhs_read_note_detail") {
+    try {
+      const observed = new URL(value);
+      return observed.origin === "https://edith.xiaohongshu.com" && observed.pathname === "/api/sns/web/v1/feed";
+    } catch {
+      return false;
+    }
+  }
+  if (input.operation_id === "boss_read_job_detail") return value === input.target_url;
   if (input.operation_id === "xhs_search_notes") {
     try {
       const observed = new URL(value);
@@ -1115,14 +1220,15 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readOperationPageFacts(targetUrl: string): LocalProviderPageFacts {
+function readOperationPageFacts(operationId: LocalProviderReadProbeInput["operation_id"], targetUrl: string): LocalProviderPageFacts {
+  const publicUrl = publicReadOperationTargetUrl(operationId, targetUrl);
   const evidence_ref = opaqueRef("validation");
   return {
-    current_url: targetUrl,
+    current_url: publicUrl,
     title: null,
     status: "ready",
     facts: [
-      { key: "page.current_url", source: "observed", value: targetUrl, evidence_ref },
+      { key: "page.current_url", source: "observed", value: publicUrl, evidence_ref },
       { key: "page.title", source: "observed", value: "not_read", evidence_ref },
       { key: "page.status", source: "validation_evidence", value: "operation_probe_ready", evidence_ref }
     ]

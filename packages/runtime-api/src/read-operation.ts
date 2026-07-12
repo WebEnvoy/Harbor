@@ -71,6 +71,12 @@ export interface AllowlistedReadOperationRequest {
   url?: string;
 }
 
+export function publicReadOperationTargetUrl(operationId: AllowlistedReadOperationId, targetUrl: string): string {
+  if (operationId !== "xhs_read_note_detail" && operationId !== "boss_read_job_detail") return targetUrl;
+  const url = new URL(targetUrl);
+  return `${url.origin}${url.pathname}`;
+}
+
 export interface PinnedReadOperation {
   site_id: AllowlistedReadOperationSite;
   operation_id: AllowlistedReadOperationId;

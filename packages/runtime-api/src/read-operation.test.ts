@@ -6,12 +6,13 @@ import {
   canonicalPinnedMirrorSha256,
   LODE_262_ALLOWLIST_PIN,
   LODE_268_DETAIL_PIN,
+  publicReadOperationTargetUrl,
   ReadOperationObservationStore,
   validateDetailTruthPin,
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
-import { probeProviderSiteResource, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobDetailResponse, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe } from "./local-provider-launcher.js";
+import { probeProviderSiteResource, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobDetailResponse, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe, xhsDetailClickPointExpression, xhsFeedResponseMatchesTarget } from "./local-provider-launcher.js";
 
 test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
@@ -40,6 +41,37 @@ test("pins detail admission and completion to merged Lode #268 truth", () => {
   assert.equal(boss.entry.version, "0.1.1");
   assert.deepEqual(boss.entry.required_source_ref_kinds, ["wapi_job_detail_summary", "dom_snapshot_summary"]);
   assert.deepEqual(boss.entry.required_evidence_ref_kinds, ["snapshot_ref"]);
+});
+
+test("binds Xiaohongshu detail feed evidence to the selected note", () => {
+  const noteId = "0123456789abcdef01234567";
+  const body = JSON.stringify({ data: { items: [{ note_card: { note_id: noteId } }] } });
+  assert.equal(xhsFeedResponseMatchesTarget(body, noteId), true);
+  assert.equal(xhsFeedResponseMatchesTarget(body, "fedcba987654321001234567"), false);
+  assert.equal(xhsFeedResponseMatchesTarget("not-json", noteId), false);
+});
+
+test("rejects detail click points that hit nested interactive controls", () => {
+  const targetUrl = "https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=opaque";
+  const rect = { width: 100, height: 100, top: 10, left: 10, right: 110, bottom: 110 };
+  const anchor = {
+    href: targetUrl,
+    getAttribute: () => targetUrl,
+    getBoundingClientRect: () => rect,
+    querySelectorAll: () => [],
+    contains: () => true
+  };
+  const nestedButton = {
+    closest: (selector: string) => selector.startsWith("button") ? nestedButton : selector === "a" ? anchor : null
+  };
+  const evaluate = new Function("document", "location", "innerWidth", "innerHeight", `return ${xhsDetailClickPointExpression(targetUrl)}`);
+  assert.equal(evaluate({ querySelectorAll: () => [anchor], elementFromPoint: () => nestedButton }, { origin: "https://www.xiaohongshu.com" }, 500, 500), undefined);
+});
+
+test("keeps signed detail navigation private in public page facts", () => {
+  const signed = "https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=private&xsec_source=pc_search";
+  assert.equal(publicReadOperationTargetUrl("xhs_read_note_detail", signed), "https://www.xiaohongshu.com/explore/0123456789abcdef01234567");
+  assert.equal(publicReadOperationTargetUrl("xhs_search_notes", signed), signed);
 });
 
 test("admits only the two pinned read-only operation identities", () => {
@@ -146,6 +178,7 @@ test("correlates the official Vue Pinia search store without exposing store cont
     }]])
   };
   const anchors = noteIds.map((id) => ({ getAttribute: () => `/explore/${id}?xsec_token=not_returned` }));
+  const signedUrls = noteIds.map((id) => `https://www.xiaohongshu.com/explore/${id}?xsec_token=not_returned`);
   const document = {
     readyState: "complete",
     body: { innerText: "公开搜索结果" },
@@ -166,11 +199,31 @@ test("correlates the official Vue Pinia search store without exposing store cont
     list_valid: true,
     list_failure: undefined,
     note_count: 2,
-    detail_urls: noteIds.map((id) => `https://www.xiaohongshu.com/explore/${id}`),
+    detail_urls: signedUrls,
     login_like: false,
     challenge_like: false
   });
-  assert.equal(JSON.stringify(result).includes("not_returned"), false);
+  assert.equal(JSON.stringify(result).includes("private"), false);
+
+  const loggedInPageWithGenericCopy = evaluate({}, { ...document, body: { innerText: "登录后可查看更多公开内容" } }, {
+    origin: "https://www.xiaohongshu.com",
+    pathname: "/search_result",
+    search: `?keyword=${encodeURIComponent(query)}`
+  });
+  assert.equal(loggedInPageWithGenericCopy.login_like, false);
+  const loginSurface = {
+    checkVisibility: () => true,
+    getBoundingClientRect: () => ({ width: 320, height: 480, top: 100, left: 100, right: 420, bottom: 580 })
+  };
+  const loginView = { innerWidth: 1280, innerHeight: 800, getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) };
+  const searchWithLoginSurface = (surface: typeof loginSurface) => evaluate({}, {
+    ...document,
+    defaultView: loginView,
+    querySelectorAll: (selector: string) => selector === 'a[href*="/explore/"]' ? anchors : selector.includes("qrcode") ? [surface] : []
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(searchWithLoginSurface(loginSurface).login_like, true);
+  assert.equal(searchWithLoginSurface({ ...loginSurface, checkVisibility: () => false }).login_like, false);
+  assert.equal(evaluate({}, document, { origin: "https://www.xiaohongshu.com", pathname: "/login", search: "" }).login_like, true);
 
   for (const candidate of [
     { _s: new Map() },
@@ -206,7 +259,7 @@ test("correlates the official Vue Pinia search store without exposing store cont
     querySelectorAll: () => [anchors[0]]
   }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
   assert.equal(virtualSubset.list_valid, true);
-  assert.deepEqual(virtualSubset.detail_urls, [`https://www.xiaohongshu.com/explore/${noteIds[0]}`]);
+  assert.deepEqual(virtualSubset.detail_urls, [signedUrls[0]]);
 
   const reordered = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: mixedFeeds }]]) } }, {
     ...document,
@@ -214,22 +267,48 @@ test("correlates the official Vue Pinia search store without exposing store cont
     querySelectorAll: () => [...anchors].reverse()
   }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
   assert.equal(reordered.list_valid, true);
-  assert.deepEqual(reordered.detail_urls, noteIds.slice().reverse().map((id) => `https://www.xiaohongshu.com/explore/${id}`));
+  assert.deepEqual(reordered.detail_urls, signedUrls.slice().reverse());
 
-  const driftCases = [
-    [[{ noteCard: { id: noteIds[0] } }, { noteCard: { id: noteIds[0] } }], [anchors[0]]],
-    [[{ noteCard: { id: "not-a-note" } }], [anchors[0]]],
-    [[{ noteCard: { id: noteIds[0] } }], [anchors[0], anchors[0]]],
-    [[{ noteCard: { id: noteIds[0] } }], [{ getAttribute: () => `https://evil.example/explore/${noteIds[0]}` }]]
-  ] as const;
-  for (const [feeds, targetAnchors] of driftCases) {
-    const drift = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds }]]) } }, {
-      ...document,
-      querySelector: () => null,
-      querySelectorAll: () => targetAnchors
-    }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
-    assert.equal(drift.list_failure, "site_changed");
-  }
+  const malformedOnly = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: "not-a-note" } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => [anchors[0]]
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(malformedOnly.list_failure, "empty_result");
+
+  const duplicateAnchors = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: noteIds[0] } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => [anchors[0], anchors[0]]
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(duplicateAnchors.list_valid, true);
+  assert.deepEqual(duplicateAnchors.detail_urls, [signedUrls[0]]);
+
+  const duplicateFeeds = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: noteIds[0] } }, { noteCard: { id: noteIds[0] } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => [anchors[0]]
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(duplicateFeeds.list_valid, true);
+  assert.deepEqual(duplicateFeeds.detail_urls, [signedUrls[0]]);
+
+  const unrelatedAnchor = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: noteIds[0] } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => [{ getAttribute: () => `https://evil.example/explore/${noteIds[0]}` }]
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(unrelatedAnchor.list_failure, "page_not_ready");
+
+  const validAfterUnrelatedAnchors = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: noteIds[0] } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => [
+      ...Array.from({ length: 60 }, (_, index) => ({ getAttribute: () => `/explore/${index.toString(16).padStart(24, "0")}` })),
+      anchors[0]
+    ]
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(validAfterUnrelatedAnchors.list_valid, true);
+  assert.deepEqual(validAfterUnrelatedAnchors.detail_urls, [signedUrls[0]]);
 });
 
 test("observes BOSS SPA, login wall, and challenge state without returning page text", () => {
@@ -305,6 +384,24 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   assert.equal(JSON.stringify(observed).includes("must-not-return"), false);
   assert.equal(JSON.stringify(observed).includes("xsec_token"), false);
 
+  const productionPinia = { _s: new Map([["note", { $state: {
+    currentNoteId: piniaNote.note_id,
+    noteDetailMap: { [piniaNote.note_id]: { note: {
+      noteId: piniaNote.note_id,
+      title: piniaNote.title,
+      desc: piniaNote.body_summary,
+      user: { nickname: "公开作者", userId: "author_123", xsecToken: "must-not-return" },
+      interactInfo: { likedCount: 10, commentCount: 2, collectedCount: 3, shareCount: 1 }
+    } } }
+  } }]]) };
+  const productionObserved = evaluate({ __PINIA__: productionPinia }, {
+    ...document,
+    querySelector: (selector: string) => selector.includes("share") ? null : document.querySelector(selector)
+  }, location);
+  assert.equal(productionObserved.pinia_ready, true);
+  assert.deepEqual(productionObserved.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "1" });
+  assert.equal(JSON.stringify(productionObserved).includes("must-not-return"), false);
+
   const withoutNoteStore = evaluate({ __PINIA__: { _s: new Map([["search", {}]]) } }, { ...document, querySelector: (selector: string) => selector === "#app" ? { __vue_app__: { config: { globalProperties: {} } } } : document.querySelector(selector) }, location);
   assert.equal(withoutNoteStore.vue_ready, true);
   assert.equal(withoutNoteStore.pinia_ready, false);
@@ -330,8 +427,8 @@ test("detects late challenge and login overlays for both detail sites", () => {
   const document = { readyState: "complete", body: { innerText: lateChallenge }, querySelector: () => null, querySelectorAll: () => [] };
   assert.equal(xhsEvaluate({}, document, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).challenge_like, true);
   assert.equal(bossEvaluate(document, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
-  assert.equal(xhsEvaluate({}, { ...document, body: { innerText: lateLogin } }, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).login_like, true);
-  assert.equal(bossEvaluate({ ...document, body: { innerText: lateLogin } }, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).login_like, true);
+  assert.equal(xhsEvaluate({}, { ...document, body: { innerText: lateLogin } }, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).login_like, false);
+  assert.equal(bossEvaluate({ ...document, body: { innerText: lateLogin } }, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).login_like, false);
   const visibleOverlay = { getBoundingClientRect: () => ({ width: 100, height: 100, top: 0, left: 0, right: 100, bottom: 100 }) };
   const visibleView = { innerWidth: 1280, innerHeight: 800, getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) };
   const overlayDocument = { ...document, defaultView: visibleView, body: { innerText: "公开详情" }, querySelectorAll: () => [visibleOverlay] };
@@ -339,8 +436,19 @@ test("detects late challenge and login overlays for both detail sites", () => {
   assert.equal(bossEvaluate(overlayDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
   const securityOverlayDocument = { ...document, defaultView: visibleView, body: { innerText: "公开详情" }, querySelectorAll: () => [visibleOverlay] };
   assert.equal(bossEvaluate(securityOverlayDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, true);
-  const qrLoginDocument = { ...document, body: { innerText: "公开详情" }, querySelector: (selector: string) => selector.includes("qrcode") ? {} : null };
+  const qrLoginDocument = {
+    ...document,
+    defaultView: visibleView,
+    body: { innerText: "公开详情" },
+    querySelectorAll: (selector: string) => selector.includes("qrcode") ? [visibleOverlay] : []
+  };
   assert.equal(bossEvaluate(qrLoginDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).login_like, true);
+  const hiddenLoginDocument = {
+    ...qrLoginDocument,
+    querySelectorAll: (selector: string) => selector.includes("qrcode") ? [{ ...visibleOverlay, checkVisibility: () => false }] : []
+  };
+  assert.equal(xhsEvaluate({}, qrLoginDocument, { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567" }).login_like, true);
+  assert.equal(xhsEvaluate({}, hiddenLoginDocument, { origin: "https://www.xiaohongshu.com", pathname: "/login" }).login_like, true);
   const verifyOnlyDocument = { ...document, body: { innerText: "We solve meaningful hiring challenges" }, querySelector: (selector: string) => selector.includes("verify") ? {} : null };
   assert.equal(bossEvaluate(verifyOnlyDocument, { origin: "https://www.zhipin.com", pathname: "/job_detail/AbC_123.html" }).challenge_like, false);
   const hiddenOverlayDocument = {
@@ -435,6 +543,9 @@ function bossSpaDocument(options: {
       }
       if (options.verifyElement && (selector.includes('[class*="verify"]') || selector.includes('[id*="verify"]'))) {
         elements.push({ getBoundingClientRect: () => ({ width: 200, height: 40, top: 100, left: 100, right: 300, bottom: 140 }) });
+      }
+      if (options.loginOverlay && selector.includes("login")) {
+        elements.push({ getBoundingClientRect: () => ({ width: 320, height: 480, top: 100, left: 100, right: 420, bottom: 580 }) });
       }
       return elements;
     },
@@ -708,7 +819,7 @@ test("validates both detail surfaces against the exact search-bound target", () 
     vue_ready: true,
     pinia_ready: true,
     operation_response_status: 200,
-    operation_response_url: xhsInput.target_url,
+    operation_response_url: "https://edith.xiaohongshu.com/api/sns/web/v1/feed",
     normalized: {
       kind: "xiaohongshu_note_detail" as const,
       canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",

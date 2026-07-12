@@ -36,7 +36,10 @@ test("binds opaque detail refs to one session, site, operation, ttl, and consump
     runtime_session_ref: "session_a",
     site_id: "xiaohongshu",
     search_operation_id: "xhs_search_notes",
-    targets: [{ canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567" }],
+    targets: [{
+      canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+      source_url: "https://www.xiaohongshu.com/search_result?keyword=AI"
+    }],
     now: 1_000
   });
   assert.equal(store.consume({ detail_ref: expired, runtime_session_ref: "session_a", site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", now: 1_000 + 10 * 60 * 1000 }), "detail_ref_expired");

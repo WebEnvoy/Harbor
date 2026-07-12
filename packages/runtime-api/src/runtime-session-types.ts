@@ -172,6 +172,7 @@ export interface LocalProviderReadProbeInput {
   city_code?: string;
   detail_ref?: string;
   target_url: string;
+  navigation_source_url?: string;
   expected_origin: string;
 }
 
@@ -256,6 +257,7 @@ export type LocalProviderDetailPublicSummary = XiaohongshuNoteDetailPublicSummar
 
 export interface LocalProviderReadProbeDetailTarget {
   canonical_url: string;
+  source_url?: string;
 }
 
 export interface LocalProviderReadProbeRef {

@@ -9,6 +9,7 @@ interface DetailReadTargetRecord {
   site_id: AllowlistedReadOperationSite;
   detail_operation_id: "xhs_read_note_detail" | "boss_read_job_detail";
   canonical_url: string;
+  source_url?: string;
   expires_at: number;
   consumed: boolean;
 }
@@ -38,6 +39,7 @@ export class DetailReadTargetStore {
     const refs: string[] = [];
     for (const target of input.targets.slice(0, 15)) {
       if (!isCanonicalDetailUrl(input.site_id, target.canonical_url)) continue;
+      if (target.source_url !== undefined && !isCanonicalSearchSourceUrl(input.site_id, target.source_url)) continue;
       const detail_ref = opaqueRef("detail_ref");
       this.records.set(detail_ref, {
         detail_ref,
@@ -45,6 +47,7 @@ export class DetailReadTargetStore {
         site_id: input.site_id,
         detail_operation_id,
         canonical_url: target.canonical_url,
+        ...(target.source_url === undefined ? {} : { source_url: target.source_url }),
         expires_at: now + DETAIL_REF_TTL_MS,
         consumed: false
       });
@@ -107,6 +110,17 @@ export class DetailReadTargetStore {
       this.tombstones.delete(detailRef);
     }
   }
+}
+
+function isCanonicalSearchSourceUrl(siteId: AllowlistedReadOperationSite, value: string): boolean {
+  let url: URL;
+  try { url = new URL(value); } catch { return false; }
+  if (url.protocol !== "https:" || url.username || url.password || url.hash) return false;
+  if (siteId === "xiaohongshu") {
+    return url.origin === "https://www.xiaohongshu.com" && url.pathname === "/search_result" &&
+      [...url.searchParams.keys()].every((key) => key === "keyword") && url.searchParams.getAll("keyword").length === 1;
+  }
+  return url.origin === "https://www.zhipin.com" && url.pathname === "/web/geek/job";
 }
 
 export function isCanonicalDetailUrl(siteId: AllowlistedReadOperationSite, value: string): boolean {

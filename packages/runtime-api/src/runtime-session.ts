@@ -5,6 +5,7 @@ import {
   type LocalIdentityEnvironmentInput
 } from "./identity-environment.js";
 import { opaqueRef } from "./refs.js";
+import { publicReadOperationTargetUrl } from "./read-operation.js";
 import {
   HARBOR_RUNTIME_FACTS_SCHEMA,
   HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA,
@@ -452,7 +453,7 @@ export class RuntimeSessionStore {
       };
     }
     const result = await probeReadOperation(input);
-    if (result.page) this.applyPageFacts(record, input.target_url, result.page);
+    if (result.page) this.applyPageFacts(record, publicReadOperationTargetUrl(input.operation_id, input.target_url), result.page);
     return result;
   }
 

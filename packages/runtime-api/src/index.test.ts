@@ -891,7 +891,12 @@ test("reuses, locks, releases, and stops identity environment sessions", async (
   assert.equal(released.lifecycle_state, "idle");
   assert.equal(released.control_owner, "none");
   assert.equal(released.control_lock.state, "released");
-  assert.equal(detailTargets.consume({ detail_ref: releaseRef, runtime_session_ref: opened.runtime_session_ref, site_id: "boss", operation_id: "boss_read_job_detail", now: 2_000 }), "detail_ref_expired");
+  const releasedTarget = detailTargets.consume({ detail_ref: releaseRef, runtime_session_ref: opened.runtime_session_ref, site_id: "boss", operation_id: "boss_read_job_detail", now: 2_000 }) as {
+    canonical_url?: string;
+    consumed?: boolean;
+  };
+  assert.equal(releasedTarget.canonical_url, "https://www.zhipin.com/job_detail/Release_Lifecycle.html");
+  assert.equal(releasedTarget.consumed, true);
 
   const userLocked = runtime.lockSession(opened.runtime_session_ref, { control_owner: "user", holder_ref: "manual_user" });
   assert.equal("status" in userLocked, false);

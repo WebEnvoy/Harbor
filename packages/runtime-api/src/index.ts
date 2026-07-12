@@ -350,9 +350,7 @@ export class HarborRuntime {
   }
 
   releaseSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): RuntimeSessionFacts | RuntimeSessionUnavailable {
-    const result = this.runtimeSessions.releaseSession(runtime_session_ref, input);
-    if (!("status" in result)) this.detailReadTargets.clearSession(runtime_session_ref);
-    return result;
+    return this.runtimeSessions.releaseSession(runtime_session_ref, input);
   }
 
   async stopSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): Promise<RuntimeSessionFacts | RuntimeSessionUnavailable> {
@@ -508,6 +506,7 @@ export class HarborRuntime {
     const preflightFailure = this.readOperationSessionFailure(runtime_session_ref, admission);
     if (preflightFailure) return readOperationUnavailable(runtime_session_ref, preflightFailure, requestIdentity(admission.request));
 
+    let navigationSourceUrl: string | undefined;
     if (admission.request.detail_ref) {
       const target = this.detailReadTargets.consume({
         detail_ref: admission.request.detail_ref,
@@ -517,12 +516,14 @@ export class HarborRuntime {
       });
       if (typeof target === "string") return readOperationUnavailable(runtime_session_ref, target, requestIdentity(admission.request));
       admission.target_url = target.canonical_url;
+      navigationSourceUrl = target.source_url;
     }
 
     const probe = await this.runtimeSessions.probeReadOperation(runtime_session_ref, {
       site_id: admission.entry.site_id,
       operation_id: admission.entry.operation_id,
       target_url: admission.target_url,
+      ...(navigationSourceUrl === undefined ? {} : { navigation_source_url: navigationSourceUrl }),
       expected_origin: admission.entry.allowed_origin,
       query: admission.request.query,
       city_code: admission.request.city_code,
