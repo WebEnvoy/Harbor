@@ -3,20 +3,20 @@
 ## Derived Fact Chain View
 
 - Item ID: HARBOR-263
-- Goal: 保持已确认 headed managed session 在连续独立 Core 只读任务间的可信 controller handoff。
-- Scope: shared session release/acquire handoff lifecycle and focused regressions.
+- Goal: 保持已确认 headed managed session 在连续、独立提交的 Core 只读任务之间的可信 controller handoff。
+- Scope: shared Runtime Session release/acquire handoff lifecycle and focused lifecycle regressions.
 - Execution Path: work/harbor-263-continuous-handoff
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-263.md
 - Review Entry: .loom/reviews/HARBOR-263.json
 - Validation Entry: pnpm typecheck; pnpm build; targeted tests; pnpm test; git diff --check
-- Closing Condition: Merge after hosted gate; close only after packaged same-session two-task live evidence.
+- Closing Condition: Merge the HARBOR-263 PR after hosted gate; close only after packaged App proves two separately submitted reads on the same confirmed session.
 - Current Checkpoint: pr_ready
 - Current Stop: Product/spec head `cebd9384a4c3eac1ce810684833bf525c6db1d21` passed focused lifecycle tests 6/6, typecheck, build, full tests 85/85, and diff-check.
-- Next Step: Push and create a ready PR for main-controller semantic review and hosted gates.
+- Next Step: Push the current branch and create a ready PR for main-controller semantic review and hosted gates.
 - Blockers: None recorded.
-- Latest Validation Summary: 2026-07-12T09:24Z: At product/spec head `cebd9384a4c3eac1ce810684833bf525c6db1d21`, `pnpm typecheck`, `pnpm build`, focused lifecycle tests 6/6, `pnpm test` 85/85, and `git diff --check` passed. The same confirmed headed session completed two explicit Core acquire/probe/release cycles; negative controller, identity, provider and conflict boundaries remained fail closed. No real browser/page action, sensitive material, external write, or cross-repo change occurred.
-- Recovery Boundary: No real browser/page action, sensitive material, automatic login, external write, or cross-repo change.
+- Latest Validation Summary: 2026-07-12T09:24Z: At product/spec head `cebd9384a4c3eac1ce810684833bf525c6db1d21`, `pnpm typecheck`, `pnpm build`, focused lifecycle tests 6/6, `pnpm test` 85/85, and `git diff --check` passed. The same confirmed headed session completed two explicit Core acquire/probe/release cycles; unconfirmed, headless visibility, fixture, identity/profile, released-control, user-lock and holder-conflict regressions remained fail closed. No real browser/page action, sensitive material, external write, or cross-repo change occurred.
+- Recovery Boundary: No real browser/page action, automatic login, sensitive material access, external write, or BOSS probe/Core/Lode/App change.
 - Current Lane: Harbor #263 continuous confirmed session handoff.
 
 ## Runtime Evidence
