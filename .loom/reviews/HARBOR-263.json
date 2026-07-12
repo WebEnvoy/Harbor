@@ -6,7 +6,7 @@
   "summary": "Independent review found no product correctness or security issue; the scope-carrier finding is resolved by limiting live closeout to Xiaohongshu and prohibiting BOSS production reruns.",
   "reviewer": "codex-main-controller",
   "authored_at": "2026-07-12T09:59:00Z",
-  "reviewed_head": "74c4e26778371e66deefb11aae9959418ad58f5d",
+  "reviewed_head": "255f0efbe161178363b1ecbc22481a9473f7f7c8",
   "reviewed_validation_summary": "2026-07-12T09:59Z: Product head `cebd9384a4c3eac1ce810684833bf525c6db1d21` and carrier head `74c4e26778371e66deefb11aae9959418ad58f5d` passed `pnpm typecheck`, `pnpm build`, focused lifecycle tests 6/6, `pnpm test` 85/85, and `git diff --check`. Independent review found no product correctness/security issue; the scope-carrier finding is resolved by limiting post-merge live closeout to two separately submitted Xiaohongshu reads on the same confirmed headed session and prohibiting BOSS production reruns.",
   "reviewed_validation_summary_hash": "ccc11096dadaea7d71d03491cc2a73c123299fb4dffaf6dd0ce9d32f23abeb04",
   "validation_summary_source": "recovery.latest_validation_summary",
