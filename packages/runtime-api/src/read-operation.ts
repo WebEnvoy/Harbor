@@ -732,6 +732,7 @@ function isExpectedPublicSummary(entry: PinnedReadOperation, summary: LocalProvi
   if (entry.operation_id === "xhs_search_notes") {
     return summary.result_kind === "xiaohongshu_search_notes_surface" &&
       summary.surface === "search_result" &&
+      Number.isInteger(summary.result_count) && summary.result_count! > 0 && summary.result_count! <= 15 &&
       sameStrings(summary.source_signals, ["pinia_store", "xhs_search_read_network"]);
   }
   if (entry.operation_id === "xhs_read_note_detail") {

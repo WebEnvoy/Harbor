@@ -398,6 +398,9 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           challenge_like?: boolean;
           vue_ready?: boolean;
           pinia_ready?: boolean;
+          list_valid?: boolean;
+          list_failure?: "empty_result" | "page_not_ready" | "site_changed";
+          note_count?: number;
           normalized?: ObservedDetailPublicSummary;
           detail_urls?: string[];
         } } | undefined)?.value;
@@ -494,6 +497,9 @@ interface ReadProbeObservation {
   challenge_like?: boolean;
   vue_ready?: boolean;
   pinia_ready?: boolean;
+  list_valid?: boolean;
+  list_failure?: "empty_result" | "page_not_ready" | "site_changed";
+  note_count?: number;
   normalized?: ObservedDetailPublicSummary;
   detail_urls?: string[];
   operation_response_status?: number;
@@ -596,6 +602,16 @@ export function validateReadOperationProbe(
     if (!xhsSurface || !hasExactPublicQuery(observation.search, "keyword", input.query ?? "") || !observation.pinia_ready || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
       return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search/note, Pinia, or operation-specific read signal is unavailable.", retryable: true };
     }
+    const detailUrls = observation.detail_urls ?? [];
+    if (observation.list_failure) {
+      return { status: "unavailable", failure_class: observation.list_failure, message: "Xiaohongshu search did not expose a valid page-matched note list.", retryable: true };
+    }
+    if (!observation.list_valid) {
+      return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search note results are not correlated with the rendered page.", retryable: true };
+    }
+    if (!Number.isInteger(observation.note_count) || observation.note_count! < 1 || observation.note_count! > 15 || detailUrls.length !== observation.note_count || !validXhsSearchTargets(detailUrls)) {
+      return { status: "unavailable", failure_class: "site_changed", message: "Xiaohongshu search note targets do not match the expected public shape.", retryable: true };
+    }
     return {
       status: "completed",
       source_kinds: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"],
@@ -606,9 +622,10 @@ export function validateReadOperationProbe(
         surface: "search_result",
         result_state: "operation_read_response_observed",
         response_status: observation.operation_response_status,
+        result_count: observation.note_count,
         source_signals: ["pinia_store", "xhs_search_read_network"]
       },
-      detail_urls: observation.detail_urls ?? []
+      detail_urls: detailUrls
     };
   }
   const bossJobsSurface = observation.pathname === "/web/geek/job";
@@ -638,6 +655,18 @@ export function validateReadOperationProbe(
     },
     detail_urls: observation.boss_response.detail_urls
   };
+}
+
+function validXhsSearchTargets(values: readonly string[]): boolean {
+  if (new Set(values).size !== values.length) return false;
+  return values.every((value) => {
+    try {
+      const url = new URL(value);
+      return url.origin === "https://www.xiaohongshu.com" && !url.username && !url.password && !url.search && !url.hash && /^\/explore\/[a-f0-9]{24}$/i.test(url.pathname);
+    } catch {
+      return false;
+    }
+  });
 }
 
 function isSuccessfulReadResponse(status: unknown): status is number {
@@ -855,13 +884,59 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const pinia = window.__PINIA__ || window.__pinia || document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$pinia;
     const store = pinia?._s instanceof Map ? pinia._s.get("search") : undefined;
     const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
+    const feeds = unwrap(store?.feeds);
+    const boundedFeeds = Array.isArray(feeds) ? feeds.slice(0, 60) : [];
+    const noteCandidate = (feed) => {
+      const card = unwrap(feed?.noteCard) || unwrap(feed?.note_card) || {};
+      const values = [unwrap(feed?.id), unwrap(feed?.noteId), unwrap(feed?.note_id), unwrap(card?.id), unwrap(card?.noteId), unwrap(card?.note_id)];
+      const value = values.find((entry) => entry !== undefined && entry !== null && entry !== "");
+      const noteLike = Boolean(feed?.noteCard || feed?.note_card || values.some((entry) => entry !== undefined));
+      if (!noteLike) return { kind: 'other' };
+      return typeof value === "string" && /^[a-f0-9]{24}$/i.test(value)
+        ? { kind: 'note', id: value.toLowerCase() }
+        : { kind: 'malformed' };
+    };
+    const candidates = boundedFeeds.map(noteCandidate);
+    const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note').map((candidate) => candidate.id);
+    const feedIds = allFeedIds.slice(0, 15);
+    const malformedFeed = candidates.some((candidate) => candidate.kind === 'malformed');
+    const duplicateFeed = new Set(allFeedIds).size !== allFeedIds.length;
+    const anchors = typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href*="/explore/"]')).slice(0, 60) : [];
+    const pageTargets = new Map();
+    let invalidPageTarget = false;
+    let duplicatePageTarget = false;
+    for (const anchor of anchors) {
+      try {
+        const url = new URL(anchor.getAttribute?.('href') || anchor.href || '', location.origin);
+        const match = new RegExp('^/explore/([a-f0-9]{24})$', 'i').exec(url.pathname);
+        if (url.origin !== location.origin || url.username || url.password || !match) {
+          invalidPageTarget = true;
+          continue;
+        }
+        const id = match[1].toLowerCase();
+        if (pageTargets.has(id)) duplicatePageTarget = true;
+        pageTargets.set(id, location.origin + '/explore/' + id);
+      } catch { invalidPageTarget = true; }
+    }
+    const detailUrls = feedIds.flatMap((id) => pageTargets.has(id) ? [pageTargets.get(id)] : []);
+    const structuralDrift = malformedFeed || duplicateFeed || invalidPageTarget || duplicatePageTarget;
+    const listFailure = structuralDrift ? 'site_changed' : feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 ? 'page_not_ready' : undefined;
+    const listValid = listFailure === undefined && detailUrls.length > 0;
+    const text = document.body?.innerText || "";
+    const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge/i.test(text) || Boolean(document.querySelector?.('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"]'));
+    const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/login') || Boolean(document.querySelector?.('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
     return {
       origin: location.origin,
       pathname: location.pathname,
       search: location.search,
-      ready: true,
-      pinia_ready: unwrap(store?.searchValue) === expectedQuery && Array.isArray(unwrap(store?.feeds)),
-      detail_urls: typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href^="/explore/"]')).slice(0, 15).map((node) => node.href) : []
+      ready: document.readyState !== 'loading',
+      pinia_ready: unwrap(store?.searchValue) === expectedQuery && Array.isArray(feeds),
+      list_valid: listValid,
+      list_failure: listFailure,
+      note_count: listValid ? detailUrls.length : 0,
+      detail_urls: detailUrls,
+      login_like: login,
+      challenge_like: challenge
     };
   })()`;
 }
