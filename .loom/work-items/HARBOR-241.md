@@ -3,14 +3,14 @@
 ## Static Facts
 
 - Item ID: HARBOR-241
-- Goal: 同步用户确认的受控会话认证状态，使 App 可消费 Harbor public identity fact。
-- Scope: Harbor runtime API、identity environment manager、session-bound user-confirmed authentication intent、对应测试和 HARBOR-241 carriers。Corrective Work Item #247 additionally updates only the installed Loom consumer and its repo-owned PR metadata contract in `.github/workflows/loom-check.yml`, `.loom/installed-state.json`, `.loom/companion/repo-interface.json`, and `.github/PULL_REQUEST_TEMPLATE.md` from the released `v0.28.0` compatibility shape to `v0.28.1`, so PR #246's hosted gate consumes the upstream fix; workflow behavior is unchanged. Ownership constraints: only those Harbor Runtime API, gate-consumer, PR metadata, and HARBOR-241 carriers may change; App/Core/Lode and sensitive material remain forbidden.
-- Execution Path: work/harbor-241-auth-readiness
+- Goal: 保证手动可见身份浏览器不会复用无可见窗口的 Core headless 会话，并保留确认后的 headed user session 向 Core 安全交接。
+- Scope: Harbor Runtime Session 的 visibility compatibility、owner/holder lock、incompatible session cleanup、对应测试和 HARBOR-241 carriers；不改变认证语义，不触碰 App/Core/Lode 或真实账号材料。
+- Execution Path: work/harbor-241-session-visibility-compatibility
 - Workspace Entry: .
 - Recovery Entry: .loom/progress/HARBOR-241.md
 - Review Entry: .loom/reviews/HARBOR-241.json
 - Validation Entry: pnpm typecheck; pnpm test; git diff --check
-- Closing Condition: Create and push a Harbor #241 PR with ownership constraints, current head, test evidence, and no-sensitive-material/non-write boundary; close only after real session/identity and App refresh evidence.
+- Closing Condition: Merge PR #258 after current-head review and hosted gate; keep #241 open until the merged packaged App proves a visible manual session, authentication synchronization, and safe Core handoff.
 
 ## Associated Artifacts
 
