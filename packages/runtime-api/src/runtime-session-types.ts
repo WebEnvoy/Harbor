@@ -197,7 +197,14 @@ export interface XiaohongshuNoteDetailPublicSummary {
   title: string;
   summary: string;
   body_summary: string;
-  author: { display_name: string };
+  author: { display_name: string; author_id: string; profile_url: string };
+  interaction_metrics: { likes: string; comments: string; collects: string; shares: string };
+  source_citation: {
+    kind: "xhs_note_detail_ref";
+    note_id: string;
+    url: string;
+    field_sources: readonly string[];
+  };
   source_status: "located" | "partially_located";
 }
 
@@ -208,13 +215,20 @@ export interface BossJobDetailPublicSummary {
   title: string;
   summary: string;
   job: {
-    name: string;
-    description_summary: string;
-    salary_summary?: string;
-    location_summary?: string;
+    title: string;
+    description: string;
+    status: string;
+    salary?: string;
+    location?: string;
   };
   company: { name: string };
-  recruiter: { display_name: string; title?: string };
+  recruiter: { name: string; title: string };
+  source_citation: {
+    kind: "boss_job_detail_ref";
+    detail_ref: string;
+    url: string;
+    field_sources: readonly string[];
+  };
   source_status: "located" | "partially_located";
 }
 

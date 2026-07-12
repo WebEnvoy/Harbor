@@ -23,11 +23,16 @@ test("pins the packaged Harbor admission mirror to Lode #262", () => {
 });
 
 test("pins detail admission and completion to merged Lode #268 truth", () => {
-  assert.equal(LODE_268_DETAIL_PIN.merge_commit, "35a0af90b919979b673feeae721add6212c9687f");
+  assert.equal(LODE_268_DETAIL_PIN.merge_commit, "66d79b4e600565a00515b1c801e84291edc7b0c1");
   assert.equal(LODE_268_DETAIL_PIN.asset_path, "registry/detail-runtime-consumption.json");
-  assert.equal(LODE_268_DETAIL_PIN.asset_sha256, "34e579dfe88bbaf7df37f4eacd566910ef35abb9ea316c27b3f65d7b6ca9f9f3");
+  assert.equal(LODE_268_DETAIL_PIN.asset_sha256, "dca2761b7feb09a0ab86f7202e153da3c97b21a75299af6adaf64eade319deef");
   assert.equal(LODE_268_DETAIL_PIN.truth_id, "lode.xhs-boss.detail-read.runtime-consumption");
   assert.equal(validateDetailTruthPin(), null);
+  const boss = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail_ref") });
+  if (typeof boss === "string") throw new Error("Corrected BOSS detail truth was rejected.");
+  assert.equal(boss.entry.package_ref, "lode://site-capability/boss/read-job-detail@0.1.1");
+  assert.equal(boss.entry.lock_ref, "lode://lock/site-capability/boss/read-job-detail@0.1.1");
+  assert.equal(boss.entry.version, "0.1.1");
 });
 
 test("admits only the two pinned read-only operation identities", () => {
@@ -52,11 +57,11 @@ test("admits only the two pinned read-only operation identities", () => {
   assert.equal(admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_publish_note", query: "AI tools" }), "invalid_request");
   assert.equal(admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", operation_mode: "write" }), "invalid_request");
 
-  const noteDetail = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: opaqueRef("detail") });
+  const noteDetail = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: opaqueRef("detail_ref") });
   assert.equal(typeof noteDetail === "string", false);
-  const jobDetail = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail") });
+  const jobDetail = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail_ref") });
   assert.equal(typeof jobDetail === "string", false);
-  assert.equal(admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail"), url: "https://www.zhipin.com/job_detail/forged.html" }), "invalid_request");
+  assert.equal(admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: opaqueRef("detail_ref"), url: "https://www.zhipin.com/job_detail/forged.html" }), "invalid_request");
   assert.equal(admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", query: "forged-id" }), "invalid_request");
 });
 
@@ -166,6 +171,11 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
     querySelector: (selector: string) => {
       if (selector === "#app") return app;
       if (selector.includes("captcha") || selector.includes("login")) return null;
+      if (selector.includes("user/profile")) return { getAttribute: () => "/user/profile/author_123" };
+      if (selector.includes("like")) return { textContent: "10" };
+      if (selector.includes("comment")) return { textContent: "2" };
+      if (selector.includes("collect")) return { textContent: "3" };
+      if (selector.includes("share")) return { textContent: "1" };
       if (selector.includes("note-title") || selector.includes(".title")) return { textContent: "公开标题" };
       if (selector.includes("detail-desc") || selector.includes("note-desc") || selector.includes("note-content")) return { textContent: "公开正文摘要" };
       if (selector.includes("author")) return { textContent: "公开作者" };
@@ -179,6 +189,8 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   assert.equal(observed.pinia_ready, true);
   assert.equal(observed.normalized.canonical_url, `${location.origin}${location.pathname}`);
   assert.equal(observed.normalized.note_id, "0123456789abcdef01234567");
+  assert.equal(observed.normalized.author.author_id, "author_123");
+  assert.deepEqual(observed.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "1" });
   assert.equal(JSON.stringify(observed).includes("must-not-return"), false);
   assert.equal(JSON.stringify(observed).includes("xsec_token"), false);
 
@@ -262,7 +274,7 @@ test("does not construct post-check provenance from missing or arbitrary source 
 });
 
 test("completes XHS detail only with bounded public fields and all Lode source refs", () => {
-  const admitted = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: opaqueRef("detail") });
+  const admitted = admitAllowlistedReadOperation({ site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: opaqueRef("detail_ref") });
   if (typeof admitted === "string") throw new Error("XHS detail admission unexpectedly failed.");
   const store = new ReadOperationObservationStore();
   const sources = ["pinia_store_summary", "network_summary", "dom_snapshot_summary"].map((kind) => ({ kind, ref: opaqueRef("source") }));
@@ -280,7 +292,14 @@ test("completes XHS detail only with bounded public fields and all Lode source r
       title: "公开标题",
       summary: "公开摘要",
       body_summary: "公开正文摘要",
-      author: { display_name: "公开作者" },
+      author: { display_name: "公开作者", author_id: "author_123", profile_url: "https://www.xiaohongshu.com/user/profile/author_123" },
+      interaction_metrics: { likes: "10", comments: "2", collects: "3", shares: "1" },
+      source_citation: {
+        kind: "xhs_note_detail_ref" as const,
+        note_id: "0123456789abcdef01234567",
+        url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+        field_sources: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]
+      },
       source_status: "located" as const
     },
     source_signals: ["pinia_note_store_ready", "xhs_note_detail_document", "xhs_note_detail_rendered"]
@@ -302,6 +321,7 @@ test("completes XHS detail only with bounded public fields and all Lode source r
   assert.equal("merge_commit" in completed.lode_pin && completed.lode_pin.merge_commit, LODE_268_DETAIL_PIN.merge_commit);
   assert.equal(completed.public_summary.normalized?.kind, "xiaohongshu_note_detail");
   assert.equal(completed.public_summary.normalized?.kind === "xiaohongshu_note_detail" && completed.public_summary.normalized.note_id, "0123456789abcdef01234567");
+  assert.equal(completed.public_summary.normalized?.kind === "xiaohongshu_note_detail" && completed.public_summary.normalized.source_citation.kind, "xhs_note_detail_ref");
   assert.deepEqual(completed.source_refs.map((entry) => entry.kind), ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]);
   assert.equal(JSON.stringify(completed).includes("xsec_token"), false);
   assert.equal(store.complete(admitted.entry, {
@@ -386,7 +406,7 @@ test("validates both detail surfaces against the exact search-bound target", () 
   const xhsInput = {
     site_id: "xiaohongshu" as const,
     operation_id: "xhs_read_note_detail" as const,
-    detail_ref: opaqueRef("detail"),
+    detail_ref: opaqueRef("detail_ref"),
     target_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
     expected_origin: "https://www.xiaohongshu.com"
   };
@@ -406,7 +426,8 @@ test("validates both detail surfaces against the exact search-bound target", () 
       title: "公开标题",
       summary: "公开摘要",
       body_summary: "公开正文摘要",
-      author: { display_name: "公开作者" },
+      author: { display_name: "公开作者", author_id: "author_123", profile_url: "https://www.xiaohongshu.com/user/profile/author_123" },
+      interaction_metrics: { likes: "10", comments: "2", collects: "3", shares: "1" },
       source_status: "located" as const
     }
   };
@@ -426,7 +447,7 @@ test("validates both detail surfaces against the exact search-bound target", () 
   const bossInput = {
     site_id: "boss" as const,
     operation_id: "boss_read_job_detail" as const,
-    detail_ref: opaqueRef("detail"),
+    detail_ref: opaqueRef("detail_ref"),
     target_url: "https://www.zhipin.com/job_detail/AbC_123.html",
     expected_origin: "https://www.zhipin.com"
   };
@@ -440,9 +461,9 @@ test("validates both detail surfaces against the exact search-bound target", () 
       canonical_url: "https://www.zhipin.com/job_detail/AbC_123.html",
       title: "AI 工程师",
       summary: "公开职位摘要",
-      job: { name: "AI 工程师", description_summary: "公开职位描述" },
+      job: { title: "AI 工程师", description: "公开职位描述", status: "available" },
       company: { name: "公开公司" },
-      recruiter: { display_name: "公开招聘者", title: "招聘经理" },
+      recruiter: { name: "公开招聘者", title: "招聘经理" },
       source_status: "located" as const
     }
   });
@@ -458,9 +479,9 @@ test("validates both detail surfaces against the exact search-bound target", () 
       canonical_url: "https://www.zhipin.com/job_detail/AbC_123.html",
       title: "AI 工程师",
       summary: "公开职位摘要",
-      job: { name: "AI 工程师", description_summary: "公开职位描述" },
+      job: { title: "AI 工程师", description: "公开职位描述", status: "available" },
       company: { name: "" },
-      recruiter: { display_name: "公开招聘者" },
+      recruiter: { name: "公开招聘者", title: "招聘经理" },
       source_status: "located" as const
     }
   })), "field_missing");

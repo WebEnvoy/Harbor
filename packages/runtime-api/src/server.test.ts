@@ -1142,9 +1142,15 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
             detail_ref: input.detail_ref!,
             title: "AI 工程师",
             summary: "公开职位摘要",
-            job: { name: "AI 工程师", description_summary: "公开职位描述" },
+            job: { title: "AI 工程师", description: "公开职位描述", status: "available" },
             company: { name: "公开公司" },
-            recruiter: { display_name: "公开招聘者", title: "招聘经理" },
+            recruiter: { name: "公开招聘者", title: "招聘经理" },
+            source_citation: {
+              kind: "boss_job_detail_ref",
+              detail_ref: input.detail_ref!,
+              url: "https://www.zhipin.com/job_detail/AbC_123.html",
+              field_sources: ["network_summary", "dom_snapshot_summary"]
+            },
             source_status: "located"
           },
           source_signals: ["boss_job_detail_document"]
@@ -1179,7 +1185,7 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
     });
     assert.equal(search.status, 201);
     const [detailRef] = search.body.public_summary.detail_refs;
-    assert.match(detailRef, /^detail_/);
+    assert.match(detailRef, /^detail_ref_/);
     assert.equal(JSON.stringify(search.body).includes("AbC_123"), false);
 
     const detail = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
@@ -1191,11 +1197,14 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
     assert.equal(detail.body.public_summary.normalized.company.name, "公开公司");
     assert.equal(detail.body.public_summary.normalized.detail_ref, detailRef);
     assert.equal("securityId" in detail.body.public_summary.normalized, false);
-    assert.equal(detail.body.lode_pin.merge_commit, "35a0af90b919979b673feeae721add6212c9687f");
+    assert.equal("encryptJobId" in detail.body.public_summary.normalized, false);
+    assert.equal(detail.body.public_summary.normalized.source_citation.detail_ref, detailRef);
+    assert.equal(detail.body.lode_pin.merge_commit, "66d79b4e600565a00515b1c801e84291edc7b0c1");
     assert.equal(detail.body.source_refs[0].kind, "network_summary");
     assert.deepEqual(detail.body.evidence_ref_kinds.map((entry: any) => entry.kind), ["snapshot_ref", "network_summary_ref", "post_check_ref"]);
     assert.equal(detail.body.public_summary.normalized.canonical_url, "https://www.zhipin.com/job_detail/AbC_123.html");
     assert.equal(JSON.stringify(detail.body).includes("securityId"), false);
+    assert.equal(JSON.stringify(detail.body).includes("encryptJobId"), false);
 
     const repeated = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: detailRef

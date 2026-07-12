@@ -31,7 +31,7 @@ export class DetailReadTargetStore {
     const refs: string[] = [];
     for (const target of input.targets.slice(0, 15)) {
       if (!isCanonicalDetailUrl(input.site_id, target.canonical_url)) continue;
-      const detail_ref = opaqueRef("detail");
+      const detail_ref = opaqueRef("detail_ref");
       this.records.set(detail_ref, {
         detail_ref,
         runtime_session_ref: input.runtime_session_ref,
@@ -57,7 +57,7 @@ export class DetailReadTargetStore {
     operation_id: AllowlistedReadOperationId;
     now?: number;
   }): DetailReadTargetRecord | DetailReadFailureClass {
-    if (!/^detail_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.detail_ref)) return "detail_ref_invalid";
+    if (!/^detail_ref_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.detail_ref)) return "detail_ref_invalid";
     if (this.consumedRefs.has(input.detail_ref)) return "detail_ref_consumed";
     if (this.expiredRefs.has(input.detail_ref)) return "detail_ref_expired";
     const record = this.records.get(input.detail_ref);

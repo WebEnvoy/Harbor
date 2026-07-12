@@ -29,7 +29,7 @@ import type {
 } from "./runtime-session-types.js";
 
 type CdpPageTarget = { id?: string; type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
-type ObservedDetailPublicSummary = XiaohongshuNoteDetailPublicSummary | Omit<BossJobDetailPublicSummary, "detail_ref">;
+type ObservedDetailPublicSummary = Omit<XiaohongshuNoteDetailPublicSummary, "source_citation"> | Omit<BossJobDetailPublicSummary, "detail_ref" | "source_citation">;
 
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
@@ -564,7 +564,9 @@ function validateDetailNormalizedSummary(
     const noteId = target.pathname.split("/").filter(Boolean).at(-1) ?? "";
     if (value?.kind !== "xiaohongshu_note_detail" || value.canonical_url !== canonical_url || value.note_id !== noteId || !/^[a-f0-9]{24}$/i.test(value.note_id) ||
       !boundedText(value.title, 200) || !boundedText(value.summary, 500) || !boundedText(value.body_summary, 2000) ||
-      !boundedText(value.author.display_name, 100) || (value.source_status !== "located" && value.source_status !== "partially_located")) return null;
+      !boundedText(value.author.display_name, 100) || !boundedText(value.author.author_id, 100) ||
+      !validPublicProfileUrl(value.author.profile_url, value.author.author_id) || !validMetrics(value.interaction_metrics) ||
+      (value.source_status !== "located" && value.source_status !== "partially_located")) return null;
     return {
       kind: value.kind,
       canonical_url,
@@ -572,16 +574,23 @@ function validateDetailNormalizedSummary(
       title: value.title,
       summary: value.summary,
       body_summary: value.body_summary,
-      author: { display_name: value.author.display_name },
+      author: { display_name: value.author.display_name, author_id: value.author.author_id, profile_url: value.author.profile_url },
+      interaction_metrics: { ...value.interaction_metrics },
+      source_citation: {
+        kind: "xhs_note_detail_ref",
+        note_id: value.note_id,
+        url: canonical_url,
+        field_sources: ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]
+      },
       source_status: value.source_status
     };
   }
   if (value?.kind !== "boss_job_detail" || value.canonical_url !== canonical_url ||
-    !boundedText(value.title, 200) || !boundedText(value.summary, 500) || !boundedText(value.job.name, 200) ||
-    !boundedText(value.job.description_summary, 2000) || !optionalBoundedText(value.job.salary_summary, 100) || !optionalBoundedText(value.job.location_summary, 100) ||
-    !boundedText(value.company.name, 200) || !boundedText(value.recruiter.display_name, 100) || !optionalBoundedText(value.recruiter.title, 100) ||
+    !boundedText(value.title, 200) || !boundedText(value.summary, 500) || !boundedText(value.job.title, 200) ||
+    !boundedText(value.job.description, 4000) || !boundedText(value.job.status, 100) || !optionalBoundedText(value.job.salary, 100) || !optionalBoundedText(value.job.location, 100) ||
+    !boundedText(value.company.name, 200) || !boundedText(value.recruiter.name, 100) || !boundedText(value.recruiter.title, 100) ||
     (value.source_status !== "located" && value.source_status !== "partially_located")) return null;
-  if (!input.detail_ref || !/^detail_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.detail_ref)) return null;
+  if (!input.detail_ref || !/^detail_ref_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.detail_ref)) return null;
   return {
     kind: value.kind,
     canonical_url,
@@ -589,15 +598,19 @@ function validateDetailNormalizedSummary(
     title: value.title,
     summary: value.summary,
     job: {
-      name: value.job.name,
-      description_summary: value.job.description_summary,
-      ...(value.job.salary_summary ? { salary_summary: value.job.salary_summary } : {}),
-      ...(value.job.location_summary ? { location_summary: value.job.location_summary } : {})
+      title: value.job.title,
+      description: value.job.description,
+      status: value.job.status,
+      ...(value.job.salary ? { salary: value.job.salary } : {}),
+      ...(value.job.location ? { location: value.job.location } : {})
     },
     company: { name: value.company.name },
-    recruiter: {
-      display_name: value.recruiter.display_name,
-      ...(value.recruiter.title ? { title: value.recruiter.title } : {})
+    recruiter: { name: value.recruiter.name, title: value.recruiter.title },
+    source_citation: {
+      kind: "boss_job_detail_ref",
+      detail_ref: input.detail_ref,
+      url: canonical_url,
+      field_sources: ["network_summary", "dom_snapshot_summary"]
     },
     source_status: value.source_status
   };
@@ -609,6 +622,14 @@ function boundedText(value: unknown, max: number): value is string {
 
 function optionalBoundedText(value: unknown, max: number): boolean {
   return value === undefined || boundedText(value, max);
+}
+
+function validPublicProfileUrl(value: string, authorId: string): boolean {
+  return value === `https://www.xiaohongshu.com/user/profile/${authorId}` && /^[A-Za-z0-9_]+$/.test(authorId);
+}
+
+function validMetrics(value: XiaohongshuNoteDetailPublicSummary["interaction_metrics"]): boolean {
+  return [value.likes, value.comments, value.collects, value.shares].every((entry) => boundedText(entry, 40));
 }
 
 export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id"], query: string, cityCode?: string, operationId?: LocalProviderReadProbeInput["operation_id"]): string {
@@ -629,20 +650,29 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const stores = pinia?._s;
     const piniaReady = stores instanceof Map && Array.from(stores.keys()).some((key) => /note|feed|detail/i.test(String(key)));
     const title = pick('.note-content .title, #detail-title, [class*="note-title"]', 200);
-    const body = pick('#detail-desc, .note-content .desc, [class*="note-desc"]', 2000);
+    const body = pick('#detail-desc, .note-content .desc, [class*="note-desc"]', 4000);
     const author = pick('.author-container .name, .author-wrapper .name, [class*="author"] [class*="name"]', 100);
+    const authorLink = document.querySelector('a[href^="/user/profile/"], a[href*="xiaohongshu.com/user/profile/"]');
+    const profilePath = authorLink ? new URL(authorLink.getAttribute('href'), location.origin).pathname : "";
+    const authorId = profilePath.startsWith('/user/profile/') ? profilePath.slice('/user/profile/'.length).split('/')[0] : "";
+    const profileUrl = authorId ? location.origin + '/user/profile/' + authorId : "";
+    const likes = pick('[class*="like"] [class*="count"], .like-wrapper .count', 40);
+    const comments = pick('[class*="comment"] [class*="count"], .comment-wrapper .count', 40);
+    const collects = pick('[class*="collect"] [class*="count"], .collect-wrapper .count', 40);
+    const shares = pick('[class*="share"] [class*="count"], .share-wrapper .count', 40);
     const noteId = location.pathname.split('/').filter(Boolean).at(-1) || "";
-    const normalized = title && body && author && /^[a-f0-9]{24}$/i.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 500), body_summary: body, author: { display_name: author }, source_status: "located" } : undefined;
+    const normalized = title && body && author && authorId && profileUrl && likes && comments && collects && shares && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 2000), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: { likes, comments, collects, shares }, source_status: "located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
       : `
     const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);
-    const description = pick('.job-sec-text, .job-detail-section, [class*="job-description"]', 2000);
+    const description = pick('.job-sec-text, .job-detail-section, [class*="job-description"]', 4000);
     const company = pick('.company-info .name, .company-name, [class*="company"] [class*="name"]', 200);
     const recruiter = pick('.boss-name, .job-boss-info .name, [class*="recruiter"] [class*="name"]', 100);
     const recruiterTitle = pick('.boss-info-attr, .job-boss-info .boss-info-attr, [class*="recruiter"] [class*="title"]', 100);
     const salary = pick('.salary, [class*="salary"]', 100);
     const locationText = pick('.location-address, [class*="job-address"], [class*="location"]', 100);
-    const normalized = title && description && company && recruiter ? { kind: "boss_job_detail", canonical_url: canonicalUrl, title, summary: description.slice(0, 500), job: { name: title, description_summary: description, ...(salary ? { salary_summary: salary } : {}), ...(locationText ? { location_summary: locationText } : {}) }, company: { name: company }, recruiter: { display_name: recruiter, ...(recruiterTitle ? { title: recruiterTitle } : {}) }, source_status: "located" } : undefined;
+    const status = /职位已关闭|停止招聘|已下线/.test(text) ? "closed" : "available";
+    const normalized = title && description && company && recruiter && recruiterTitle ? { kind: "boss_job_detail", canonical_url: canonicalUrl, title, summary: description.slice(0, 2000), job: { title, description, status, ...(salary ? { salary } : {}), ...(locationText ? { location: locationText } : {}) }, company: { name: company }, recruiter: { name: recruiter, title: recruiterTitle }, source_status: "located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, normalized };`}
   })()`;
   if (siteId === "boss") return `(() => {

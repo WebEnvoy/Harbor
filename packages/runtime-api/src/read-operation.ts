@@ -24,9 +24,9 @@ export const LODE_262_ALLOWLIST_PIN = {
 export const LODE_268_DETAIL_PIN = {
   repository: "WebEnvoy/Lode",
   issue: "#268",
-  merge_commit: "35a0af90b919979b673feeae721add6212c9687f",
+  merge_commit: "66d79b4e600565a00515b1c801e84291edc7b0c1",
   asset_path: "registry/detail-runtime-consumption.json",
-  asset_sha256: "34e579dfe88bbaf7df37f4eacd566910ef35abb9ea316c27b3f65d7b6ca9f9f3",
+  asset_sha256: "dca2761b7feb09a0ab86f7202e153da3c97b21a75299af6adaf64eade319deef",
   truth_id: "lode.xhs-boss.detail-read.runtime-consumption",
   schema_version: "lode.detail-runtime-consumption.v0",
   asset_owner: "Lode",
@@ -76,7 +76,7 @@ export interface PinnedReadOperation {
   operation_id: AllowlistedReadOperationId;
   package_ref: string;
   lock_ref: string;
-  version: "0.1.0";
+  version: "0.1.0" | "0.1.1";
   operation_mode: "read";
   lifecycle: "proposed";
   allowed_origin: string;
@@ -327,9 +327,9 @@ const DETAIL_READ_OPERATIONS: readonly PinnedReadOperation[] = [
   {
     site_id: "boss",
     operation_id: "boss_read_job_detail",
-    package_ref: "lode://site-capability/boss/read-job-detail@0.1.0",
-    lock_ref: "lode://lock/site-capability/boss/read-job-detail@0.1.0",
-    version: "0.1.0",
+    package_ref: "lode://site-capability/boss/read-job-detail@0.1.1",
+    lock_ref: "lode://lock/site-capability/boss/read-job-detail@0.1.1",
+    version: "0.1.1",
     operation_mode: "read",
     lifecycle: "proposed",
     allowed_origin: "https://www.zhipin.com",
@@ -708,9 +708,9 @@ export function validateDetailTruthPin(): ReadOperationFailureClass | null {
   if (
     LODE_268_DETAIL_PIN.repository !== "WebEnvoy/Lode" ||
     LODE_268_DETAIL_PIN.issue !== "#268" ||
-    LODE_268_DETAIL_PIN.merge_commit !== "35a0af90b919979b673feeae721add6212c9687f" ||
+    LODE_268_DETAIL_PIN.merge_commit !== "66d79b4e600565a00515b1c801e84291edc7b0c1" ||
     LODE_268_DETAIL_PIN.asset_path !== "registry/detail-runtime-consumption.json" ||
-    LODE_268_DETAIL_PIN.asset_sha256 !== "34e579dfe88bbaf7df37f4eacd566910ef35abb9ea316c27b3f65d7b6ca9f9f3" ||
+    LODE_268_DETAIL_PIN.asset_sha256 !== "dca2761b7feb09a0ab86f7202e153da3c97b21a75299af6adaf64eade319deef" ||
     LODE_268_DETAIL_PIN.truth_id !== "lode.xhs-boss.detail-read.runtime-consumption" ||
     DETAIL_READ_OPERATIONS.length !== 2
   ) return "allowlist_pin_invalid";
@@ -719,6 +719,7 @@ export function validateDetailTruthPin(): ReadOperationFailureClass | null {
   return xhs && boss &&
     sameStrings(xhs.required_source_ref_kinds, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]) &&
     sameStrings(xhs.required_evidence_ref_kinds, ["snapshot_ref", "post_check_ref"]) &&
+    boss.package_ref === "lode://site-capability/boss/read-job-detail@0.1.1" && boss.lock_ref === "lode://lock/site-capability/boss/read-job-detail@0.1.1" && boss.version === "0.1.1" &&
     sameStrings(boss.required_source_ref_kinds, ["network_summary"]) &&
     sameStrings(boss.required_evidence_ref_kinds, ["snapshot_ref", "network_summary_ref", "post_check_ref"])
     ? null : "allowlist_pin_invalid";
@@ -801,16 +802,23 @@ function sameNormalizedSummary(left: LocalProviderReadProbePublicSummary["normal
 function validXhsDetailSummary(value: LocalProviderReadProbePublicSummary["normalized"]): boolean {
   return value?.kind === "xiaohongshu_note_detail" && validCanonicalPublicUrl(value.canonical_url, "https://www.xiaohongshu.com") &&
     /^[a-f0-9]{24}$/i.test(value.note_id) && value.canonical_url.endsWith(`/explore/${value.note_id}`) &&
-    validBoundedText(value.title, 200) && validBoundedText(value.summary, 500) && validBoundedText(value.body_summary, 2000) &&
-    validBoundedText(value.author.display_name, 100) && (value.source_status === "located" || value.source_status === "partially_located");
+    validBoundedText(value.title, 200) && validBoundedText(value.summary, 2000) && validBoundedText(value.body_summary, 4000) &&
+    validBoundedText(value.author.display_name, 100) && validBoundedText(value.author.author_id, 100) &&
+    value.author.profile_url === `https://www.xiaohongshu.com/user/profile/${value.author.author_id}` &&
+    Object.values(value.interaction_metrics).every((entry) => validBoundedText(entry, 40)) &&
+    value.source_citation.kind === "xhs_note_detail_ref" && value.source_citation.note_id === value.note_id && value.source_citation.url === value.canonical_url &&
+    validFieldSources(value.source_citation.field_sources, ["pinia_store_summary", "network_summary", "dom_snapshot_summary"]) &&
+    (value.source_status === "located" || value.source_status === "partially_located");
 }
 
 function validBossDetailSummary(value: LocalProviderReadProbePublicSummary["normalized"]): boolean {
   return value?.kind === "boss_job_detail" && validCanonicalPublicUrl(value.canonical_url, "https://www.zhipin.com") &&
-    /^detail_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.detail_ref) &&
-    validBoundedText(value.title, 200) && validBoundedText(value.summary, 500) && validBoundedText(value.job.name, 200) &&
-    validBoundedText(value.job.description_summary, 2000) && validOptionalText(value.job.salary_summary, 100) && validOptionalText(value.job.location_summary, 100) &&
-    validBoundedText(value.company.name, 200) && validBoundedText(value.recruiter.display_name, 100) && validOptionalText(value.recruiter.title, 100) &&
+    /^detail_ref_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.detail_ref) &&
+    validBoundedText(value.title, 200) && validBoundedText(value.summary, 2000) && validBoundedText(value.job.title, 200) &&
+    validBoundedText(value.job.description, 4000) && validBoundedText(value.job.status, 100) && validOptionalText(value.job.salary, 100) && validOptionalText(value.job.location, 100) &&
+    validBoundedText(value.company.name, 200) && validBoundedText(value.recruiter.name, 100) && validBoundedText(value.recruiter.title, 100) &&
+    value.source_citation.kind === "boss_job_detail_ref" && value.source_citation.detail_ref === value.detail_ref && value.source_citation.url === value.canonical_url &&
+    validFieldSources(value.source_citation.field_sources, ["network_summary", "dom_snapshot_summary"]) &&
     (value.source_status === "located" || value.source_status === "partially_located");
 }
 
@@ -827,6 +835,10 @@ function validBoundedText(value: string, max: number): boolean {
 
 function validOptionalText(value: string | undefined, max: number): boolean {
   return value === undefined || validBoundedText(value, max);
+}
+
+function validFieldSources(value: readonly string[], expected: readonly string[]): boolean {
+  return value.length === expected.length && value.every((entry, index) => entry === expected[index]);
 }
 
 function canonicalJson(value: unknown): string {
