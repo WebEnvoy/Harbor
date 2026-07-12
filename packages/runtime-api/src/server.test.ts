@@ -499,7 +499,7 @@ test("records user-confirmed manual authentication for an active managed session
   }
 });
 
-test("confirms a user-held local provider without a viewer and hands the released session to Core once", async () => {
+test("keeps a confirmed headed session trusted across separately released Core read tasks", async () => {
   const runtime = new HarborRuntime(unsupportedViewerLauncher("local_provider"));
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
@@ -557,13 +557,27 @@ test("confirms a user-held local provider without a viewer and hands the release
       control_owner: "core_task",
       reuse_existing: true
     });
-    const consumed = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+    const second = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
       query: "AI tools",
       city_code: "101010100"
     });
-    assert.equal(consumed.body.failure_class, "session_user_controlled");
+    assert.equal(second.body.failure_class, "evidence_refs_missing");
+    await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "core_task" });
+
+    const userClaim = await fetch(`${running.url}/runtime/identity-environment-sessions`, {
+      method: "POST",
+      body: JSON.stringify({
+        identity_environment_ref: "identity-env_local-provider-auth",
+        url: "https://www.zhipin.com/web/geek/job",
+        control_owner: "user",
+        reuse_existing: true
+      }),
+      headers: { "content-type": "application/json", ...manualAuthHeaders() }
+    });
+    assert.equal(userClaim.status, 409);
+    assert.equal((await userClaim.json()).failure_class, "session_locked");
   } finally {
     await running.close();
   }
