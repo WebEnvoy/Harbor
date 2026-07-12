@@ -298,11 +298,14 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       });
       let navigationStarted = false;
       let operationResponse: { requestId: string; status: number; url: string } | null = null;
+      let bossDetailResponse: { requestId: string; status: number; url: string } | null = null;
       const stopObservingNetwork = client.on("Network.responseReceived", (event) => {
         const response = event.response as { url?: unknown; status?: unknown } | undefined;
         const status = typeof response?.status === "number" ? response.status : null;
         const requestId = typeof event.requestId === "string" ? event.requestId : "";
-        if (
+        if (navigationStarted && input.operation_id === "boss_read_job_detail" && status !== null && status >= 200 && status < 300 && requestId && isBossJobDetailWapiUrl(input, response?.url)) {
+          bossDetailResponse = { requestId, status, url: response!.url as string };
+        } else if (
           navigationStarted &&
           status !== null &&
           status >= 200 &&
@@ -336,22 +339,29 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           detail_urls?: string[];
         } } | undefined)?.value;
         const observedResponse = operationResponse as { requestId: string; status: number; url: string } | null;
+        const observedBossDetailResponse = bossDetailResponse as { requestId: string; status: number; url: string } | null;
         if (value?.origin && (value.challenge_like || value.login_like)) {
           stopObservingNetwork();
           stopIntercepting();
           return { validation: validateReadOperationProbe(input, value) };
         }
-        if (value?.origin && value.ready && observedResponse !== null) {
+        if (value?.origin && value.ready && observedResponse !== null && (input.operation_id !== "boss_read_job_detail" || observedBossDetailResponse !== null)) {
           stopObservingNetwork();
           stopIntercepting();
           const bossResponse = input.operation_id === "boss_job_search"
             ? await readBossJobSearchResponseSummary(client, observedResponse.requestId)
             : null;
+          const bossDetailSummary = input.operation_id === "boss_read_job_detail" && observedBossDetailResponse
+            ? await readBossJobDetailResponseSummary(client, observedBossDetailResponse.requestId, bossDetailTargetId(input.target_url))
+            : null;
           const validation = validateReadOperationProbe(input, {
             ...value,
             operation_response_status: observedResponse.status,
             operation_response_url: observedResponse.url,
-            boss_response: bossResponse
+            boss_response: bossResponse,
+            boss_detail_response: bossDetailSummary,
+            boss_detail_response_status: observedBossDetailResponse?.status,
+            boss_detail_response_url: observedBossDetailResponse?.url
           });
           if (validation.status === "unavailable") return { validation };
           const screenshot = await captureProbeScreenshot(client);
@@ -423,6 +433,9 @@ interface ReadProbeObservation {
   operation_response_status?: number;
   operation_response_url?: string;
   boss_response?: BossJobSearchResponseSummary | BossJobSearchResponseFailure | null;
+  boss_detail_response?: BossJobDetailResponseSummary | BossJobSearchResponseFailure | null;
+  boss_detail_response_status?: number;
+  boss_detail_response_url?: string;
   blocked_redirect?: boolean;
   evidence_missing?: boolean;
   screenshot_ref?: string;
@@ -482,6 +495,17 @@ export function validateReadOperationProbe(
     }
     const normalized = validateDetailNormalizedSummary(input, observation.normalized);
     if (!normalized) return { status: "unavailable", failure_class: "field_missing", message: "Required bounded public detail fields are missing.", retryable: true };
+    if (!xhs) {
+      if (!isSuccessfulReadResponse(observation.boss_detail_response_status) || !isBossJobDetailWapiUrl(input, observation.boss_detail_response_url)) {
+        return { status: "unavailable", failure_class: "network_resource_unavailable", message: "The bound BOSS detail WAPI response was not observed.", retryable: true };
+      }
+      if (!observation.boss_detail_response || observation.boss_detail_response.status === "unavailable") {
+        return observation.boss_detail_response ?? { status: "unavailable", failure_class: "network_resource_unavailable", message: "The BOSS detail WAPI summary is unavailable.", retryable: true };
+      }
+      if (!sameBossDetailSummary(normalized, observation.boss_detail_response)) {
+        return { status: "unavailable", failure_class: "site_changed", message: "The BOSS detail WAPI and rendered summary do not match.", retryable: true };
+      }
+    }
     return {
       status: "completed",
       source_kinds: xhs
@@ -632,6 +656,13 @@ function validMetrics(value: XiaohongshuNoteDetailPublicSummary["interaction_met
   return [value.likes, value.comments, value.collects, value.shares].every((entry) => boundedText(entry, 40));
 }
 
+function sameBossDetailSummary(value: LocalProviderDetailPublicSummary, source: BossJobDetailResponseSummary): boolean {
+  return value.kind === "boss_job_detail" && value.title === source.title && value.summary === source.description.slice(0, 500) &&
+    value.job.title === source.title && value.job.description === source.description && value.job.status === source.job_status &&
+    value.job.salary === source.salary && value.job.location === source.location && value.company.name === source.company_name &&
+    value.recruiter.name === source.recruiter_name && value.recruiter.title === source.recruiter_title;
+}
+
 export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id"], query: string, cityCode?: string, operationId?: LocalProviderReadProbeInput["operation_id"]): string {
   if (operationId === "xhs_read_note_detail" || operationId === "boss_read_job_detail") return `(() => {
     const text = document.body?.innerText || "";
@@ -756,11 +787,38 @@ function isOperationReadNetworkUrl(input: LocalProviderReadProbeInput, value: un
   return value === canonical.href;
 }
 
+function bossJobDetailWapiUrl(targetUrl: string): string {
+  const securityId = bossDetailTargetId(targetUrl);
+  const url = new URL("/wapi/zpgeek/job/detail.json", "https://www.zhipin.com");
+  url.searchParams.set("securityId", securityId);
+  return url.href;
+}
+
+function isBossJobDetailWapiUrl(input: LocalProviderReadProbeInput, value: unknown): boolean {
+  return input.operation_id === "boss_read_job_detail" && typeof value === "string" && value === bossJobDetailWapiUrl(input.target_url);
+}
+
+function bossDetailTargetId(targetUrl: string): string {
+  return new URL(targetUrl).pathname.split("/").at(-1)?.replace(/\.html$/, "") ?? "";
+}
+
 interface BossJobSearchResponseSummary {
   status: "completed";
   business_code: 0;
   job_count: number;
   detail_urls?: string[];
+}
+
+interface BossJobDetailResponseSummary {
+  status: "completed";
+  title: string;
+  description: string;
+  job_status: string;
+  salary?: string;
+  location?: string;
+  company_name: string;
+  recruiter_name: string;
+  recruiter_title: string;
 }
 
 type BossJobSearchResponseFailure = {
@@ -782,6 +840,61 @@ async function readBossJobSearchResponseSummary(client: CdpClient, requestId: st
   } catch {
     return bossResponseFailure("network_resource_unavailable", "BOSS WAPI response summary could not be read.", true);
   }
+}
+
+async function readBossJobDetailResponseSummary(client: CdpClient, requestId: string, targetId: string): Promise<BossJobDetailResponseSummary | BossJobSearchResponseFailure> {
+  try {
+    const response = await client.send("Network.getResponseBody", { requestId });
+    const encoded = typeof response.body === "string" ? response.body : "";
+    const bytes = response.base64Encoded === true ? Buffer.from(encoded, "base64") : Buffer.from(encoded, "utf8");
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_BOSS_RESPONSE_BYTES) return bossResponseFailure("network_resource_unavailable", "BOSS detail WAPI response is empty or exceeds the summary read limit.", true);
+    return summarizeBossJobDetailResponse(bytes.toString("utf8"), targetId);
+  } catch {
+    return bossResponseFailure("network_resource_unavailable", "BOSS detail WAPI response summary could not be read.", true);
+  }
+}
+
+export function summarizeBossJobDetailResponse(body: string, targetId: string): BossJobDetailResponseSummary | BossJobSearchResponseFailure {
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    return bossResponseFailure("site_changed", "BOSS detail WAPI response is not valid JSON.", true);
+  }
+  if (!isPlainRecord(value) || value.code !== 0) return bossResponseFailure("permission_denied", "BOSS detail WAPI rejected the read request.", false);
+  const zpData = isPlainRecord(value.zpData) ? value.zpData : null;
+  const job = zpData && isPlainRecord(zpData.jobInfo) ? zpData.jobInfo : null;
+  const company = zpData && isPlainRecord(zpData.brandComInfo) ? zpData.brandComInfo : null;
+  const recruiter = zpData && isPlainRecord(zpData.bossInfo) ? zpData.bossInfo : null;
+  if (!zpData || !job || !company || !recruiter) return bossResponseFailure("site_changed", "BOSS detail WAPI public summary shape is unavailable.", true);
+  const internalIds = [zpData.securityId, zpData.encryptJobId, job.securityId, job.encryptJobId].filter((entry): entry is string => typeof entry === "string");
+  if (!/^[A-Za-z0-9_-]+$/.test(targetId) || !internalIds.includes(targetId)) return bossResponseFailure("site_changed", "BOSS detail WAPI target binding does not match the selected result.", false);
+  const title = publicResponseText(job.jobName ?? job.title, 200);
+  const description = publicResponseText(job.postDescription ?? job.description ?? job.jobDescription, 4000);
+  const job_status = publicResponseText(job.jobStatus ?? job.status, 100);
+  const company_name = publicResponseText(company.brandName ?? company.name, 200);
+  const recruiter_name = publicResponseText(recruiter.name ?? recruiter.bossName, 100);
+  const recruiter_title = publicResponseText(recruiter.title ?? recruiter.bossTitle, 100);
+  if (!title || !description || !job_status || !company_name || !recruiter_name || !recruiter_title) return bossResponseFailure("site_changed", "BOSS detail WAPI required public fields are unavailable.", true);
+  const salary = publicResponseText(job.salaryDesc ?? job.salary, 100);
+  const location = publicResponseText(job.locationName ?? job.location, 100);
+  return {
+    status: "completed",
+    title,
+    description,
+    job_status,
+    ...(salary ? { salary } : {}),
+    ...(location ? { location } : {}),
+    company_name,
+    recruiter_name,
+    recruiter_title
+  };
+}
+
+function publicResponseText(value: unknown, max: number): string | null {
+  if (typeof value !== "string" || /[\u0000-\u001f\u007f]/.test(value)) return null;
+  const normalized = value.replace(/\s+/g, " ").trim().slice(0, max);
+  return normalized || null;
 }
 
 export function summarizeBossJobSearchResponse(body: string): BossJobSearchResponseSummary | BossJobSearchResponseFailure {

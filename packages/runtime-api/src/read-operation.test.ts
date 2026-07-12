@@ -10,7 +10,7 @@ import {
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
-import { readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobSearchResponse, validateReadOperationProbe } from "./local-provider-launcher.js";
+import { readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobDetailResponse, summarizeBossJobSearchResponse, validateReadOperationProbe } from "./local-provider-launcher.js";
 
 test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
@@ -491,40 +491,41 @@ test("validates both detail surfaces against the exact search-bound target", () 
     target_url: "https://www.zhipin.com/job_detail/AbC_123.html",
     expected_origin: "https://www.zhipin.com"
   };
-  const bossCompleted = validateReadOperationProbe(bossInput, {
+  const bossDetailResponse = {
+    status: "completed" as const,
+    title: "AI 工程师",
+    description: "公开职位描述",
+    job_status: "available",
+    company_name: "公开公司",
+    recruiter_name: "公开招聘者",
+    recruiter_title: "招聘经理"
+  };
+  const readyBossDetail = {
     ...ready,
     origin: "https://www.zhipin.com",
     pathname: "/job_detail/AbC_123.html",
     operation_response_url: bossInput.target_url,
+    boss_detail_response_status: 200,
+    boss_detail_response_url: "https://www.zhipin.com/wapi/zpgeek/job/detail.json?securityId=AbC_123",
+    boss_detail_response: bossDetailResponse,
     normalized: {
       kind: "boss_job_detail" as const,
       canonical_url: "https://www.zhipin.com/job_detail/AbC_123.html",
       title: "AI 工程师",
-      summary: "公开职位摘要",
+      summary: "公开职位描述",
       job: { title: "AI 工程师", description: "公开职位描述", status: "available" },
       company: { name: "公开公司" },
       recruiter: { name: "公开招聘者", title: "招聘经理" },
       source_status: "located" as const
     }
-  });
+  };
+  const bossCompleted = validateReadOperationProbe(bossInput, readyBossDetail);
   assert.equal(bossCompleted.status, "completed");
   if (bossCompleted.status === "completed") assert.deepEqual(bossCompleted.source_kinds, ["wapi_job_detail_summary", "dom_snapshot_summary"]);
-  assert.equal(failureClass(validateReadOperationProbe(bossInput, {
-    ...ready,
-    origin: "https://www.zhipin.com",
-    pathname: "/job_detail/AbC_123.html",
-    operation_response_url: bossInput.target_url,
-    normalized: {
-      kind: "boss_job_detail" as const,
-      canonical_url: "https://www.zhipin.com/job_detail/AbC_123.html",
-      title: "AI 工程师",
-      summary: "公开职位摘要",
-      job: { title: "AI 工程师", description: "公开职位描述", status: "available" },
-      company: { name: "" },
-      recruiter: { name: "公开招聘者", title: "招聘经理" },
-      source_status: "located" as const
-    }
-  })), "field_missing");
+  assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, boss_detail_response: undefined, boss_detail_response_url: undefined })), "network_resource_unavailable");
+  assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, boss_detail_response_url: "https://www.zhipin.com/wapi/zpgeek/job/detail.json?securityId=Other" })), "network_resource_unavailable");
+  assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, boss_detail_response: { ...bossDetailResponse, title: "错误职位" } })), "site_changed");
+  assert.equal(failureClass(validateReadOperationProbe(bossInput, { ...readyBossDetail, normalized: { ...readyBossDetail.normalized, company: { name: "" } } })), "field_missing");
 });
 
 test("summarizes only a successful BOSS WAPI job list and fails closed for empty 2xx shells", () => {
@@ -538,6 +539,26 @@ test("summarizes only a successful BOSS WAPI job list and fails closed for empty
   assert.equal(failureClass(summarizeBossJobSearchResponse('{"code":0,"zpData":{"jobList":[null]}}')), "empty_result");
   assert.equal(failureClass(summarizeBossJobSearchResponse('{"code":0,"zpData":{}}')), "site_changed");
   assert.equal(JSON.stringify(summarizeBossJobSearchResponse('{"code":0,"zpData":{"jobList":[{"secret":"not returned"}]}}')).includes("secret"), false);
+});
+
+test("summarizes only a target-bound BOSS detail WAPI response without raw identifiers", () => {
+  const body = JSON.stringify({
+    code: 0,
+    zpData: {
+      securityId: "AbC_123",
+      encryptJobId: "private-job-id",
+      jobInfo: { securityId: "AbC_123", jobName: "AI 工程师", postDescription: "公开职位描述", jobStatus: "available", salaryDesc: "20-30K", locationName: "上海" },
+      brandComInfo: { brandName: "公开公司" },
+      bossInfo: { name: "公开招聘者", title: "招聘经理" }
+    }
+  });
+  const summary = summarizeBossJobDetailResponse(body, "AbC_123");
+  assert.equal(summary.status, "completed");
+  assert.equal(JSON.stringify(summary).includes("securityId"), false);
+  assert.equal(JSON.stringify(summary).includes("encryptJobId"), false);
+  assert.equal(JSON.stringify(summary).includes("private-job-id"), false);
+  assert.equal(failureClass(summarizeBossJobDetailResponse(body, "Other_456")), "site_changed");
+  assert.equal(failureClass(summarizeBossJobDetailResponse('{"code":0,"zpData":{}}', "AbC_123")), "site_changed");
 });
 
 function failureClass(result: { status: string; failure_class?: string }): string | undefined {
