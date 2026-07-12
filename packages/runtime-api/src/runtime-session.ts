@@ -284,10 +284,11 @@ export class RuntimeSessionStore {
     const owner = input.control_owner;
     if (owner && record.facts.control_lock.owner !== owner && record.facts.control_lock.state === "held") return lockConflict(record, owner);
 
-    const confirmedUserRelease = record.read_operation_user_confirmed &&
-      record.facts.control_owner === "user" &&
-      record.facts.control_lock.owner === "user" &&
-      record.facts.control_lock.state === "held";
+    const confirmedReadControllerRelease = record.read_operation_user_confirmed &&
+      record.facts.control_lock.state === "held" && (
+        (record.facts.control_owner === "user" && record.facts.control_lock.owner === "user") ||
+        (record.read_operation_user_handoff && record.facts.control_owner === "core_task" && record.facts.control_lock.owner === "core_task")
+      );
     const now = new Date().toISOString();
     record.facts.lifecycle_state = "idle";
     record.facts.last_seen_at = now;
@@ -300,7 +301,7 @@ export class RuntimeSessionStore {
       conflict_error: null
     };
     record.user_held_session = false;
-    record.read_operation_user_release_pending = confirmedUserRelease;
+    record.read_operation_user_release_pending = confirmedReadControllerRelease;
     record.read_operation_user_handoff = false;
     this.viewerControls.recordHandoff(runtime_session_ref, { control_owner: "none" });
     record.facts.facts.push({ key: "session.release", source: "observed", value: owner ?? "unscoped" });
