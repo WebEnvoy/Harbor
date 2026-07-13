@@ -10,9 +10,9 @@ export const XHS_PUBLISH_PRECHECK_PIN = {
   operation_mode: "validate_only",
   origin: "https://creator.xiaohongshu.com",
   repository: "WebEnvoy/Lode",
-  commit: "749aff88309b26013cbd24ce1308ca213804a459",
+  commit: "d18d79cbe280d93b3e855ca906e254bcb9eadf00",
   asset_path: "registry/validate-only-runtime-consumption.json",
-  asset_sha256: "9852721d7b4f803c9a206ab86cacf8a0ae7b33ff1163d354c0fdeaee79173d2f"
+  asset_sha256: "f03577c3290fc8c7b52ed8157b0411d66242f18acdf334200968901ee6121dcd"
 } as const;
 
 export type WritePrecheckFailureClass = "invalid_contract" | "login_required" | "page_changed" | "target_not_writable" | "safety_challenge" | "evidence_unavailable" | "fixture_runtime" | "provider_probe_unavailable" | "session_missing" | "session_not_ready" | "session_user_controlled";

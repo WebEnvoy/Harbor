@@ -15,6 +15,11 @@ const request = {
   proposed_input_summary: "校验创作中心发布页和内容编辑目标，不保存、不上传、不发布。"
 };
 
+test("pins the merged Lode validate-only runtime contract", () => {
+  assert.equal(XHS_PUBLISH_PRECHECK_PIN.commit, "d18d79cbe280d93b3e855ca906e254bcb9eadf00");
+  assert.equal(XHS_PUBLISH_PRECHECK_PIN.asset_sha256, "f03577c3290fc8c7b52ed8157b0411d66242f18acdf334200968901ee6121dcd");
+});
+
 test("admits the exact Lode input schema and rejects forbidden draft/business data", () => {
   assert.deepEqual(admitXhsPublishPrecheck(request), { url: request.url, target_ref: request.target_ref, requested_fields: request.requested_fields, include_source_refs: true, proposed_input_summary: request.proposed_input_summary });
   for (const changed of [

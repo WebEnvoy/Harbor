@@ -4,7 +4,7 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher, type LocalProviderLaunchInput } from "./index.js";
+import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher, type LocalProviderLaunchInput, type RuntimeFact } from "./index.js";
 import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe, type ReadOperationProbe, type SiteResourceProbe } from "./read-operation-probe-trust.js";
 import { opaqueRef } from "./refs.js";
 import { startHarborRuntimeServer as startUnconfiguredHarborRuntimeServer } from "./server.js";
@@ -658,27 +658,7 @@ test("never reuses a released headless user-action session for manual visibility
 });
 
 test("rebinds persisted user-confirmed authentication directly to a fresh headed Core session", async () => {
-  const persistence_path = join(mkdtempSync(join(tmpdir(), "harbor-persisted-headed-handoff-")), "identity-environments.json");
-  const first = await startHarborRuntimeServer({
-    port: 0,
-    runtime: new HarborRuntime(unsupportedViewerLauncher("local_provider"), { persistence_path }),
-    manual_authentication_supervisor_token: supervisorToken()
-  });
-  try {
-    await postJson(`${first.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_persisted-headed-handoff"));
-    const initial = await postJson(`${first.url}/runtime/identity-environment-sessions`, {
-      identity_environment_ref: "identity-env_persisted-headed-handoff",
-      url: "https://www.zhipin.com/web/geek/job",
-      control_owner: "user"
-    });
-    const confirmed = await fetch(`${first.url}/runtime/sessions/${initial.runtime_session_ref}/manual-authentication-completed`, {
-      method: "POST",
-      headers: manualAuthHeaders()
-    });
-    assert.equal(confirmed.status, 200);
-  } finally {
-    await first.close();
-  }
+  const persistence_path = await persistConfirmedAuthentication("identity-env_persisted-headed-handoff");
 
   const launches: LocalProviderLaunchInput[] = [];
   const fixture = successfulBossReadLauncher;
@@ -710,6 +690,90 @@ test("rebinds persisted user-confirmed authentication directly to a fresh headed
   } finally {
     await second.close();
   }
+});
+
+test("only rebinds persisted authentication to trusted fresh user and Core pages", async () => {
+  const persistence_path = await persistConfirmedAuthentication("identity-env_persisted-rebind-blocked");
+  const targetUrl = "https://www.zhipin.com/web/geek/job?query=frontend";
+  const blockedPages = [
+    ["redirect", localReadPage("https://www.zhipin.com/web/geek/recommend")],
+    ["not-route-ready", { ...localReadPage(targetUrl), status: "unknown" as const }],
+    ["missing-controlled-target", {
+      current_url: null,
+      title: null,
+      status: "unavailable" as const,
+      error: { code: "cdp_unavailable" as const, message: "Exact controlled CDP page target is unavailable.", retryable: true },
+      facts: [] as RuntimeFact[]
+    }],
+    ["login", { ...localReadPage(targetUrl), title: "登录 - BOSS直聘" }],
+    ["challenge", { ...localReadPage(targetUrl), title: "安全验证 - BOSS直聘" }]
+  ] as const;
+  for (const owner of ["user", "core_task"] as const) for (const [name, blockedPage] of blockedPages) {
+    let probeCalls = 0;
+    const launcher = createBossReadLauncher(async (probe) => {
+      probeCalls += 1;
+      return completedBossReadProbe(probe);
+    });
+    const runtime = new HarborRuntime(async (input) => {
+      const launch = await launcher(input);
+      return launch.status === "ready" ? { ...launch, page: blockedPage } : launch;
+    }, { persistence_path });
+    const session = await runtime.openManagedIdentityEnvironmentSession({
+      identity_environment_ref: "identity-env_persisted-rebind-blocked",
+      url: targetUrl,
+      control_owner: owner,
+      headless: false
+    });
+    assert.equal("status" in session, false, name);
+    if ("status" in session) throw new Error(`${name} session unexpectedly unavailable`);
+    const facts = await runtime.getSiteResourceFacts(session.runtime_session_ref, { site_id: "boss", task_kind: "job_search" });
+    if (!("resource_facts" in facts)) throw new Error(`${owner}:${name} site facts unexpectedly unavailable`);
+    assert.equal(facts.resource_facts.find((fact) => fact.key === "identity.boss_geek_logged_in.confirmed")?.state, "unavailable", `${owner}:${name}`);
+    assert.equal(probeCalls, 0, `${owner}:${name}`);
+  }
+
+  for (const page of [
+    localReadPage("https://www.zhipin.com/web/geek/job?query=security"),
+    { ...localReadPage(targetUrl), title: "Security Engineer - BOSS直聘" }
+  ]) {
+    const launcher = createBossReadLauncher(async (probe) => completedBossReadProbe(probe));
+    const runtime = new HarborRuntime(async (input) => {
+      const launch = await launcher(input);
+      return launch.status === "ready" ? { ...launch, page } : launch;
+    }, { persistence_path });
+    const session = await runtime.openManagedIdentityEnvironmentSession({
+      identity_environment_ref: "identity-env_persisted-rebind-blocked",
+      url: targetUrl,
+      control_owner: "core_task",
+      headless: false
+    });
+    if ("status" in session) throw new Error("normal security text session unexpectedly unavailable");
+    const facts = await runtime.getSiteResourceFacts(session.runtime_session_ref, { site_id: "boss", task_kind: "job_search" });
+    if (!("resource_facts" in facts)) throw new Error("normal security text site facts unexpectedly unavailable");
+    assert.equal(facts.resource_facts.find((fact) => fact.key === "identity.boss_geek_logged_in.confirmed")?.state, "available");
+  }
+
+  const openFailedRuntime = new HarborRuntime(async () => ({
+    status: "unavailable",
+    error: { code: "url_unreachable", message: "open failed", retryable: true },
+    facts: []
+  }), { persistence_path });
+  const openFailed = await openFailedRuntime.openManagedIdentityEnvironmentSession({
+    identity_environment_ref: "identity-env_persisted-rebind-blocked",
+    url: targetUrl,
+    control_owner: "core_task",
+    headless: false
+  });
+  assert.equal("status" in openFailed, false);
+  if ("status" in openFailed) throw new Error("open-failed session facts missing");
+  const failedRead = await openFailedRuntime.executeAllowlistedReadOperation(openFailed.runtime_session_ref, {
+    site_id: "boss",
+    operation_id: "boss_job_search",
+    query: "frontend",
+    city_code: "101010100"
+  });
+  assert.equal(failedRead.status, "unavailable");
+  if (failedRead.status === "unavailable") assert.equal(failedRead.failure_class, "session_not_ready");
 });
 
 test("rejects direct user confirmation for fixture, unknown, and non-user local-provider sessions", async () => {
@@ -1631,6 +1695,30 @@ function manualAuthenticationEnvironment(identity_environment_ref: string): Reco
     login_state: "manual_auth_required",
     storage_state: "present"
   };
+}
+
+async function persistConfirmedAuthentication(identity_environment_ref: string): Promise<string> {
+  const persistence_path = join(mkdtempSync(join(tmpdir(), "harbor-persisted-authentication-")), "identity-environments.json");
+  const running = await startHarborRuntimeServer({
+    port: 0,
+    runtime: new HarborRuntime(unsupportedViewerLauncher("local_provider"), { persistence_path })
+  });
+  try {
+    await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment(identity_environment_ref));
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref,
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "user"
+    });
+    const confirmed = await fetch(`${running.url}/runtime/sessions/${session.runtime_session_ref}/manual-authentication-completed`, {
+      method: "POST",
+      headers: manualAuthHeaders()
+    });
+    assert.equal(confirmed.status, 200);
+    return persistence_path;
+  } finally {
+    await running.close();
+  }
 }
 
 function unsupportedViewerLauncher(execution_surface: "local_provider" | "fixture" | undefined): LocalProviderLauncher {

@@ -393,12 +393,12 @@ export class RuntimeSessionStore {
 
   isSupervisorConfirmableLocalProviderUserSession(runtime_session_ref: string): boolean {
     const record = this.records.get(runtime_session_ref);
-    return !!record && hasHeldUserLock(record) && record.execution_surface === "local_provider";
+    return !!record && hasHeldUserLock(record) && record.execution_surface === "local_provider" && hasTrustedReadyRoute(record.facts.current_page);
   }
 
   isPersistedAuthenticationRebindableCoreSession(runtime_session_ref: string): boolean {
     const record = this.records.get(runtime_session_ref);
-    return !!record && !record.headless && record.execution_surface === "local_provider" && hasHeldCoreLock(record);
+    return !!record && !record.headless && record.execution_surface === "local_provider" && hasHeldCoreLock(record) && hasTrustedReadyRoute(record.facts.current_page);
   }
 
   markReadOperationUserConfirmed(runtime_session_ref: string): void {
@@ -470,7 +470,8 @@ export class RuntimeSessionStore {
       };
     }
     const result = await probeReadOperation(input);
-    if (result.page) this.applyPageFacts(record, publicReadOperationTargetUrl(input.operation_id, input.target_url), result.page);
+    if (result.session_page) this.applyPageFacts(record, result.session_page.requested_url, result.session_page.page);
+    else if (result.session_page === undefined && result.page) this.applyPageFacts(record, publicReadOperationTargetUrl(input.operation_id, input.target_url), result.page);
     return result;
   }
 
@@ -654,6 +655,22 @@ function hasHeldCoreLock(record: RuntimeSessionRecord): boolean {
   return record.facts.control_owner === "core_task" &&
     record.facts.control_lock.owner === "core_task" &&
     record.facts.control_lock.state === "held";
+}
+
+function hasTrustedReadyRoute(page: RuntimePageFacts): boolean {
+  if (page.status !== "ready" || page.error_reason || !page.current_url) return false;
+  let pathname: string;
+  try {
+    const requested = new URL(page.requested_url);
+    const current = new URL(page.current_url);
+    if (requested.origin !== current.origin || requested.pathname !== current.pathname) return false;
+    pathname = current.pathname;
+  } catch {
+    return false;
+  }
+  const blockedPath = /(?:^|\/)(?:login|signin|captcha|challenge|verify|verification)(?:[/.]|$)|^\/web\/(?:user|passport)(?:\/|$)/i.test(pathname);
+  const blockedTitle = /(?:^|[-|·—]\s*)(?:登录|验证码|安全验证|身份验证|人机验证|访问验证|账号验证|login|sign in|captcha|verification required|verification challenge|security verification|security check|security challenge)(?:\s*[-|·—]|$)|请(?:登录|验证)/i.test(page.title ?? "");
+  return !blockedPath && !blockedTitle;
 }
 
 function unavailablePage(requested_url: string, current_error: RuntimeErrorFact, observed_at: string): RuntimePageFacts {

@@ -82,7 +82,7 @@ function capturingLauncher(launches: LocalProviderLaunchInput[], closes?: string
 function writeFakeBrowserExecutable(dir: string): string {
   const browserPath = join(dir, "fake-browser.mjs");
   writeFileSync(browserPath, `#!/usr/bin/env node
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 
@@ -90,6 +90,7 @@ const userDataArg = process.argv.find((arg) => arg.startsWith("--user-data-dir="
 const profileDir = userDataArg?.slice("--user-data-dir=".length);
 const requestedUrl = process.argv.findLast((arg) => !arg.startsWith("--")) ?? "about:blank";
 let openedUrl;
+let readTargetOpen = false;
 if (!profileDir) process.exit(2);
 mkdirSync(profileDir, { recursive: true });
 if (existsSync(join(profileDir, "DevToolsActivePort"))) process.exit(4);
@@ -105,25 +106,58 @@ const server = createServer((request, response) => {
     return;
   }
   if (url.pathname === "/json/list") {
-    response.end(JSON.stringify(openedUrl ? [{
+    response.end(JSON.stringify(process.env.HARBOR_FAKE_BROWSER_EMPTY_PAGE_LIST ? [] : readTargetOpen ? [{
+      id: "fake-initial-target",
+      type: "page",
+      url: requestedUrl,
+      title: "Initial page",
+      webSocketDebuggerUrl: process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL
+    }, {
+      id: "fake-read-target",
+      type: "page",
+      url: process.env.HARBOR_FAKE_BROWSER_READ_TARGET_URL,
+      title: "Read page",
+      webSocketDebuggerUrl: process.env.HARBOR_FAKE_BROWSER_READ_WEBSOCKET_URL
+    }] : openedUrl ? [{
       id: "fake-old-target",
       type: "page",
       url: process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL,
-      title: "Old page"
+      title: "Old page",
+      ...(process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL
+        ? { webSocketDebuggerUrl: process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL }
+        : {})
     }, {
       id: "fake-new-target",
       type: "page",
       url: openedUrl,
-      title: "Fake page"
+      title: "Fake page",
+      ...(process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL
+        ? { webSocketDebuggerUrl: process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL }
+        : {})
     }] : [{
+      ...(process.env.HARBOR_FAKE_BROWSER_OMIT_INITIAL_TARGET_ID ? {} : { id: "fake-initial-target" }),
       type: "page",
       url: process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL || requestedUrl,
-      title: process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE || "Fake page"
+      title: process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE || "Fake page",
+      ...(process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL
+        ? { webSocketDebuggerUrl: process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL }
+        : {})
     }]));
     return;
   }
   if (url.pathname === "/json/new") {
     openedUrl = decodeURIComponent(url.search.slice(1));
+    if (process.env.HARBOR_FAKE_BROWSER_READ_TARGET_URL && openedUrl === "about:blank") {
+      readTargetOpen = true;
+      response.end(JSON.stringify({
+        id: "fake-read-target",
+        type: "page",
+        url: openedUrl,
+        title: "Read page",
+        webSocketDebuggerUrl: process.env.HARBOR_FAKE_BROWSER_READ_WEBSOCKET_URL
+      }));
+      return;
+    }
     response.end(JSON.stringify({
       id: "fake-new-target",
       type: "page",
@@ -137,6 +171,19 @@ const server = createServer((request, response) => {
   }
   if (url.pathname === "/json/close/fake-new-target") {
     if (process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER) writeFileSync(process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER, "fake-new-target");
+    response.end(JSON.stringify({ closed: true }));
+    return;
+  }
+  if (url.pathname === "/json/close/fake-read-target") {
+    if (process.env.HARBOR_FAKE_BROWSER_FAIL_READ_CLOSE_MARKER && existsSync(process.env.HARBOR_FAKE_BROWSER_FAIL_READ_CLOSE_MARKER)) {
+      unlinkSync(process.env.HARBOR_FAKE_BROWSER_FAIL_READ_CLOSE_MARKER);
+      response.statusCode = 500;
+      response.end(JSON.stringify({ error: "close_failed" }));
+      return;
+    }
+    readTargetOpen = false;
+    openedUrl = undefined;
+    if (process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER) writeFileSync(process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER, "fake-read-target");
     response.end(JSON.stringify({ closed: true }));
     return;
   }
@@ -628,11 +675,19 @@ test("binds persistent profile reuse to the new target instead of an old creator
   const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
   const previousClosedMarker = process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER;
   const previousInitialUrl = process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL;
+  const previousOldWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL;
+  const previousWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
+  const originalWebSocket = globalThis.WebSocket;
   const browserPath = writeFakeBrowserExecutable(dir);
   const closedMarker = join(dir, "closed-target.txt");
+  const cdpConnections: string[] = [];
+  const creatorUrl = "https://creator.xiaohongshu.com/publish/publish";
   process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
   process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER = closedMarker;
-  process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL = "https://creator.xiaohongshu.com/publish/publish";
+  process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL = creatorUrl;
+  process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL = "ws://127.0.0.1/devtools/page/fake-old-target";
+  process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = "ws://127.0.0.1/devtools/page/fake-new-target";
+  installFakeCdpWebSocket(undefined, (url) => cdpConnections.push(url));
   const input = {
     browser_path: browserPath,
     headless: false,
@@ -642,22 +697,109 @@ test("binds persistent profile reuse to the new target instead of an old creator
     provider_ref: "provider_fake"
   };
   try {
-    const first = await launchLocalDedicatedProvider({ ...input, url: "https://creator.xiaohongshu.com/publish/publish" });
+    const first = await launchLocalDedicatedProvider({ ...input, url: creatorUrl });
     assert.equal(first.status, "ready");
-    const searchUrl = "https://www.xiaohongshu.com/search_result?keyword=AI";
-    const reused = await launchLocalDedicatedProvider({ ...input, url: searchUrl });
+    const reused = await launchLocalDedicatedProvider({ ...input, url: creatorUrl });
     assert.equal(reused.status, "ready");
-    if (reused.status === "ready") assert.equal(reused.page.current_url, searchUrl);
+    if (reused.status === "ready") assert.equal(reused.page.current_url, creatorUrl);
+    cdpConnections.length = 0;
+    if (reused.status === "ready") await reused.captureScreenshot();
+    assert.deepEqual(cdpConnections, ["ws://127.0.0.1/devtools/page/fake-new-target"]);
     if (reused.status === "ready") await reused.close();
     assert.equal(readFileSync(closedMarker, "utf8"), "fake-new-target");
     if (first.status === "ready") await first.close();
   } finally {
+    globalThis.WebSocket = originalWebSocket;
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
     if (previousClosedMarker === undefined) delete process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER;
     else process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER = previousClosedMarker;
     if (previousInitialUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL;
     else process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL = previousInitialUrl;
+    if (previousOldWebSocketUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL;
+    else process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL = previousOldWebSocketUrl;
+    if (previousWebSocketUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
+    else process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = previousWebSocketUrl;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("fails managed fresh-launch probes closed without an exact target id", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "harbor-managed-target-id-"));
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  const previousMissingId = process.env.HARBOR_FAKE_BROWSER_OMIT_INITIAL_TARGET_ID;
+  const previousEmptyList = process.env.HARBOR_FAKE_BROWSER_EMPTY_PAGE_LIST;
+  const previousOldWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL;
+  const originalWebSocket = globalThis.WebSocket;
+  const browserPath = writeFakeBrowserExecutable(dir);
+  const cdpConnections: string[] = [];
+  const url = "https://creator.xiaohongshu.com/publish/publish";
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
+  process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL = "ws://127.0.0.1/devtools/page/same-url-target";
+  installFakeCdpWebSocket(undefined, (connectedUrl) => cdpConnections.push(connectedUrl));
+  try {
+    for (const mode of ["missing-id", "empty-list"] as const) {
+      if (mode === "missing-id") process.env.HARBOR_FAKE_BROWSER_OMIT_INITIAL_TARGET_ID = "1";
+      else {
+        delete process.env.HARBOR_FAKE_BROWSER_OMIT_INITIAL_TARGET_ID;
+        process.env.HARBOR_FAKE_BROWSER_EMPTY_PAGE_LIST = "1";
+      }
+      const launch = await launchLocalDedicatedProvider({
+        browser_path: browserPath,
+        headless: false,
+        timeout_ms: 1000,
+        url,
+        profile_ref: `profile_${mode}`,
+        profile_storage_ref: `profile-storage_${mode}`,
+        provider_ref: "provider_fake"
+      });
+      assert.equal(launch.status, "ready", mode);
+      if (launch.status !== "ready") throw new Error(`${mode} launch should expose unavailable page facts`);
+      try {
+        assert.equal(launch.page.status, "unavailable", mode);
+        assert.equal(launch.page.current_url, null, mode);
+        assert.equal(launch.page.error?.code, "cdp_unavailable", mode);
+        if (!launch.probeSiteResource) throw new Error(`${mode} launch should expose the local site probe`);
+        cdpConnections.length = 0;
+        const probe = await launch.probeSiteResource({ site_id: "boss", task_kind: "job_search" });
+        assert.equal(probe.status, "unknown", mode);
+        if (probe.status === "unknown") assert.equal(probe.failure_class, "provider_probe_unavailable", mode);
+        const screenshot = await launch.captureScreenshot();
+        assert.equal("code" in screenshot && screenshot.code, "cdp_unavailable", mode);
+        assert.deepEqual(cdpConnections, [], mode);
+      } finally {
+        await launch.close();
+      }
+      delete process.env.HARBOR_FAKE_BROWSER_EMPTY_PAGE_LIST;
+    }
+
+    process.env.HARBOR_FAKE_BROWSER_OMIT_INITIAL_TARGET_ID = "1";
+    const ephemeral = await launchLocalDedicatedProvider({
+      browser_path: browserPath,
+      headless: false,
+      timeout_ms: 1000,
+      url,
+      profile_ref: "profile_ephemeral-missing-id",
+      provider_ref: "provider_fake"
+    });
+    assert.equal(ephemeral.status, "ready");
+    if (ephemeral.status !== "ready") throw new Error("ephemeral launch should preserve URL selection fallback");
+    assert.equal(ephemeral.page.status, "ready");
+    assert.equal(ephemeral.page.current_url, url);
+    cdpConnections.length = 0;
+    await ephemeral.captureScreenshot();
+    assert.deepEqual(cdpConnections, ["ws://127.0.0.1/devtools/page/same-url-target"]);
+    await ephemeral.close();
+  } finally {
+    globalThis.WebSocket = originalWebSocket;
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    if (previousMissingId === undefined) delete process.env.HARBOR_FAKE_BROWSER_OMIT_INITIAL_TARGET_ID;
+    else process.env.HARBOR_FAKE_BROWSER_OMIT_INITIAL_TARGET_ID = previousMissingId;
+    if (previousEmptyList === undefined) delete process.env.HARBOR_FAKE_BROWSER_EMPTY_PAGE_LIST;
+    else process.env.HARBOR_FAKE_BROWSER_EMPTY_PAGE_LIST = previousEmptyList;
+    if (previousOldWebSocketUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL;
+    else process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL = previousOldWebSocketUrl;
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -823,12 +965,13 @@ test("bounds provider version and page-list readback while preserving redirect f
   }
 });
 
-function installFakeCdpWebSocket(ignoredMethod: string): void {
+function installFakeCdpWebSocket(ignoredMethod?: string, onConnect: (url: string) => void = () => {}): void {
   class FakeCdpWebSocket extends EventTarget {
     readyState = 0;
 
-    constructor(_url: string | URL) {
+    constructor(url: string | URL) {
       super();
+      onConnect(String(url));
       queueMicrotask(() => {
         this.readyState = 1;
         this.dispatchEvent(new Event("open"));
@@ -838,8 +981,11 @@ function installFakeCdpWebSocket(ignoredMethod: string): void {
     send(payload: string): void {
       const message = JSON.parse(payload) as { id: number; method: string };
       if (message.method === ignoredMethod) return;
+      const result = message.method === "Runtime.evaluate"
+        ? { result: { value: { title: "Fake page", url: process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL ?? process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL, readyState: "complete" } } }
+        : message.method === "Page.captureScreenshot" ? { data: "" } : {};
       queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
-        data: JSON.stringify({ id: message.id, result: {} })
+        data: JSON.stringify({ id: message.id, result })
       })));
     }
 
@@ -850,6 +996,159 @@ function installFakeCdpWebSocket(ignoredMethod: string): void {
   }
   globalThis.WebSocket = FakeCdpWebSocket as unknown as typeof WebSocket;
 }
+
+function installReadLifecycleCdpWebSocket(onConnect: (url: string) => void): void {
+  const noteId = "0123456789abcdef01234567";
+  class FakeReadCdpWebSocket extends EventTarget {
+    readyState = 0;
+
+    constructor(private readonly url: string) {
+      super();
+      onConnect(url);
+      queueMicrotask(() => {
+        this.readyState = 1;
+        this.dispatchEvent(new Event("open"));
+      });
+    }
+
+    send(payload: string): void {
+      const message = JSON.parse(payload) as { id: number; method: string; params?: { expression?: string } };
+      let result: Record<string, unknown> = {};
+      if (message.method === "Runtime.evaluate") {
+        const expression = message.params?.expression ?? "";
+        const value = expression.includes("expectedNoteId")
+          ? { x: 10, y: 10 }
+          : expression.includes("detail-desc")
+            ? {
+                origin: "https://www.xiaohongshu.com", pathname: `/explore/${noteId}`, ready: true, rendered_surface: true,
+                login_like: false, challenge_like: false, vue_ready: true, pinia_ready: true,
+                normalized: {
+                  kind: "xiaohongshu_note_detail", canonical_url: `https://www.xiaohongshu.com/explore/${noteId}`, note_id: noteId,
+                  title: "Public title", summary: "Public summary", body_summary: "Public body",
+                  author: { display_name: "Public author", author_id: "author_123", profile_url: "https://www.xiaohongshu.com/user/profile/author_123" },
+                  interaction_metrics: { likes: "10", comments: "2", collects: "3", shares: "1" }, source_status: "located"
+                }
+              }
+            : expression.includes("detail_urls")
+              ? {
+                  origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: "?keyword=AI", ready: true,
+                  login_like: false, challenge_like: false, pinia_ready: true, list_valid: true, note_count: 1,
+                  detail_urls: [`https://www.xiaohongshu.com/explore/${noteId}`]
+                }
+              : { title: this.url.includes("fake-initial-target") ? "Initial page" : "Read page", url: this.url.includes("fake-initial-target") ? "https://www.xiaohongshu.com/explore" : "https://www.xiaohongshu.com/search_result?keyword=AI", readyState: "complete" };
+        result = { result: { value } };
+      } else if (message.method === "Network.getResponseBody") {
+        result = { body: JSON.stringify({ data: { items: [{ id: noteId }] } }), base64Encoded: false };
+      } else if (message.method === "Page.captureScreenshot") {
+        result = { data: "AA==" };
+      }
+      queueMicrotask(() => {
+        this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ id: message.id, result }) }));
+        if (message.method === "Page.navigate") this.emitResponse("search", "https://so.xiaohongshu.com/api/sns/web/v2/search/notes");
+        if (message.method === "Input.dispatchMouseEvent") this.emitResponse("detail", "https://edith.xiaohongshu.com/api/sns/web/v1/feed");
+      });
+    }
+
+    close(): void {
+      this.readyState = 3;
+      this.dispatchEvent(new Event("close"));
+    }
+
+    private emitResponse(requestId: string, url: string): void {
+      this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({
+        method: "Network.responseReceived",
+        params: { requestId, response: { status: 200, url } }
+      }) }));
+    }
+  }
+  globalThis.WebSocket = FakeReadCdpWebSocket as unknown as typeof WebSocket;
+}
+
+test("keeps read-operation page facts bound to the live CDP target", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "harbor-read-target-binding-"));
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  const previousOldWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL;
+  const previousReadWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_READ_WEBSOCKET_URL;
+  const previousReadTargetUrl = process.env.HARBOR_FAKE_BROWSER_READ_TARGET_URL;
+  const previousClosedMarker = process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER;
+  const previousFailCloseMarker = process.env.HARBOR_FAKE_BROWSER_FAIL_READ_CLOSE_MARKER;
+  const originalWebSocket = globalThis.WebSocket;
+  const searchUrl = "https://www.xiaohongshu.com/search_result?keyword=AI";
+  const noteUrl = "https://www.xiaohongshu.com/explore/0123456789abcdef01234567";
+  const closedMarker = join(dir, "closed-target.txt");
+  const failCloseMarker = join(dir, "fail-read-close.txt");
+  const connections: string[] = [];
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
+  process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL = "ws://127.0.0.1/devtools/page/fake-initial-target";
+  process.env.HARBOR_FAKE_BROWSER_READ_WEBSOCKET_URL = "ws://127.0.0.1/devtools/page/fake-read-target";
+  process.env.HARBOR_FAKE_BROWSER_READ_TARGET_URL = searchUrl;
+  process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER = closedMarker;
+  process.env.HARBOR_FAKE_BROWSER_FAIL_READ_CLOSE_MARKER = failCloseMarker;
+  installReadLifecycleCdpWebSocket((url) => connections.push(url));
+  const launch = await launchLocalDedicatedProvider({
+    browser_path: writeFakeBrowserExecutable(dir), headless: false, timeout_ms: 1000,
+    url: "https://www.xiaohongshu.com/explore", profile_ref: "profile_read-binding",
+    profile_storage_ref: "profile-storage_read-binding", provider_ref: "provider_fake"
+  });
+  try {
+    assert.equal(launch.status, "ready");
+    if (launch.status !== "ready" || !launch.probeReadOperation || !launch.probeSiteResource) throw new Error("read probes unavailable");
+    const search = await launch.probeReadOperation({
+      site_id: "xiaohongshu", operation_id: "xhs_search_notes", query: "AI", target_url: searchUrl,
+      expected_origin: "https://www.xiaohongshu.com"
+    });
+    assert.equal(search.status, "completed");
+    assert.equal(search.session_page?.page.current_url, searchUrl);
+    connections.length = 0;
+    await launch.captureScreenshot();
+    assert.deepEqual(connections, ["ws://127.0.0.1/devtools/page/fake-read-target"]);
+    connections.length = 0;
+    await launch.probeSiteResource({ site_id: "boss", task_kind: "job_search" });
+    assert.equal(connections[0], "ws://127.0.0.1/devtools/page/fake-read-target");
+
+    writeFileSync(failCloseMarker, "fail-once");
+    const blockedReplacement = await launch.probeReadOperation({
+      site_id: "xiaohongshu", operation_id: "xhs_search_notes", query: "AI", target_url: searchUrl,
+      expected_origin: "https://www.xiaohongshu.com"
+    });
+    assert.equal(blockedReplacement.status, "unavailable");
+    if (blockedReplacement.status === "unavailable") assert.equal(blockedReplacement.failure_class, "network_resource_unavailable");
+    const retriedSearch = await launch.probeReadOperation({
+      site_id: "xiaohongshu", operation_id: "xhs_search_notes", query: "AI", target_url: searchUrl,
+      expected_origin: "https://www.xiaohongshu.com"
+    });
+    assert.equal(retriedSearch.status, "completed");
+
+    const detail = await launch.probeReadOperation({
+      site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", detail_ref: "detail_ref_test",
+      target_url: noteUrl, navigation_source_url: searchUrl, expected_origin: "https://www.xiaohongshu.com"
+    });
+    assert.equal(detail.status, "completed");
+    assert.equal(detail.page.current_url, noteUrl);
+    assert.equal(detail.session_page?.requested_url, "https://www.xiaohongshu.com/explore");
+    assert.equal(detail.session_page?.page.current_url, "https://www.xiaohongshu.com/explore");
+    assert.equal(readFileSync(closedMarker, "utf8"), "fake-read-target");
+    connections.length = 0;
+    await launch.captureScreenshot();
+    assert.deepEqual(connections, ["ws://127.0.0.1/devtools/page/fake-initial-target"]);
+  } finally {
+    if (launch.status === "ready") await launch.close();
+    globalThis.WebSocket = originalWebSocket;
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    if (previousOldWebSocketUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL;
+    else process.env.HARBOR_FAKE_BROWSER_OLD_WEBSOCKET_URL = previousOldWebSocketUrl;
+    if (previousReadWebSocketUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_READ_WEBSOCKET_URL;
+    else process.env.HARBOR_FAKE_BROWSER_READ_WEBSOCKET_URL = previousReadWebSocketUrl;
+    if (previousReadTargetUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_READ_TARGET_URL;
+    else process.env.HARBOR_FAKE_BROWSER_READ_TARGET_URL = previousReadTargetUrl;
+    if (previousClosedMarker === undefined) delete process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER;
+    else process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER = previousClosedMarker;
+    if (previousFailCloseMarker === undefined) delete process.env.HARBOR_FAKE_BROWSER_FAIL_READ_CLOSE_MARKER;
+    else process.env.HARBOR_FAKE_BROWSER_FAIL_READ_CLOSE_MARKER = previousFailCloseMarker;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("opens an identity environment session with page and controller facts", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));

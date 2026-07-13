@@ -224,6 +224,16 @@ test("correlates the official Vue Pinia search store without exposing store cont
   }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
   assert.equal(searchWithLoginSurface(loginSurface).login_like, true);
   assert.equal(searchWithLoginSurface({ ...loginSurface, checkVisibility: () => false }).login_like, false);
+  const loginOverlayWithAuthenticatedNav = evaluate({}, {
+    ...document,
+    defaultView: loginView,
+    querySelectorAll: (selector: string) => selector === 'a[href*="/explore/"]'
+      ? anchors
+      : selector === "a, div, span"
+        ? [{ ...loginSurface, textContent: "我" }]
+        : selector.includes("qrcode") ? [loginSurface] : []
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(loginOverlayWithAuthenticatedNav.login_like, true);
   assert.equal(evaluate({}, document, { origin: "https://www.xiaohongshu.com", pathname: "/login", search: "" }).login_like, true);
 
   for (const candidate of [

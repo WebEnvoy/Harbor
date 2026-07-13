@@ -34,6 +34,8 @@ import type { LocalProviderWritePrecheckProbeInput, LocalProviderWritePrecheckPr
 
 type CdpPageTarget = { id?: string; type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
 type ObservedDetailPublicSummary = Omit<XiaohongshuNoteDetailPublicSummary, "source_citation"> | Omit<BossJobDetailPublicSummary, "detail_ref" | "source_citation">;
+type ProviderReadOperationOutcome = { result: LocalProviderReadProbeResult; target_id?: string; target_retained: boolean };
+type ProviderPageBinding = { targetId: string | null | undefined; requestedUrl: string; page: LocalProviderPageFacts };
 
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
@@ -60,12 +62,30 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     const readbackSignal = AbortSignal.timeout(remainingLaunchTime(launchDeadline));
     const version = await fetchVersion(port, readbackSignal);
     const ownedTargetIds = new Set<string>();
+    let currentTargetId: string | null | undefined = profileStorage.persistent ? null : undefined;
+    const rememberTarget = (targetId: string) => {
+      currentTargetId = targetId;
+      ownedTargetIds.add(targetId);
+    };
     const page = reusingActiveBrowser
-      ? await openProviderUrl(port, input.url, readbackSignal, (targetId) => ownedTargetIds.add(targetId))
-      : await readPageFacts(port, input.url, readbackSignal);
+      ? await openProviderUrl(port, input.url, readbackSignal, rememberTarget)
+      : await readPageFacts(port, input.url, readbackSignal, profileStorage.persistent, (targetId) => { currentTargetId = targetId; });
     let currentUrl = page.current_url ?? input.url;
+    let currentRequestedUrl = input.url;
+    let currentPage = page;
     let retainedXhsSearchTargetId: string | undefined;
+    let xhsReturnBinding: ProviderPageBinding | undefined;
     let readOperationTail = Promise.resolve();
+    const closeTrackedTarget = async (targetId: string): Promise<boolean> => {
+      ownedTargetIds.add(targetId);
+      try {
+        await closeProviderPage(port, targetId);
+        ownedTargetIds.delete(targetId);
+        return true;
+      } catch {
+        return false;
+      }
+    };
     const evidence_ref = opaqueRef("validation");
     return {
       status: "ready",
@@ -81,11 +101,18 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         ...page.facts
       ],
       openUrl: async (url) => {
-        const nextPage = await openProviderUrl(port, url, AbortSignal.timeout(Math.max(1, input.timeout_ms)), reusingActiveBrowser ? (targetId) => ownedTargetIds.add(targetId) : undefined);
+        let openedTargetId: string | null | undefined = profileStorage.persistent ? null : undefined;
+        const nextPage = await openProviderUrl(port, url, AbortSignal.timeout(Math.max(1, input.timeout_ms)), (targetId) => {
+          openedTargetId = targetId;
+          if (reusingActiveBrowser) ownedTargetIds.add(targetId);
+        });
+        currentTargetId = openedTargetId;
         currentUrl = nextPage.current_url ?? url;
+        currentRequestedUrl = url;
+        currentPage = nextPage;
         return nextPage;
       },
-      probeSiteResource: trustLocalProviderSiteResourceProbe((probe) => probeProviderSiteResource(port, currentUrl, probe)),
+      probeSiteResource: trustLocalProviderSiteResourceProbe((probe) => probeProviderSiteResource(port, currentUrl, probe, undefined, currentTargetId)),
       probeReadOperation: trustLocalProviderReadProbe(async (probe) => {
         const previous = readOperationTail;
         let release!: () => void;
@@ -93,24 +120,52 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
         await previous;
         try {
           if (probe.operation_id === "xhs_search_notes" && retainedXhsSearchTargetId) {
-            await closeProviderPage(port, retainedXhsSearchTargetId).catch(() => undefined);
+            if (!await closeTrackedTarget(retainedXhsSearchTargetId)) {
+              return probeUnavailable("network_resource_unavailable", "The previous search target could not be closed safely.", true);
+            }
             retainedXhsSearchTargetId = undefined;
+            const restored = await restoreProviderBinding(port, xhsReturnBinding);
+            currentTargetId = restored.targetId;
+            currentUrl = restored.page.current_url ?? restored.requestedUrl;
+            currentRequestedUrl = restored.requestedUrl;
+            currentPage = restored.page;
+            xhsReturnBinding = undefined;
           }
-          const result = await probeProviderReadOperation(port, probe, retainedXhsSearchTargetId, (targetId) => {
-            retainedXhsSearchTargetId = targetId;
-          });
-          if (probe.operation_id === "xhs_read_note_detail") retainedXhsSearchTargetId = undefined;
-          if (result.page?.current_url) currentUrl = result.page.current_url;
-          return result;
+          if (probe.operation_id === "xhs_search_notes") {
+            xhsReturnBinding = { targetId: currentTargetId, requestedUrl: currentRequestedUrl, page: currentPage };
+          }
+          const outcome = await probeProviderReadOperation(port, probe, retainedXhsSearchTargetId, (targetId) => {
+            ownedTargetIds.add(targetId);
+          }, closeTrackedTarget);
+          if (probe.operation_id === "xhs_search_notes" && outcome.target_retained && outcome.target_id && outcome.result.page) {
+            retainedXhsSearchTargetId = outcome.target_id;
+            currentTargetId = outcome.target_id;
+            currentUrl = outcome.result.page.current_url ?? probe.target_url;
+            currentRequestedUrl = publicReadOperationTargetUrl(probe.operation_id, probe.target_url);
+            currentPage = outcome.result.page;
+            return { ...outcome.result, session_page: { requested_url: currentRequestedUrl, page: currentPage } };
+          }
+          if (probe.operation_id === "xhs_search_notes") xhsReturnBinding = undefined;
+          if (probe.operation_id === "xhs_read_note_detail") {
+            retainedXhsSearchTargetId = undefined;
+            const restored = await restoreProviderBinding(port, xhsReturnBinding);
+            currentTargetId = restored.targetId;
+            currentUrl = restored.page.current_url ?? restored.requestedUrl;
+            currentRequestedUrl = restored.requestedUrl;
+            currentPage = restored.page;
+            xhsReturnBinding = undefined;
+            return { ...outcome.result, session_page: { requested_url: currentRequestedUrl, page: currentPage } };
+          }
+          return { ...outcome.result, session_page: null };
         } finally {
           release();
         }
       }),
-      probeWritePrecheck: trustLocalProviderWritePrecheckProbe((probe) => probeProviderWritePrecheck(port, currentUrl, probe)),
-      captureScreenshot: () => captureProviderScreenshot(port, currentUrl),
+      probeWritePrecheck: trustLocalProviderWritePrecheckProbe((probe) => probeProviderWritePrecheck(port, currentUrl, probe, currentTargetId)),
+      captureScreenshot: () => captureProviderScreenshot(port, currentUrl, currentTargetId),
       close: async () => {
-        if (retainedXhsSearchTargetId) await closeProviderPage(port, retainedXhsSearchTargetId).catch(() => undefined);
-        for (const targetId of ownedTargetIds) await closeProviderPage(port, targetId).catch(() => undefined);
+        if (retainedXhsSearchTargetId) await closeTrackedTarget(retainedXhsSearchTargetId);
+        for (const targetId of [...ownedTargetIds]) await closeTrackedTarget(targetId);
         await closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent);
       }
     };
@@ -174,10 +229,10 @@ export function validateXhsWritePrecheckObservation(input: LocalProviderWritePre
   };
 }
 
-async function probeProviderWritePrecheck(port: string, currentUrl: string, input: LocalProviderWritePrecheckProbeInput): Promise<LocalProviderWritePrecheckProbeResult> {
+async function probeProviderWritePrecheck(port: string, currentUrl: string, input: LocalProviderWritePrecheckProbeInput, targetId?: string | null): Promise<LocalProviderWritePrecheckProbeResult> {
   try {
     if (currentUrl !== input.target_url) return writePrecheckUnavailable("page_changed", "The managed session is not on the requested creator publish page.");
-    const page = await activePage(port, currentUrl, AbortSignal.timeout(3000));
+    const page = await activePage(port, currentUrl, AbortSignal.timeout(3000), targetId);
     if (!page.webSocketDebuggerUrl) return writePrecheckUnavailable("provider_probe_unavailable", "The creator page has no controlled CDP target.");
     const observedAt = Date.now();
     const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
@@ -239,7 +294,8 @@ export async function probeProviderSiteResource(
   port: string,
   requestedUrl: string,
   input: LocalProviderSiteResourceProbeInput,
-  deadlineMs = BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS
+  deadlineMs = BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS,
+  targetId?: string | null
 ): Promise<LocalProviderSiteResourceProbeResult> {
   if (input.site_id !== "boss" || (input.task_kind !== "job_search" && input.task_kind !== "boss_job_search")) {
     return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The local provider has no safe probe for this site resource.");
@@ -247,7 +303,7 @@ export async function probeProviderSiteResource(
   const deadline = AbortSignal.timeout(Math.max(1, Math.min(deadlineMs, BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS)));
   const signal = input.signal ? AbortSignal.any([input.signal, deadline]) : deadline;
   try {
-    const page = await activePage(port, requestedUrl, signal);
+    const page = await activePage(port, requestedUrl, signal, targetId);
     if (!page.webSocketDebuggerUrl) {
       return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The BOSS page has no controlled CDP target.");
     }
@@ -488,17 +544,26 @@ async function probeProviderReadOperation(
   port: string,
   input: LocalProviderReadProbeInput,
   retainedXhsSearchTargetId?: string,
-  retainXhsSearchTarget: (targetId: string) => void = () => {}
-): Promise<LocalProviderReadProbeResult> {
+  trackTarget: (targetId: string) => void = () => {},
+  closeTarget: (targetId: string) => Promise<boolean> = async (targetId) => {
+    await closeProviderPage(port, targetId);
+    return true;
+  }
+): Promise<ProviderReadOperationOutcome> {
+  let operationTargetId: string | undefined;
+  let operationTargetRetained = false;
   try {
     const retainedPage = input.operation_id === "xhs_read_note_detail" && input.navigation_source_url && retainedXhsSearchTargetId
       ? (await pageTargets(port)).find((candidate) => candidate.id === retainedXhsSearchTargetId)
       : undefined;
     if (input.operation_id === "xhs_read_note_detail" && !retainedPage) {
-      return probeUnavailable("page_not_ready", "The search page bound to this detail ref is no longer available.", true);
+      return { result: probeUnavailable("page_not_ready", "The search page bound to this detail ref is no longer available.", true), target_retained: false };
     }
     const page = retainedPage ?? await createBlankProviderPage(port);
-    if (!page.id || !page.webSocketDebuggerUrl) throw new Error("Read-operation page has no target id or CDP websocket.");
+    if (!page.id) throw new Error("Read-operation page has no target id.");
+    operationTargetId = page.id;
+    trackTarget(page.id);
+    if (!page.webSocketDebuggerUrl) throw new Error("Read-operation page has no CDP websocket.");
     let keepPage = false;
     const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.enable");
@@ -632,7 +697,7 @@ async function probeProviderReadOperation(
           const screenshot = await captureProbeScreenshot(client);
           if (input.operation_id === "xhs_search_notes") {
             keepPage = true;
-            retainXhsSearchTarget(page.id!);
+            operationTargetRetained = true;
           }
           return screenshot ? {
             validation,
@@ -644,21 +709,21 @@ async function probeProviderReadOperation(
       stopObservingNetwork();
       stopIntercepting();
       return null;
-    }).finally(() => keepPage ? undefined : closeProviderPage(port, page.id!));
+    }).finally(() => keepPage ? undefined : closeTarget(page.id!).then(() => undefined));
     const pageFacts = readOperationPageFacts(input.operation_id, input.target_url);
-    if (!observation) return probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts);
-    if (observation.blocked_redirect) return probeUnavailable("origin_drift", "A cross-origin document redirect was blocked before navigation.", false, pageFacts);
-    if (observation.evidence_missing) return probeUnavailable("evidence_refs_missing", "The local provider could not capture required refs-only evidence.", true, pageFacts);
+    if (!observation) return readOperationOutcome(probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts), operationTargetId, operationTargetRetained);
+    if (observation.blocked_redirect) return readOperationOutcome(probeUnavailable("origin_drift", "A cross-origin document redirect was blocked before navigation.", false, pageFacts), operationTargetId, operationTargetRetained);
+    if (observation.evidence_missing) return readOperationOutcome(probeUnavailable("evidence_refs_missing", "The local provider could not capture required refs-only evidence.", true, pageFacts), operationTargetId, operationTargetRetained);
     const validation = observation.validation;
     if (!validation || validation.status === "unavailable") {
-      return probeUnavailable(validation?.failure_class ?? "page_not_ready", validation?.message ?? "The read-operation page did not reach a ready state.", validation?.retryable ?? true, pageFacts);
+      return readOperationOutcome(probeUnavailable(validation?.failure_class ?? "page_not_ready", validation?.message ?? "The read-operation page did not reach a ready state.", validation?.retryable ?? true, pageFacts), operationTargetId, operationTargetRetained);
     }
     const source_refs = validation.source_kinds.map((kind) => ({ kind, ref: opaqueRef("source") }));
     const evidence_ref_kinds = [
       { kind: "snapshot_ref", ref: observation.screenshot_ref! },
       ...(input.operation_id === "boss_job_search" ? [{ kind: "network_summary_ref", ref: opaqueRef("evidence") }] : [])
     ];
-    return {
+    return readOperationOutcome({
       status: "completed",
       observed_at: new Date().toISOString(),
       observed_origin: input.expected_origin,
@@ -668,14 +733,18 @@ async function probeProviderReadOperation(
       public_summary_source_ref: source_refs.find((source) => source.kind === "network_summary" || source.kind === "wapi_job_detail_summary")?.ref ?? source_refs[0]!.ref,
       public_summary: validation.public_summary,
       detail_targets: validation.detail_urls?.map((canonical_url) => ({ canonical_url, source_url: input.target_url }))
-    };
+    }, operationTargetId, operationTargetRetained);
   } catch (cause) {
-    return probeUnavailable(
+    return readOperationOutcome(probeUnavailable(
       "network_resource_unavailable",
       cause instanceof Error ? cause.message : "The provider read-only probe failed.",
       true
-    );
+    ), operationTargetId, false);
   }
+}
+
+function readOperationOutcome(result: LocalProviderReadProbeResult, target_id: string | undefined, target_retained: boolean): ProviderReadOperationOutcome {
+  return { result, ...(target_id ? { target_id } : {}), target_retained };
 }
 
 function probeUnavailable(
@@ -1136,8 +1205,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     };
     const visibleSurface = (selectors) => typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll(selectors)).some(visibleSurfaceElement);
     const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge/i.test(text) || visibleSurface('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"]');
-    const authenticated = Array.from(document.querySelectorAll('a, div, span')).some((element) => element.textContent?.trim() === '我' && visibleSurfaceElement(element));
-    const login = !authenticated && (location.pathname.startsWith('/login') || visibleSurface('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
+    const login = location.pathname.startsWith('/login') || visibleSurface('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]');
     return {
       origin: location.origin,
       pathname: location.pathname,
@@ -1420,13 +1488,36 @@ function readOperationPageFacts(operationId: LocalProviderReadProbeInput["operat
   };
 }
 
-async function readPageFacts(port: string, requested_url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
+async function readPageFacts(port: string, requested_url: string, signal: AbortSignal | undefined, requireExactTarget: boolean, onSelected?: (targetId: string) => void): Promise<LocalProviderPageFacts> {
   try {
     const page = selectPage(await pageTargets(port, signal), requested_url);
+    if (requireExactTarget && !page?.id) throw new Error("Exact controlled CDP page target is unavailable.");
+    if (page?.id) onSelected?.(page.id);
     return readTargetPageFacts(page, requested_url, signal);
   } catch (cause) {
     return unavailablePageFacts("cdp_unavailable", requested_url, cause);
   }
+}
+
+async function restoreProviderBinding(port: string, binding: ProviderPageBinding | undefined): Promise<ProviderPageBinding> {
+  const requestedUrl = binding?.requestedUrl ?? "about:blank";
+  if (typeof binding?.targetId !== "string") {
+    return { targetId: null, requestedUrl, page: unavailablePageFacts("cdp_unavailable", requestedUrl, new Error("No surviving controlled CDP target is bound.")) };
+  }
+  try {
+    const target = (await pageTargets(port)).find((candidate) => candidate.id === binding.targetId);
+    if (!target) throw new Error("The previously bound CDP target is no longer available.");
+    return { targetId: binding.targetId, requestedUrl, page: await readTargetPageFactsStrict(target, requestedUrl) };
+  } catch (cause) {
+    return { targetId: null, requestedUrl, page: unavailablePageFacts("cdp_unavailable", requestedUrl, cause) };
+  }
+}
+
+async function readTargetPageFactsStrict(page: CdpPageTarget, requestedUrl: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
+  if (!page.webSocketDebuggerUrl) throw new Error("The controlled CDP target has no websocket.");
+  const observed = await readPageTitle(page.webSocketDebuggerUrl, requestedUrl, signal);
+  if (!observed) throw new Error("The controlled CDP target did not return page facts.");
+  return readyPage(observed.url, observed.title);
 }
 
 async function readTargetPageFacts(page: CdpPageTarget | undefined, requested_url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
@@ -1441,9 +1532,9 @@ async function readTargetPageFacts(page: CdpPageTarget | undefined, requested_ur
   return readyPage(observed?.url ?? page?.url ?? requested_url, observed?.title ?? page?.title ?? null);
 }
 
-async function captureProviderScreenshot(port: string, requested_url: string): Promise<LocalProviderScreenshotFacts | RuntimeErrorFact> {
+async function captureProviderScreenshot(port: string, requested_url: string, targetId?: string | null): Promise<LocalProviderScreenshotFacts | RuntimeErrorFact> {
   try {
-    const page = await activePage(port, requested_url);
+    const page = await activePage(port, requested_url, undefined, targetId);
     if (!page.webSocketDebuggerUrl) return error("cdp_unavailable", "Active page has no CDP websocket.", true);
     const data = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.bringToFront");
@@ -1457,8 +1548,9 @@ async function captureProviderScreenshot(port: string, requested_url: string): P
   }
 }
 
-async function activePage(port: string, requested_url: string, signal?: AbortSignal): Promise<CdpPageTarget> {
-  const page = selectPage(await pageTargets(port, signal), requested_url);
+async function activePage(port: string, requested_url: string, signal?: AbortSignal, targetId?: string | null): Promise<CdpPageTarget> {
+  const pages = await pageTargets(port, signal);
+  const page = targetId === undefined ? selectPage(pages, requested_url) : pages.find((candidate) => candidate.id === targetId);
   if (!page) throw new Error("CDP page target is unavailable.");
   return page;
 }

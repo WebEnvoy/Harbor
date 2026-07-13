@@ -301,6 +301,11 @@ export interface LocalProviderReadProbeRef {
   ref: string;
 }
 
+export interface LocalProviderReadProbeSessionPage {
+  requested_url: string;
+  page: LocalProviderPageFacts;
+}
+
 export type LocalProviderReadProbeResult =
   | {
       status: "completed";
@@ -312,6 +317,7 @@ export type LocalProviderReadProbeResult =
       public_summary_source_ref: string;
       public_summary: LocalProviderReadProbePublicSummary;
       detail_targets?: LocalProviderReadProbeDetailTarget[];
+      session_page?: LocalProviderReadProbeSessionPage | null;
     }
   | {
       status: "unavailable";
@@ -319,6 +325,7 @@ export type LocalProviderReadProbeResult =
       message: string;
       retryable: boolean;
       page?: LocalProviderPageFacts;
+      session_page?: LocalProviderReadProbeSessionPage | null;
     };
 
 export type LocalProviderLaunchResult =
