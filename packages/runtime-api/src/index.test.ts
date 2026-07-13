@@ -89,6 +89,7 @@ import { join } from "node:path";
 const userDataArg = process.argv.find((arg) => arg.startsWith("--user-data-dir="));
 const profileDir = userDataArg?.slice("--user-data-dir=".length);
 const requestedUrl = process.argv.findLast((arg) => !arg.startsWith("--")) ?? "about:blank";
+let openedUrl;
 if (!profileDir) process.exit(2);
 mkdirSync(profileDir, { recursive: true });
 if (existsSync(join(profileDir, "DevToolsActivePort"))) process.exit(4);
@@ -104,7 +105,17 @@ const server = createServer((request, response) => {
     return;
   }
   if (url.pathname === "/json/list") {
-    response.end(JSON.stringify([{
+    response.end(JSON.stringify(openedUrl ? [{
+      id: "fake-old-target",
+      type: "page",
+      url: process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL,
+      title: "Old page"
+    }, {
+      id: "fake-new-target",
+      type: "page",
+      url: openedUrl,
+      title: "Fake page"
+    }] : [{
       type: "page",
       url: process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL || requestedUrl,
       title: process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE || "Fake page"
@@ -112,10 +123,11 @@ const server = createServer((request, response) => {
     return;
   }
   if (url.pathname === "/json/new") {
+    openedUrl = decodeURIComponent(url.search.slice(1));
     response.end(JSON.stringify({
       id: "fake-new-target",
       type: "page",
-      url: decodeURIComponent(url.search.slice(1)),
+      url: process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL || openedUrl,
       title: "Fake page",
       ...(process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL
         ? { webSocketDebuggerUrl: process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL }
@@ -611,14 +623,16 @@ test("local provider preserves persistent profile dirs and removes ephemeral dir
   }
 });
 
-test("opens the requested URL when reusing a live persistent profile", async () => {
+test("binds persistent profile reuse to the new target instead of an old creator tab", async () => {
   const dir = mkdtempSync(join(tmpdir(), "harbor-live-profile-reuse-"));
   const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
   const previousClosedMarker = process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER;
+  const previousInitialUrl = process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL;
   const browserPath = writeFakeBrowserExecutable(dir);
   const closedMarker = join(dir, "closed-target.txt");
   process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
   process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER = closedMarker;
+  process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL = "https://creator.xiaohongshu.com/publish/publish";
   const input = {
     browser_path: browserPath,
     headless: false,
@@ -628,11 +642,12 @@ test("opens the requested URL when reusing a live persistent profile", async () 
     provider_ref: "provider_fake"
   };
   try {
-    const first = await launchLocalDedicatedProvider({ ...input, url: "https://www.xiaohongshu.com/explore" });
+    const first = await launchLocalDedicatedProvider({ ...input, url: "https://creator.xiaohongshu.com/publish/publish" });
     assert.equal(first.status, "ready");
-    const reused = await launchLocalDedicatedProvider({ ...input, url: "https://creator.xiaohongshu.com/publish/publish" });
+    const searchUrl = "https://www.xiaohongshu.com/search_result?keyword=AI";
+    const reused = await launchLocalDedicatedProvider({ ...input, url: searchUrl });
     assert.equal(reused.status, "ready");
-    if (reused.status === "ready") assert.equal(reused.page.current_url, "https://creator.xiaohongshu.com/publish/publish");
+    if (reused.status === "ready") assert.equal(reused.page.current_url, searchUrl);
     if (reused.status === "ready") await reused.close();
     assert.equal(readFileSync(closedMarker, "utf8"), "fake-new-target");
     if (first.status === "ready") await first.close();
@@ -641,6 +656,8 @@ test("opens the requested URL when reusing a live persistent profile", async () 
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
     if (previousClosedMarker === undefined) delete process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER;
     else process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER = previousClosedMarker;
+    if (previousInitialUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL;
+    else process.env.HARBOR_FAKE_BROWSER_NEW_TARGET_INITIAL_URL = previousInitialUrl;
     rmSync(dir, { recursive: true, force: true });
   }
 });

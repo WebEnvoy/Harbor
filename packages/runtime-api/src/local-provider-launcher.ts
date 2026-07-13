@@ -466,11 +466,22 @@ async function openProviderUrl(port: string, url: string, signal?: AbortSignal, 
     const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT", signal });
     if (!response.ok) throw new Error(`CDP open-url probe failed: ${response.status}`);
     const target = await response.json() as CdpPageTarget;
-    if (target.id) onOpened?.(target.id);
-    return readTargetPageFacts(target, url, signal);
+    if (!target.id) throw new Error("CDP open-url target has no id.");
+    onOpened?.(target.id);
+    return readTargetPageFacts(await openedPageTarget(port, target.id, signal), url, signal);
   } catch (cause) {
     return unavailablePageFacts("url_unreachable", url, cause);
   }
+}
+
+async function openedPageTarget(port: string, targetId: string, signal?: AbortSignal): Promise<CdpPageTarget> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    signal?.throwIfAborted();
+    const target = (await pageTargets(port, signal)).find((candidate) => candidate.id === targetId);
+    if (target) return target;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("CDP opened target is unavailable.");
 }
 
 async function probeProviderReadOperation(
@@ -1468,6 +1479,7 @@ function selectPage(pages: CdpPageTarget[], requested_url?: string) {
 async function readPageTitle(webSocketUrl: string, requested_url: string, signal?: AbortSignal): Promise<{ title: string; url: string } | null> {
   return withCdp(webSocketUrl, async (client) => {
     await client.send("Runtime.enable");
+    let lastObserved: { title: string; url: string } | null = null;
     for (let attempt = 0; attempt < 20; attempt++) {
       const result = await client.send("Runtime.evaluate", {
         expression: "({ title: document.title, url: location.href, readyState: document.readyState })",
@@ -1475,12 +1487,24 @@ async function readPageTitle(webSocketUrl: string, requested_url: string, signal
       });
       const value = (result.result as { value?: { title?: string; url?: string; readyState?: string } } | undefined)?.value;
       const url = value?.url ?? "";
-      const navigated = url === requested_url || (url !== "" && url !== "about:blank");
-      if (navigated && (value?.title || value?.readyState === "complete")) return { title: value.title ?? "", url };
+      if (url !== "" && url !== "about:blank" && (value?.title || value?.readyState === "complete")) {
+        lastObserved = { title: value.title ?? "", url };
+        if (sameOriginAndRoute(url, requested_url)) return lastObserved;
+      }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    return null;
+    return lastObserved;
   }, signal);
+}
+
+function sameOriginAndRoute(observed: string, requested: string): boolean {
+  try {
+    const observedUrl = new URL(observed);
+    const requestedUrl = new URL(requested);
+    return observedUrl.origin === requestedUrl.origin && observedUrl.pathname === requestedUrl.pathname;
+  } catch {
+    return observed === requested;
+  }
 }
 
 async function withCdp<T>(webSocketUrl: string, callback: (client: CdpClient) => Promise<T>, signal?: AbortSignal): Promise<T> {
