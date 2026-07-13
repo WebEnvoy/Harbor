@@ -113,6 +113,7 @@ const server = createServer((request, response) => {
   }
   if (url.pathname === "/json/new") {
     response.end(JSON.stringify({
+      id: "fake-new-target",
       type: "page",
       url: decodeURIComponent(url.search.slice(1)),
       title: "Fake page",
@@ -120,6 +121,11 @@ const server = createServer((request, response) => {
         ? { webSocketDebuggerUrl: process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL }
         : {})
     }));
+    return;
+  }
+  if (url.pathname === "/json/close/fake-new-target") {
+    if (process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER) writeFileSync(process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER, "fake-new-target");
+    response.end(JSON.stringify({ closed: true }));
     return;
   }
   response.statusCode = 404;
@@ -601,6 +607,40 @@ test("local provider preserves persistent profile dirs and removes ephemeral dir
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
     if (previousMarker === undefined) delete process.env.HARBOR_FAKE_BROWSER_MARKER;
     else process.env.HARBOR_FAKE_BROWSER_MARKER = previousMarker;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("opens the requested URL when reusing a live persistent profile", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "harbor-live-profile-reuse-"));
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  const previousClosedMarker = process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER;
+  const browserPath = writeFakeBrowserExecutable(dir);
+  const closedMarker = join(dir, "closed-target.txt");
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
+  process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER = closedMarker;
+  const input = {
+    browser_path: browserPath,
+    headless: false,
+    timeout_ms: 1000,
+    profile_ref: "profile_live-reuse",
+    profile_storage_ref: "profile-storage_live-reuse",
+    provider_ref: "provider_fake"
+  };
+  try {
+    const first = await launchLocalDedicatedProvider({ ...input, url: "https://www.xiaohongshu.com/explore" });
+    assert.equal(first.status, "ready");
+    const reused = await launchLocalDedicatedProvider({ ...input, url: "https://creator.xiaohongshu.com/publish/publish" });
+    assert.equal(reused.status, "ready");
+    if (reused.status === "ready") assert.equal(reused.page.current_url, "https://creator.xiaohongshu.com/publish/publish");
+    if (reused.status === "ready") await reused.close();
+    assert.equal(readFileSync(closedMarker, "utf8"), "fake-new-target");
+    if (first.status === "ready") await first.close();
+  } finally {
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    if (previousClosedMarker === undefined) delete process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER;
+    else process.env.HARBOR_FAKE_BROWSER_CLOSED_TARGET_MARKER = previousClosedMarker;
     rmSync(dir, { recursive: true, force: true });
   }
 });

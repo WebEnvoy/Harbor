@@ -233,7 +233,14 @@ async function routeSession(
     return;
   }
   if (action === "write-precheck-facts" && method === "POST") {
+    if (!authorizeCoreControl(manualAuthenticationAuthorizer, request, response)) return;
     writeJson(response, 200, runtime.getSessionWritePrecheckFacts(runtimeSessionRef, await readJson<WritePrecheckInput>(request, {})));
+    return;
+  }
+  if (action === "validate-only-write-precheck" && method === "POST") {
+    if (!authorizeCoreControl(manualAuthenticationAuthorizer, request, response)) return;
+    const result = await runtime.executeXhsPublishPrecheck(runtimeSessionRef, await readJson<unknown>(request));
+    writeJson(response, result.status === "completed" ? 200 : result.failure_class === "invalid_contract" ? 400 : 409, result);
     return;
   }
   if (action === "read-operations" && method === "POST") {

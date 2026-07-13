@@ -96,6 +96,7 @@ import {
   type ViewerControlUnavailable
 } from "./viewer-control.js";
 import { DetailReadTargetStore } from "./detail-read-target.js";
+import { admitXhsPublishPrecheck, completeWritePrecheck, HARBOR_VALIDATE_ONLY_WRITE_PRECHECK_SCHEMA, unavailableWritePrecheck, validCompletedWritePrecheckProbe, WritePrecheckObservationStore, XHS_PUBLISH_PRECHECK_PIN, type ValidateOnlyWritePrecheckResult, type WritePrecheckFailureClass, type WritePrecheckObservationRecord } from "./write-precheck-operation.js";
 
 export const DEFAULT_IDENTITY_SITE_URLS = {
   xiaohongshu: "https://www.xiaohongshu.com/explore",
@@ -118,6 +119,7 @@ export { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-pro
 export { HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA, LODE_262_ALLOWLIST_PIN, LODE_268_DETAIL_PIN } from "./read-operation.js";
 export { HARBOR_SITE_RESOURCE_FACTS_SCHEMA } from "./site-runtime-facts.js";
 export { HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA, HARBOR_WRITE_PRECHECK_FACTS_SCHEMA } from "./runtime-fixtures.js";
+export { HARBOR_VALIDATE_ONLY_WRITE_PRECHECK_SCHEMA, XHS_PUBLISH_PRECHECK_PIN } from "./write-precheck-operation.js";
 export { HARBOR_RUNTIME_FACTS_SCHEMA, HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA } from "./runtime-session.js";
 export { HARBOR_APP_RUNTIME_STATUS_FIXTURE_SCHEMA, HARBOR_CORE_RUNTIME_FACTS_SCHEMA, HARBOR_VIEWER_CONTROL_FACTS_SCHEMA } from "./viewer-control.js";
 export type {
@@ -280,6 +282,7 @@ export type {
 export class HarborRuntime {
   private readonly pageScenes = new PageSceneStore();
   private readonly readOperationObservations = new ReadOperationObservationStore();
+  private readonly writePrecheckObservations = new WritePrecheckObservationStore();
   private readonly detailReadTargets = new DetailReadTargetStore();
   private readonly viewerControls = new ViewerControlStore();
   private readonly identityEnvironments: LocalIdentityEnvironmentManager;
@@ -606,10 +609,10 @@ export class HarborRuntime {
     return this.pageScenes.getEvidence(evidence_ref);
   }
 
-  getPublicEvidence(evidence_ref: string): EvidenceRecord | ReadOperationObservationRecord | PageSceneUnavailable {
+  getPublicEvidence(evidence_ref: string): EvidenceRecord | ReadOperationObservationRecord | WritePrecheckObservationRecord | PageSceneUnavailable {
     const sceneEvidence = this.getEvidence(evidence_ref);
     if (!("status" in sceneEvidence)) return sceneEvidence;
-    return this.readOperationObservations.get(evidence_ref) ?? sceneEvidence;
+    return this.readOperationObservations.get(evidence_ref) ?? this.writePrecheckObservations.get(evidence_ref) ?? sceneEvidence;
   }
 
   expireEvidence(evidence_ref: string): EvidenceRecord | PageSceneUnavailable {
@@ -829,9 +832,47 @@ export class HarborRuntime {
     return this.getWritePrecheckFacts(runtime_session_ref, input);
   }
 
+  async executeXhsPublishPrecheck(runtime_session_ref: string, input: unknown): Promise<ValidateOnlyWritePrecheckResult> {
+    const admitted = admitXhsPublishPrecheck(input);
+    if (!admitted) return unavailableWritePrecheck(runtime_session_ref, "invalid_contract", false);
+    const before = this.writePrecheckSessionFailure(runtime_session_ref, admitted.url);
+    if (before) return unavailableWritePrecheck(runtime_session_ref, before, before !== "safety_challenge");
+    const identityRef = this.runtimeSessions.getRecord(runtime_session_ref)!.facts.identity_environment_ref!;
+    const probe = await this.runtimeSessions.probeWritePrecheck(runtime_session_ref, { target_url: admitted.url, expected_origin: XHS_PUBLISH_PRECHECK_PIN.origin, target_ref: admitted.target_ref });
+    if (probe.status === "unavailable") return unavailableWritePrecheck(runtime_session_ref, probe.failure_class, probe.retryable);
+    if (!validCompletedWritePrecheckProbe(probe)) return unavailableWritePrecheck(runtime_session_ref, "evidence_unavailable");
+    const after = this.writePrecheckSessionFailure(runtime_session_ref, admitted.url);
+    if (after) return unavailableWritePrecheck(runtime_session_ref, after, after !== "safety_challenge");
+    const completed = completeWritePrecheck(runtime_session_ref, identityRef, probe);
+    this.writePrecheckObservations.record(completed);
+    return completed;
+  }
+
+  private writePrecheckSessionFailure(runtime_session_ref: string, url: string): WritePrecheckFailureClass | null {
+    const session = this.runtimeSessions.getRecord(runtime_session_ref);
+    if (!session) return "session_missing";
+    if (session.facts.current_page.current_url !== url || session.facts.current_page.status !== "ready") return "page_changed";
+    const identityRef = session.facts.identity_environment_ref;
+    const identity = identityRef ? this.identityEnvironments.getFacts(identityRef) : null;
+    if (!identity || !this.identityEnvironments.hasUserConfirmedManagedSession(identity.identity_environment_ref, runtime_session_ref) || identity.login_state.state !== "logged_in" || identity.login_state.manual_authentication_state !== "completed") return "login_required";
+    if (!hasStableReadOperationController(session)) return "session_user_controlled";
+    return isChallengeLike(session.facts.current_page.current_url, session.facts.current_page.title) ? "safety_challenge" : null;
+  }
+
   async getSiteResourceFacts(runtime_session_ref: string, input: SiteResourceFactsInput = {}, signal?: AbortSignal): Promise<SiteResourceFacts | SiteResourceFactsUnavailable> {
     const record = this.runtimeSessions.getRecord(runtime_session_ref);
     if (!record) return missingSiteRuntimeSession(runtime_session_ref, input);
+    const identityRef = record.facts.identity_environment_ref;
+    const identity = identityRef ? this.identityEnvironments.getFacts(identityRef) : null;
+    const siteIdentityConfirmed = Boolean(
+      identity &&
+      sameManagedIdentity(record, identity) &&
+      requestedSiteMatchesIdentity(input.site_id, identity.site_binding.site_id) &&
+      this.identityEnvironments.hasUserConfirmedManagedSession(identity.identity_environment_ref, runtime_session_ref) &&
+      identity.login_state.state === "logged_in" &&
+      identity.login_state.manual_authentication_state === "completed" &&
+      !identity.login_state.recovery_required
+    );
     const capture = this.captureSnapshot(runtime_session_ref, {
       title: record.facts.current_page.title ?? "Site resource facts",
       url: record.facts.current_page.current_url ?? record.facts.current_page.requested_url,
@@ -844,7 +885,7 @@ export class HarborRuntime {
     const siteProbe = input.site_id === "boss" && (taskKind === "job_search" || taskKind === "boss_job_search")
       ? await this.runtimeSessions.probeSiteResource(runtime_session_ref, { site_id: "boss", task_kind: taskKind, signal })
       : undefined;
-    return createSiteResourceFacts(record.facts, input, capture, siteProbe);
+    return createSiteResourceFacts(record.facts, input, capture, siteProbe, siteIdentityConfirmed);
   }
 
   getAppRuntimeStatusFixture(runtime_session_ref: string): AppRuntimeStatusFixture | ViewerControlUnavailable {
@@ -918,6 +959,14 @@ function sameManagedIdentity(session: RuntimeSessionRecord, identity: LocalIdent
     session.facts.execution_identity_ref === identity.execution_identity_ref &&
     session.facts.profile_ref === identity.profile_ref &&
     session.identity_binding.profile_storage_ref === identity.browser_storage.profile_storage_ref;
+}
+
+function requestedSiteMatchesIdentity(requested: string | undefined, identitySite: string): boolean {
+  const site = requested?.trim().toLowerCase();
+  if (!site) return true;
+  if (site === "xhs") return identitySite === "xiaohongshu";
+  if (site === "zhipin") return identitySite === "boss";
+  return site === identitySite;
 }
 
 function hasStableReadOperationController(session: RuntimeSessionRecord): boolean {

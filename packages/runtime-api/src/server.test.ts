@@ -99,7 +99,7 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
     assert.equal(siteFacts.task_kind, "search_notes");
     assert.equal(siteFacts.resource_facts.some((fact: any) => fact.key === "runtime.execution_surface.available"), true);
     assert.equal(siteFacts.resource_facts.some((fact: any) => fact.key === "identity.user_logged_in.confirmed"), true);
-    assert.equal(siteFacts.resource_facts.find((fact: any) => fact.key === "identity.user_logged_in.confirmed")?.state, "available");
+    assert.equal(siteFacts.resource_facts.find((fact: any) => fact.key === "identity.user_logged_in.confirmed")?.state, "unavailable");
     assert.equal(siteFacts.resource_facts.find((fact: any) => fact.key === "page.vue_app.ready")?.state, "available");
     assert.equal(siteFacts.resource_facts.find((fact: any) => fact.key === "page.pinia_store.ready")?.state, "available");
     assert.equal(siteFacts.evidence_refs.length > 0, true);
@@ -510,6 +510,8 @@ test("keeps a confirmed headed session trusted across separately released Core r
       control_owner: "user"
     });
     assert.equal(session.viewer_entry.availability, "unsupported");
+    const beforeConfirmation = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=boss&task_kind=job_search`);
+    assert.equal(beforeConfirmation.resource_facts.find((fact: any) => fact.key === "identity.boss_geek_logged_in.confirmed")?.state, "unavailable");
     assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref).status, "unavailable");
     assert.equal(runtime.completeManualAuthentication(session.runtime_session_ref, {
       kind: "manual_authentication_supervisor_grant"
@@ -520,6 +522,13 @@ test("keeps a confirmed headed session trusted across separately released Core r
       headers: manualAuthHeaders()
     });
     assert.equal(confirmed.status, 200);
+    const afterConfirmation = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=boss&task_kind=job_search`);
+    assert.equal(afterConfirmation.resource_facts.find((fact: any) => fact.key === "identity.boss_geek_logged_in.confirmed")?.state, "available");
+    const wrongSite = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=xiaohongshu&task_kind=publish_note_precheck`);
+    assert.equal(wrongSite.resource_facts.find((fact: any) => fact.key === "runtime.site_identity.logged_in")?.state, "unavailable");
+    assert.equal(wrongSite.resource_facts.some((fact: any) => fact.key === "snapshot.creator_publish_entrypoint.available"), true);
+    assert.equal(wrongSite.resource_facts.some((fact: any) => fact.key === "refmap.entrypoint_refs.available"), true);
+    assert.equal(wrongSite.resource_facts.some((fact: any) => fact.key === "snapshot.creator_publish_page.available" || fact.key === "refmap.write_target_refs.available"), false);
     await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "user" });
 
     const agentClaim = await fetch(`${running.url}/runtime/identity-environment-sessions`, {
@@ -823,7 +832,8 @@ test("requires the supervisor bearer for Core control routes", async () => {
     const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, request);
     for (const [path, body] of [
       [`/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "core_task" }],
-      [`/runtime/sessions/${session.runtime_session_ref}/read-operations`, { site_id: "boss", operation_id: "boss_job_search", query: "AI", city_code: "101010100" }]
+      [`/runtime/sessions/${session.runtime_session_ref}/read-operations`, { site_id: "boss", operation_id: "boss_job_search", query: "AI", city_code: "101010100" }],
+      [`/runtime/sessions/${session.runtime_session_ref}/write-precheck-facts`, { site_id: "xiaohongshu" }]
     ] as const) {
       const response = await fetch(`${running.url}${path}`, {
         method: "POST",
@@ -1632,6 +1642,9 @@ function unsupportedViewerLauncher(execution_surface: "local_provider" | "fixtur
     return {
       ...ready,
       ...(execution_surface ? { execution_surface } : {}),
+      facts: execution_surface === "local_provider"
+        ? ready.facts.filter((fact) => fact.key !== "cdp.version")
+        : ready.facts,
       viewer_entry: {
         availability: "unsupported",
         access_mode: "none",
