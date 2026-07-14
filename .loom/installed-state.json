@@ -5,7 +5,8 @@
   "upgrade_eligibility": "current",
   "runtime_provider": "global-cli",
   "contract": {
-    "minimum_loom_version": "v0.28.1"
+    "minimum_loom_version": "v0.32.1",
+    "installed_state_schema": "loom-installed-state/v2"
   },
   "provider_requirements": {
     "global_cli": {
@@ -14,16 +15,13 @@
       "authority": "workstation",
       "package": "@mc-and-his-agents/loom",
       "executable": "loom",
-      "version_requirement": "v0.28.1",
+      "version_requirement": "v0.32.1",
       "required_commands": [
         "installed-state validate",
         "detect",
         "doctor",
         "verify",
-        "workstation current",
-        "fact-chain",
         "status",
-        "shadow-parity",
         "story"
       ],
       "compatibility_mode_allowed": false
@@ -34,6 +32,14 @@
     "adoption_mode": "light-governance",
     "intentional_absent_paths": [
       ".loom/bin",
+      ".loom/runtime",
+      ".loom/tmp",
+      ".loom/shadow",
+      ".loom/status/current.md",
+      ".loom/work-items",
+      ".loom/progress",
+      ".loom/specs",
+      ".loom/reviews",
       "plugins/loom/.codex-plugin/plugin.json",
       "plugins/loom/skills",
       ".agents/skills",
@@ -52,7 +58,7 @@
       "layer_type": "repository-adoption-metadata",
       "installed_path": ".loom/installed-state.json",
       "version_context": {
-        "repo_version": "v0.28.1",
+        "minimum_loom_contract": "v0.32.1",
         "installed_state_schema": "loom-installed-state/v2"
       },
       "runtime_state": "ready",
@@ -70,8 +76,8 @@
       "layer_type": "user-level-skills-provider",
       "installed_path": "workstation:codex-loom-plugin",
       "version_context": {
-        "plugin_surface_version": "0.4.0",
-        "host_adapter_version": "1.0.0"
+        "minimum_plugin_contract": "0.4.0",
+        "minimum_host_adapter_contract": "1.0.0"
       },
       "runtime_state": "ready",
       "upgrade_eligibility": "current",
@@ -86,7 +92,7 @@
       "installed_path": "workstation:loom-cli",
       "version_context": {
         "package": "@mc-and-his-agents/loom",
-        "version_requirement": "v0.28.1"
+        "minimum_version": "v0.32.1"
       },
       "runtime_state": "unknown",
       "upgrade_eligibility": "unknown",
@@ -100,10 +106,7 @@
           "detect",
           "doctor",
           "verify",
-          "workstation current",
-          "fact-chain",
           "status",
-          "shadow-parity",
           "story"
         ]
       },
