@@ -55,6 +55,7 @@ Harbor 形成最小受控浏览器现场：用户能看到 Profile、Runtime Ses
 
 - local dedicated profile runtime v0。
 - provider adapter v0。
+- provider 检测、安装、更新、修复和启动验证 v0。
 - Profile / Runtime Session / Viewer facts。
 - Snapshot / RefMap / indexed element / locator fallback v0。
 - Provider license、binary、依赖、更新和运行 smoke 评估。

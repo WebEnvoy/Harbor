@@ -10,6 +10,7 @@ This directory indexes Stage 2 accepted Harbor contract truth. It does not dupli
 | Provider, Profile, and Identity facts v0 | [ADR 0006](../adr/0006-provider-profile-identity-facts-v0.md) | `provider_ref`, `profile_ref`, `execution_identity_ref`, fact source classes, claim/evidence separation, and sensitive data boundaries. |
 | Page scene reference facts v0 | [ADR 0007](../adr/0007-page-scene-reference-facts-v0.md) | `snapshot_ref`, `refmap_ref`, `source_trace`, `evidence_ref`, capture-source choices, failure classes, viewer access, and handoff facts. |
 | Runtime architecture baseline | [ADR 0008](../adr/0008-harbor-runtime-architecture-baseline.md) | TypeScript/Node/Playwright/CDP/SQLite defaults, module/storage boundaries, page-scene refs, viewer/control ownership, smoke-test minimums, and rejected/deferred runtime scope. |
+| Browser provider lifecycle | [ADR 0009](../adr/0009-provider-lifecycle-management.md) | Managed/system/external provider ownership, detection, installation, update, repair, launch verification, integrity, progress, and recoverable failures. |
 
 ## Required read order for later skeletons
 
@@ -17,12 +18,12 @@ Provider, session, evidence, or viewer implementation PRs must read ADR 0008 fir
 
 | Future skeleton | Required contracts |
 |---|---|
-| Provider or Profile facts | ADR 0008, then ADR 0006 and ADR 0005. |
+| Provider or Profile facts/lifecycle | ADR 0008, then ADR 0009, ADR 0006, and ADR 0005. |
 | Runtime Session API | ADR 0008, then ADR 0005 and ADR 0006. |
 | Snapshot / RefMap / Evidence refs | ADR 0008, then ADR 0007 and ADR 0004. |
 | Viewer / handoff / control ownership | ADR 0008, then ADR 0007, ADR 0003, and App ADR `App/docs/adr/0002-run-viewer-and-handoff-surface.md`. |
 
-Deferred by ADR 0008: hosted browser, provider marketplace, credential vault, full desktop console, runtime package scaffold, database schema, browser binary installation, and implementation tutorials.
+Deferred by ADR 0008/0009: hosted browser, provider marketplace, credential vault, full desktop console, runtime package scaffold, database schema, and implementation tutorials. ADR 0009 supersedes ADR 0008 only for managed browser binary/dependency installation; that lifecycle is accepted and implemented only by its bounded Work Items.
 
 ## Absorbed draft analysis
 

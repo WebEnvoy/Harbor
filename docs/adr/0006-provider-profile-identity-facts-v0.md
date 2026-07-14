@@ -4,6 +4,9 @@
 
 Accepted for Stage 2 docs-only contract, 2026-06-30.
 
+Provider facts 继续有效；检测、安装、更新、修复和启动验证的生命周期由
+[ADR 0009](0009-provider-lifecycle-management.md) 扩展，2026-07-14。
+
 ## 背景
 
 Stage 2 FR #40 要冻结 Harbor 对 Core、Lode 和 App 可消费的 provider、Profile 与 Execution Identity facts v0。#41 覆盖事实词表，#42 覆盖 observed fact 与 provider claim 的区别，#43 覆盖 license、binary、secret 与 profile data 边界。
@@ -77,7 +80,9 @@ ADR 0005 定义 `runtime_session_ref` 的生命周期、lease、continuity 和 u
 
 - PD-0003 仍定义首版版本化字段集和 API schema；本 ADR 只冻结可消费事实形状。
 - PD-0005 仍定义最小 provider validation evidence 格式；本 ADR 只要求 claim 与 observed fact 分层。
-- PD-0007 仍定义 provider enablement 前的 license/binary gate；本 ADR 只定义 public facts 可记录哪些 metadata/ref。
+- PD-0007 已由 [ADR 0009](0009-provider-lifecycle-management.md) 解决；provider
+  enablement 必须提供来源、许可、版本、OS/arch、完整性材料和启动验证。本 ADR
+  继续只定义 public facts 可记录哪些 metadata/ref。
 - PD-0010/0012 仍定义 handoff/control ownership 与 Viewer MVP；本 ADR 只说明 session refs 如何绑定 facts。
 
 ## 非目标
