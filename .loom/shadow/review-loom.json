@@ -1,9 +1,0 @@
-{
-  "result": "pass",
-  "source_files": [
-    ".loom/reviews/HARBOR-177.json"
-  ],
-  "source_sha256": {
-    ".loom/reviews/HARBOR-177.json": "2c5cf55d5eb433aec98ebb686742d716d2949fdda4a49d5db5c9012f3d354681"
-  }
-}

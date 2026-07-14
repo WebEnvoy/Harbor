@@ -1,6 +1,0 @@
-# Task Carrier
-
-| carrier_type | carrier_locator | source_value | normalized_status | relationship | work_item_locator | breakdown_unit_locator | spec_scenario_locator | plan_phase_locator | validation_strategy_locator | provenance | freshness_rule |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| github_issue | https://github.com/WebEnvoy/Harbor/issues/169 | Absorb CloakBrowser-Manager provider capability and launch facts | closed | primary | .loom/work-items/HARBOR-169.md | .loom/specs/HARBOR-169/plan.md#steps | .loom/specs/HARBOR-169/spec.md#scenarios | .loom/specs/HARBOR-169/plan.md#steps | .loom/specs/HARBOR-169/evidence-map.md | Closed after PR #192 merged and post-merge evidence was written | Recheck after PR retarget, issue state change, story baseline edit, or validation run. |
-| github_issue | https://github.com/WebEnvoy/Harbor/issues/159 | Output identity environment consistency facts | closed | mirror | .loom/work-items/HARBOR-169.md | .loom/specs/HARBOR-169/plan.md#steps | .loom/specs/HARBOR-169/spec.md#scenarios | .loom/specs/HARBOR-169/plan.md#steps | .loom/specs/HARBOR-169/evidence-map.md | Closed after all child Work Items #169/#170/#171/#172 closed and PR #192 evidence was written | Recheck before current pointer retire. |

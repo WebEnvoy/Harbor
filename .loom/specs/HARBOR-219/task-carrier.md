@@ -1,5 +1,0 @@
-# Task Carrier
-
-| carrier_type | carrier_locator | source_value | normalized_status | relationship | work_item_locator | breakdown_unit_locator | spec_scenario_locator | plan_phase_locator | validation_strategy_locator | provenance | freshness_rule |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| github_issue | https://github.com/WebEnvoy/Harbor/issues/219 | HARBOR-219 repairs managed identity session refs, persistent local profile storage, visible user sessions, and public raw profile ref redaction for App/Core runtime use | in_progress | primary | .loom/work-items/HARBOR-219.md | .loom/specs/HARBOR-219/plan.md#steps | .loom/specs/HARBOR-219/spec.md#scenarios | .loom/specs/HARBOR-219/plan.md#steps | .loom/specs/HARBOR-219/evidence-map.md | Refreshed for branch `work/harbor-219-persistent-profile-session` and local validation at 2026-07-09T18:29Z UTC; current lane is local contract evidence only, not live App/Core E2E. | Recheck after PR retarget, issue state change, validation rerun, provider availability change, Runtime API surface change, or App/Core live E2E evidence update. |
