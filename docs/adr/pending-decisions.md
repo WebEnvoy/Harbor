@@ -1,5 +1,13 @@
 # ADR 待决策索引
 
+## 2026-07-14 Provider 生命周期纠偏
+
+[ADR 0009](0009-provider-lifecycle-management.md) 已接受 managed、system、external
+provider 的生命周期所有权，以及检测、安装、更新、修复和启动验证的最小状态。
+因此旧“只提供下载引导/不安装 browser binary”只保留为阶段历史，不再是当前产品
+完成口径。具体下载来源、checksum 和安装目标由 Harbor #280 实现时固化，不能从
+任意镜像猜测。
+
 本文件是 Harbor ADR 的唯一待决策索引。ADR 正文中的未决项必须引用这里的 ID。
 
 ## 第一阶段真相源边界收口
@@ -20,7 +28,7 @@
 | Viewer facts | Harbor 暴露 viewer ref/ws、transport type、access boundary、clipboard/input capability、provider limitations 和 control owner hint。 | 不直接裸露内部 VNC/CDP endpoint 给所有上层，不把 live viewer 等同完整 recovery。 | App Browser/Viewer、Core run record refs、用户接管流程。 | ADR 0003；research `human-handoff-and-recovery`。 | accepted |
 | Handoff and control ownership facts | Harbor 记录 runtime control owner、handoff capability、user-control state、pause/lock capability 和恢复所需 runtime facts。 | Core 拥有 run-level pause/resume/unknown outcome/reconciliation；App 拥有用户可见审批、接管和反馈 UI。 | Core、App、用户。 | ADR 0003；research `human-handoff-and-recovery`。 | accepted; PD-0010 blocks detailed state machine |
 
-阶段一 closeout 可直接消费上表。后续字段集、API schema、provider validation packet、Snapshot/RefMap contract、retention/encryption、trace/HAR/video 开启策略、stale RefMap 错误语义和 handoff 状态机仍保留为下列非本轮阻塞项：PD-0003、PD-0004、PD-0005、PD-0006、PD-0007、PD-0008、PD-0009、PD-0010、PD-0011、PD-0012、PD-0013、PD-0014、PD-0015、PD-0016、PD-0017。
+阶段一 closeout 可直接消费上表。后续字段集、API schema、provider validation packet、Snapshot/RefMap contract、retention/encryption、trace/HAR/video 开启策略、stale RefMap 错误语义和 handoff 状态机仍保留为下列非本轮阻塞项：PD-0003、PD-0004、PD-0005、PD-0006、PD-0008、PD-0009、PD-0010、PD-0011、PD-0012、PD-0013、PD-0014、PD-0015、PD-0016、PD-0017。PD-0007 已由 ADR 0009 解决。
 
 | Issue | 本节覆盖 |
 |---|---|
@@ -39,7 +47,7 @@ CloakBrowser 可以作为第一条受控浏览器 provider baseline 的候选边
 
 | 检查项 | 通过条件 | 失败分类 | 所需环境 | 证据 locator | 状态 |
 |---|---|---|---|---|---|
-| Provider source and binary boundary | 记录 provider source、wrapper license、binary/license boundary、安装/更新入口和是否需要用户自带 provider。 | license/binary_unknown；redistribution_not_allowed；install_source_unknown | 只读官方仓库和本地 sources；不运行 binary。 | `sources/CloakHQ/CloakBrowser`；`sources/CloakHQ/CloakBrowser-Manager`；research `runtime-provider-profile-viewer.md`。 | accepted for baseline input; runtime adoption blocked by PD-0005/PD-0007 |
+| Provider source and binary boundary | 记录 provider source、wrapper license、binary/license boundary、安装/更新入口和是否需要用户自带 provider。 | license/binary_unknown；redistribution_not_allowed；install_source_unknown | 只读官方仓库和本地 sources；不运行 binary。 | `sources/CloakHQ/CloakBrowser`；`sources/CloakHQ/CloakBrowser-Manager`；research `runtime-provider-profile-viewer.md`。 | historical baseline input; current enablement governed by ADR 0009 and Harbor #280 |
 | Minimal runtime session facts | smoke 只要求 Harbor 能引用 `profile_ref`、`runtime_session_ref`、provider mode、status、CDP capability、viewer capability、snapshot/evidence capability 和 current error。 | session_unavailable；provider_launch_failure；capability_missing；runtime_error | 后续 runtime experiment；本 PR 只定义 facts boundary。 | ADR 0002；ADR 0003；research `runtime-provider-profile-viewer.md`。 | accepted |
 | Page-site observation refs | smoke 输出页面现场引用而不是业务结果：`snapshot_ref`、`refmap_ref`、`source_trace`、可选 `screenshot_ref` / `diagnostic_ref`。 | snapshot_unavailable；refmap_stale；evidence_policy_denied；diagnostic_missing | 后续 runtime experiment；evidence policy 明确允许时才采集。 | ADR 0004；research `evidence-and-observability.md`；research `execution-space-and-context.md`。 | accepted |
 | Viewer and takeover facts | smoke 只验证 viewer ref/ws、transport、access boundary、control owner hint、handoff capability 和 user-control state 可被记录。 | viewer_unavailable；control_owner_unknown；handoff_not_supported | 后续 runtime experiment；App/Core 状态机另行决定。 | ADR 0003；research `human-handoff-and-recovery.md`；`sources/CloakHQ/CloakBrowser-Manager`；`sources/Tencent/BrowserSkill`；`sources/citrolabs/ego-lite`。 | accepted; detailed state machine blocked by PD-0010/PD-0012 |
@@ -61,7 +69,7 @@ CloakBrowser 可以作为第一条受控浏览器 provider baseline 的候选边
 | #7 | Provider facts 与反检测成功率承诺的边界。 |
 | #10 | CloakBrowser-Manager、handoff/control ownership、viewer/CDP 机制的参考吸收边界。 |
 | #11 | hosted browser、vault、persona 平台、外部 UI shell 的 Harbor MVP 非目标。 |
-| #12 | Provider source、license/binary、安装/更新和依赖风险作为 baseline input；正式 enablement 仍由 PD-0007 阻塞。 |
+| #12 | Provider source、license/binary、安装/更新和依赖风险作为历史 baseline input；当前 enablement 由 ADR 0009 和 Harbor #280 承接。 |
 | #13 | 最小 runtime smoke 检查项、通过条件、失败分类、环境和证据 locator。 |
 | #14 | Provider facts 最小暴露字段和 Core/App 消费边界；版本化字段集仍由 PD-0003 阻塞。 |
 | #15 | Anti-detect claim 只能作为 claim / experiment input；产品成功率承诺被拒绝。 |
@@ -122,9 +130,9 @@ CloakBrowser 可以作为第一条受控浏览器 provider baseline 的候选边
 
 - 问题：启用 provider 前，哪些 provider license 和 binary facts 必须存在？
 - 来源 ADR：[0002. Profile、Session 与 Provider 事实](0002-profile-session-and-provider-facts.md)
-- 阻塞什么：provider enablement gate。
-- 当前状态：草案待决策。
-- 后续归属/下一步：provider evaluation 模板中定义。
+- 阻塞什么：不再阻塞生命周期合同；具体 provider 仍需提交 enablement facts。
+- 当前状态：resolved by [ADR 0009](0009-provider-lifecycle-management.md)。
+- 后续归属/下一步：每个 managed/system/external provider Work Item 提供来源、许可、版本、OS/arch、完整性材料和启动验证。
 
 ## PD-0008
 

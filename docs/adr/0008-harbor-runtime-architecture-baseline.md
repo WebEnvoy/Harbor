@@ -114,6 +114,10 @@ Docs-only PRs may mark suite/runtime smoke not applicable only when they change 
 
 ## Rejected or deferred
 
-- Rejected for this baseline: runtime code skeleton, provider adapter, browser binary, dependency install, `package.json`, database schema, evidence store implementation, viewer implementation, raw CDP/VNC endpoint public model, task runner loop and task success guarantee.
+> 2026-07-14 correction: [ADR 0009](0009-provider-lifecycle-management.md) supersedes
+> this baseline's rejection of browser binary/dependency installation for Harbor-managed
+> providers. Other rejected and deferred boundaries below remain historical baseline truth.
+
+- Rejected for this baseline: runtime code skeleton, provider adapter, `package.json`, database schema, evidence store implementation, viewer implementation, raw CDP/VNC endpoint public model, task runner loop and task success guarantee. Managed browser binary/dependency install is now governed by ADR 0009.
 - Rejected by default: credential vault, hosted browser platform, provider marketplace, full desktop console, user daily Chrome auto-use, raw production evidence persistence and anti-detection success commitment.
 - Deferred: API/OpenAPI/schema, provider evaluation packet, concrete smoke command names, SQLite schema, encryption-at-rest, retention TTL, first provider order, full handoff state machine and complete App viewer workflow.
