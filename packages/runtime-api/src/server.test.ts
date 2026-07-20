@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher, type LocalProviderLaunchInput } from "./index.js";
+import type { IdentityEnvironmentMutationPersistenceState } from "./identity-environment-mutation-types.js";
 import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe, type ReadOperationProbe, type SiteResourceProbe } from "./read-operation-probe-trust.js";
 import { opaqueRef } from "./refs.js";
 import { startHarborRuntimeServer as startUnconfiguredHarborRuntimeServer } from "./server.js";
+
+const testProfileRoot = mkdtempSync(join(tmpdir(), "harbor-server-profiles-"));
+const identityAliases = new Map<string, string>();
+process.env.HARBOR_PROFILE_STORAGE_ROOT = testProfileRoot;
+after(() => rmSync(testProfileRoot, { recursive: true, force: true }));
 
 function startHarborRuntimeServer(options: Parameters<typeof startUnconfiguredHarborRuntimeServer>[0] = {}) {
   return startUnconfiguredHarborRuntimeServer({
@@ -61,21 +67,20 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
       timezone: "Asia/Shanghai",
       fingerprint_summary: "fixture-provider-claim"
     });
-    assert.equal(created.identity_environment_ref, "identity-env_server-test");
+    assert.match(created.identity_environment_ref, /^identity-env_[a-f0-9]{24}$/);
     assert.equal(created.public_boundary.raw_material, "not_exposed");
-    assert.equal(created.refs.profile_storage_ref.startsWith("profile_storage_ref_"), true);
+    assert.equal(created.record.refs.profile_storage_ref.startsWith("profile_storage_ref_"), true);
 
     const identityReadback = await getJson(`${running.url}/runtime/identity-environments/identity-env_server-test`);
-    assert.equal(identityReadback.identity_environment_ref, "identity-env_server-test");
+    assert.equal(identityReadback.identity_environment_ref, created.identity_environment_ref);
     assert.equal(identityReadback.environment_summary.language, "zh-CN");
     assert.equal(JSON.stringify(identityReadback).includes("profile-storage_server-test"), false);
 
     const updatedIdentity = await patchJson(`${running.url}/runtime/identity-environments/identity-env_server-test`, {
-      login_state: "logged_in",
-      storage_state: "present"
+      language: "en-US"
     });
-    assert.equal(["ready", "needs_auth", "blocked", "unknown"].includes(updatedIdentity.status.readiness), true);
-    assert.equal(updatedIdentity.status.login_state, "logged_in");
+    assert.equal(updatedIdentity.record.environment_summary.language, "en-US");
+    runtime.updateLocalIdentityEnvironment(resolvedIdentityRef("identity-env_server-test"), { login_state: "logged_in", storage_state: "present" });
 
     const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_server-test",
@@ -145,7 +150,7 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
     assert.equal(aliasReadback.runtime_session_ref, session.runtime_session_ref);
 
     const deletedIdentity = await deleteJson(`${running.url}/runtime/identity-environments/identity-env_server-test`);
-    assert.equal(deletedIdentity.identity_environment_ref, "identity-env_server-test");
+    assert.equal(deletedIdentity.identity_environment_ref, created.identity_environment_ref);
 
     const missingIdentity = await fetch(`${running.url}/runtime/identity-environments/identity-env_server-test`);
     assert.equal(missingIdentity.status, 404);
@@ -396,9 +401,9 @@ test("persists identity environment public records for the local runtime API", a
       },
       login_state: "manual_auth_required",
       storage_state: "present",
-      region: "CN",
       language: "zh-CN",
       timezone: "Asia/Shanghai",
+      viewport: "1280x720",
       fingerprint_summary: "provider_claim:persisted"
     });
   } finally {
@@ -409,7 +414,8 @@ test("persists identity environment public records for the local runtime API", a
   try {
     const record = await getJson(`${second.url}/runtime/identity-environments/identity-env_persisted`);
     assert.equal(record.site.site_id, "boss");
-    assert.equal(record.environment_summary.region, "CN");
+    assert.equal(record.environment_summary.timezone, "Asia/Shanghai");
+    assert.equal(record.environment_summary.viewport, "1280x720");
     assert.equal(record.public_boundary.raw_material, "not_exposed");
     assert.equal(JSON.stringify(record).includes("profile-storage_persisted"), false);
   } finally {
@@ -463,7 +469,7 @@ test("records user-confirmed manual authentication for an active managed session
     });
     assert.equal(response.status, 200);
     const completed = await response.json();
-    assert.equal(completed.identity_environment_ref, "identity-env_manual-auth");
+    assert.equal(completed.identity_environment_ref, resolvedIdentityRef("identity-env_manual-auth"));
     assert.equal(completed.status.login_state, "logged_in");
     assert.equal(completed.status.authentication_provenance, "user_confirmed_managed_session");
     assert.equal(completed.status.manual_authentication_state, "completed");
@@ -525,7 +531,7 @@ test("keeps a confirmed headed session trusted across separately released Core r
     const agentClaim = await fetch(`${running.url}/runtime/identity-environment-sessions`, {
       method: "POST",
       body: JSON.stringify({
-        identity_environment_ref: "identity-env_local-provider-auth",
+        identity_environment_ref: resolvedIdentityRef("identity-env_local-provider-auth"),
         url: "https://www.zhipin.com/web/geek/job",
         control_owner: "agent",
         reuse_existing: true
@@ -569,7 +575,7 @@ test("keeps a confirmed headed session trusted across separately released Core r
     const userClaim = await fetch(`${running.url}/runtime/identity-environment-sessions`, {
       method: "POST",
       body: JSON.stringify({
-        identity_environment_ref: "identity-env_local-provider-auth",
+        identity_environment_ref: resolvedIdentityRef("identity-env_local-provider-auth"),
         url: "https://www.zhipin.com/web/geek/job",
         control_owner: "user",
         reuse_existing: true
@@ -940,39 +946,31 @@ test("rejects missing, unmanaged, closed, and failed sessions without changing i
   }
 });
 
-test("does not reuse a profile session for a different identity and keeps authentication confirmation scoped", async () => {
+test("ignores caller-supplied owner refs when creating identities through the compatibility route", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
-    for (const identity_environment_ref of ["identity-env_same-profile-a", "identity-env_same-profile-b"]) {
-      await postJson(`${running.url}/runtime/identity-environments`, {
-        identity_environment_ref,
-        execution_identity_ref: `${identity_environment_ref}:execution`,
-        profile_ref: "profile_same-profile",
-        site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com", display_name: "小红书" },
-        login_state: "manual_auth_required",
-        storage_state: "present"
-      });
-    }
-    const first = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+    const first = await postJson(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_same-profile-a",
-      url: "https://example.test/a",
-      control_owner: "user"
+      execution_identity_ref: "identity-env_same-profile-a:execution",
+      profile_ref: "profile_same-profile",
+      site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com", display_name: "小红书" }
     });
-    const second = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
-      identity_environment_ref: "identity-env_same-profile-b",
-      url: "https://example.test/b",
-      control_owner: "user"
+    const duplicate = await fetch(`${running.url}/runtime/identity-environments`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "same-profile-b", ...manualAuthHeaders() },
+      body: JSON.stringify({
+        identity_environment_ref: "identity-env_same-profile-b",
+        execution_identity_ref: "identity-env_same-profile-b:execution",
+        profile_ref: "profile_same-profile",
+        site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com", display_name: "小红书" }
+      })
     });
-    assert.notEqual(first.runtime_session_ref, second.runtime_session_ref);
-
-    runtime.recordHandoff(second.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
-    const response = await fetch(`${running.url}/runtime/sessions/${second.runtime_session_ref}/manual-authentication-completed`, { method: "POST", headers: manualAuthHeaders() });
-    assert.equal(response.status, 200);
-    const firstIdentity = await getJson(`${running.url}/runtime/identity-environments/identity-env_same-profile-a`);
-    const secondIdentity = await getJson(`${running.url}/runtime/identity-environments/identity-env_same-profile-b`);
-    assert.equal(firstIdentity.status.login_state, "manual_auth_required");
-    assert.equal(secondIdentity.status.login_state, "logged_in");
+    assert.equal(duplicate.status, 201);
+    const second = await duplicate.json();
+    assert.notEqual(second.identity_environment_ref, "identity-env_same-profile-b");
+    assert.notEqual(second.identity_environment_ref, first.identity_environment_ref);
+    assert.notEqual(second.record.refs.profile_ref, first.record.refs.profile_ref);
   } finally {
     await running.close();
   }
@@ -1062,10 +1060,13 @@ test("rejects manual authentication when a session differs from the managed prof
 
 test("does not publish a confirmed login state when identity persistence fails", async () => {
   let persistenceWrites = 0;
+  let state: IdentityEnvironmentMutationPersistenceState | null = null;
   const runtime = new HarborRuntime(createFixtureLauncher("ready"), {
-    persist_records: () => {
+    load_state: () => state,
+    persist_state: (next) => {
       persistenceWrites += 1;
       if (persistenceWrites > 1) throw new Error("simulated persistence failure at /private/identity-environments.json");
+      state = structuredClone(next);
     }
   });
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
@@ -1292,11 +1293,12 @@ test("fails closed before probing when PATCH login state or release lacks a conf
       url: "https://www.zhipin.com/web/geek/job",
       control_owner: "agent"
     });
-    const patched = await patchJson(`${running.url}/runtime/identity-environments/identity-env_read-operation-bypass`, {
-      login_state: "logged_in",
-      manual_authentication_state: "completed"
+    const patched = await fetch(`${running.url}/runtime/identity-environments/identity-env_read-operation-bypass`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "idempotency-key": "patch-login-bypass", ...manualAuthHeaders() },
+      body: JSON.stringify({ login_state: "logged_in", manual_authentication_state: "completed" })
     });
-    assert.equal(patched.status.authentication_provenance, "unknown");
+    assert.equal(patched.status, 400);
     const patchedRead = await postReadOperation(`${running.url}/runtime/sessions/${patchedSession.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
@@ -1305,6 +1307,8 @@ test("fails closed before probing when PATCH login state or release lacks a conf
     });
     assert.equal(patchedRead.status, 409);
     assert.equal(patchedRead.body.failure_class, "not_logged_in");
+    const stoppedPatchedSession = await runtime.stopSession(patchedSession.runtime_session_ref, { control_owner: "agent" });
+    assert.equal("status" in stoppedPatchedSession, false);
 
     const confirmedSession = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_read-operation-bypass",
@@ -1559,44 +1563,77 @@ function localReadPage(url: string) {
 }
 
 async function getJson(url: string): Promise<any> {
-  const response = await fetch(url);
+  const response = await fetch(resolveIdentityAliasesInUrl(url));
   assert.equal(response.status, 200);
   return response.json();
 }
 
 async function postJson(url: string, body: unknown): Promise<any> {
-  const response = await fetch(url, {
+  const createAlias = url.endsWith("/runtime/identity-environments") && body && typeof body === "object"
+    ? (body as Record<string, unknown>).identity_environment_ref
+    : null;
+  const response = await fetch(resolveIdentityAliasesInUrl(url), {
     method: "POST",
-    body: JSON.stringify(body),
-    headers: { "content-type": "application/json", ...manualAuthHeaders() }
+    body: JSON.stringify(resolveIdentityAliasesInBody(body)),
+    headers: { "content-type": "application/json", "idempotency-key": opaqueRef("request"), ...manualAuthHeaders() }
   });
   assert.equal(response.status === 200 || response.status === 201, true);
-  return response.json();
+  const result = await response.json();
+  if (typeof createAlias === "string" && typeof result.identity_environment_ref === "string") {
+    identityAliases.set(createAlias, result.identity_environment_ref);
+  }
+  return result;
 }
 
 async function postReadOperation(url: string, body: unknown): Promise<{ status: number; body: any }> {
-  const response = await fetch(url, {
+  const response = await fetch(resolveIdentityAliasesInUrl(url), {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify(resolveIdentityAliasesInBody(body)),
     headers: { "content-type": "application/json", ...manualAuthHeaders() }
   });
   return { status: response.status, body: await response.json() };
 }
 
 async function patchJson(url: string, body: unknown): Promise<any> {
-  const response = await fetch(url, {
+  const response = await fetch(resolveIdentityAliasesInUrl(url), {
     method: "PATCH",
-    body: JSON.stringify(body),
-    headers: { "content-type": "application/json" }
+    body: JSON.stringify(resolveIdentityAliasesInBody(body)),
+    headers: { "content-type": "application/json", "idempotency-key": opaqueRef("request"), ...manualAuthHeaders() }
   });
   assert.equal(response.status, 200);
   return response.json();
 }
 
 async function deleteJson(url: string): Promise<any> {
-  const response = await fetch(url, { method: "DELETE" });
+  const response = await fetch(resolveIdentityAliasesInUrl(url), {
+    method: "DELETE",
+    headers: { "content-type": "application/json", "idempotency-key": opaqueRef("request"), ...manualAuthHeaders() },
+    body: JSON.stringify({ operation: "remove" })
+  });
   assert.equal(response.status, 200);
   return response.json();
+}
+
+function resolveIdentityAliasesInUrl(url: string): string {
+  let resolved = url;
+  const aliases = [...identityAliases].sort(([left], [right]) => right.length - left.length);
+  for (const [alias, identityRef] of aliases) resolved = resolved.replaceAll(alias, identityRef);
+  return resolved;
+}
+
+function resolveIdentityAliasesInBody(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(resolveIdentityAliasesInBody);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    key === "identity_environment_ref" && typeof item === "string"
+      ? identityAliases.get(item) ?? item
+      : resolveIdentityAliasesInBody(item)
+  ]));
+}
+
+function resolvedIdentityRef(alias: string): string {
+  return identityAliases.get(alias) ?? alias;
 }
 
 function supervisorToken(): string {

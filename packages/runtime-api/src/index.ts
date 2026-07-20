@@ -8,6 +8,8 @@ import {
   type LocalIdentityEnvironmentStateUpdate,
   type ManagedLocalIdentityEnvironmentInput
 } from "./identity-environment-manager.js";
+import type { IdentityEnvironmentMutationRequest, IdentityEnvironmentMutationResult, MaterializedIdentityEnvironmentMutationRequest } from "./identity-environment-mutation-types.js";
+import { materializeIdentityEnvironmentMutation } from "./identity-environment-mutations.js";
 import {
   HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA,
   HARBOR_PAGE_SCENE_REFS_SCHEMA,
@@ -37,6 +39,8 @@ import {
   type IdentityEnvironmentProviderBindingInput
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
+import { withProfileBackedLocalMaterial } from "./profile-backed-local-material.js";
+import { profileStorageHasExternalLock, profileStoragePathExists } from "./profile-storage.js";
 import {
   consumeManualAuthenticationAuthorizationGrant,
   type ManualAuthenticationAuthorizationGrant
@@ -106,6 +110,7 @@ export { HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_PAGE_SCENE_REFS_SCHEMA } 
 export { createIdentityConsistencyFacts, HARBOR_IDENTITY_CONSISTENCY_FACTS_SCHEMA } from "./identity-consistency.js";
 export { createLocalIdentityEnvironmentFacts, HARBOR_LOCAL_IDENTITY_ENVIRONMENT_SCHEMA } from "./identity-environment.js";
 export { HARBOR_LOCAL_IDENTITY_ENVIRONMENT_STORE_SCHEMA, LocalIdentityEnvironmentManager } from "./identity-environment-manager.js";
+export { HARBOR_IDENTITY_ENVIRONMENT_MUTATION_SCHEMA } from "./identity-environment-mutation-types.js";
 export {
   bindIdentityEnvironmentDefaultProvider,
   detectBrowserProviders,
@@ -211,6 +216,15 @@ export type {
   StoredLocalIdentityEnvironmentRecord
 } from "./identity-environment-manager.js";
 export type {
+  IdentityEnvironmentCreateInput,
+  IdentityEnvironmentConfigurationUpdate,
+  IdentityEnvironmentImportInput,
+  IdentityEnvironmentMutationFailureCode,
+  IdentityEnvironmentMutationOperation,
+  IdentityEnvironmentMutationRequest,
+  IdentityEnvironmentMutationResult
+} from "./identity-environment-mutation-types.js";
+export type {
   BrowserProviderCapabilityFact,
   BrowserProviderCapabilityKey,
   BrowserProviderCapabilityState,
@@ -286,8 +300,11 @@ export class HarborRuntime {
   private readonly runtimeSessions: RuntimeSessionStore;
 
   constructor(launcher: LocalProviderLauncher = launchLocalDedicatedProvider, identityEnvironmentOptions: LocalIdentityEnvironmentManagerOptions = {}) {
-    this.identityEnvironments = new LocalIdentityEnvironmentManager(identityEnvironmentOptions);
-    this.runtimeSessions = new RuntimeSessionStore(this.viewerControls, launcher);
+    const ownerOptions = withProfileBackedLocalMaterial(identityEnvironmentOptions);
+    this.identityEnvironments = new LocalIdentityEnvironmentManager(ownerOptions);
+    this.runtimeSessions = new RuntimeSessionStore(this.viewerControls, launcher, {
+      resolve_proxy: ownerOptions.resolve_proxy
+    });
   }
 
   async createSession(input: CreateRuntimeSessionInput = {}): Promise<RuntimeSessionFacts> {
@@ -361,6 +378,10 @@ export class HarborRuntime {
     return result;
   }
 
+  async close(): Promise<void> {
+    await this.runtimeSessions.closeAllSessions();
+  }
+
   getBrowserProviderStatus(input: BrowserProviderDetectionInput = {}): BrowserProviderCatalog {
     return detectBrowserProviders(input);
   }
@@ -391,6 +412,90 @@ export class HarborRuntime {
 
   listLocalIdentityEnvironments(): LocalIdentityEnvironmentPublicRecord[] {
     return this.identityEnvironments.list();
+  }
+
+  mutateLocalIdentityEnvironment(request: IdentityEnvironmentMutationRequest): IdentityEnvironmentMutationResult {
+    const materializedRequest = materializeIdentityEnvironmentMutation(request);
+    const reservationRefs = this.mutationReservationRefs(materializedRequest);
+    const sourceInUse = reservationRefs.source_identity_environment_ref &&
+      this.runtimeSessions.isIdentityEnvironmentInUse(reservationRefs.source_identity_environment_ref) ||
+      reservationRefs.source_profile_storage_ref && this.runtimeSessions.isProfileStorageInUse(reservationRefs.source_profile_storage_ref);
+    if (sourceInUse) {
+      const code = request.operation === "copy_full" || request.operation === "copy_environment" || request.operation === "import"
+        ? "source_in_use"
+        : "active_session";
+      return this.identityEnvironments.mutate(request, { code, recovery_actions: ["focus_or_stop_session", "retry"] });
+    }
+    const targetInUse = reservationRefs.target_identity_environment_ref &&
+      this.runtimeSessions.isIdentityEnvironmentInUse(reservationRefs.target_identity_environment_ref) ||
+      reservationRefs.target_profile_storage_ref && this.runtimeSessions.isProfileStorageInUse(reservationRefs.target_profile_storage_ref);
+    if (targetInUse) {
+      return this.identityEnvironments.mutate(request, { code: "target_in_use", recovery_actions: ["focus_or_stop_session", "retry"] });
+    }
+    const releaseReservation = this.runtimeSessions.reserveIdentityEnvironmentMutation(
+      [reservationRefs.source_identity_environment_ref, reservationRefs.target_identity_environment_ref].filter((ref): ref is string => Boolean(ref)),
+      [reservationRefs.source_profile_storage_ref, reservationRefs.target_profile_storage_ref].filter((ref): ref is string => Boolean(ref))
+    );
+    if (!releaseReservation) {
+      const code = request.operation === "copy_full" || request.operation === "copy_environment" ? "target_in_use" : "active_session";
+      return this.identityEnvironments.mutate(request, { code, recovery_actions: ["focus_or_stop_session", "retry"] });
+    }
+    try {
+      if (materializedRequest.operation === "create" || materializedRequest.operation === "import") {
+        const profileStorageRef = requestedProfileStorageRef(materializedRequest.identity_environment);
+        if (profileStorageHasExternalLock(profileStorageRef)) {
+          return this.identityEnvironments.mutate(request, { code: "profile_locked", recovery_actions: ["close_external_browser", "retry"] });
+        }
+        if (request.operation === "create" && profileStoragePathExists(profileStorageRef)) {
+          return this.identityEnvironments.mutate(request, { code: "profile_storage_exists", recovery_actions: ["choose_new_target"] });
+        }
+        if (request.operation === "import" && !profileStoragePathExists(profileStorageRef)) {
+          return this.identityEnvironments.mutate(request, { code: "source_material_missing", recovery_actions: ["locate_source_profile", "retry"] });
+        }
+        return this.identityEnvironments.mutate(request);
+      }
+      if (!("identity_environment_ref" in request)) return this.identityEnvironments.mutate(request);
+      const identityEnvironmentRef = request.identity_environment_ref;
+      if (this.runtimeSessions.isIdentityEnvironmentInUse(identityEnvironmentRef)) {
+        const code = request.operation === "copy_full" || request.operation === "copy_environment" ? "source_in_use" : "active_session";
+        return this.identityEnvironments.mutate(request, { code, recovery_actions: ["focus_or_stop_session", "retry"] });
+      }
+      const facts = this.identityEnvironments.getFacts(identityEnvironmentRef);
+      if (facts && profileStorageHasExternalLock(facts.browser_storage.profile_storage_ref)) {
+        return this.identityEnvironments.mutate(request, { code: "profile_locked", recovery_actions: ["close_external_browser", "retry"] });
+      }
+      return this.identityEnvironments.mutate(request);
+    } finally {
+      releaseReservation();
+    }
+  }
+
+  private mutationReservationRefs(request: MaterializedIdentityEnvironmentMutationRequest): {
+    source_identity_environment_ref: string | null;
+    source_profile_storage_ref: string | null;
+    target_identity_environment_ref: string | null;
+    target_profile_storage_ref: string | null;
+  } {
+    if (request.operation === "create" || request.operation === "import") {
+      return {
+        source_identity_environment_ref: request.operation === "import" ? request.identity_environment.identity_environment_ref ?? null : null,
+        source_profile_storage_ref: request.operation === "import" ? requestedProfileStorageRef(request.identity_environment) : null,
+        target_identity_environment_ref: request.identity_environment.identity_environment_ref ?? null,
+        target_profile_storage_ref: request.operation === "create" ? requestedProfileStorageRef(request.identity_environment) : null
+      };
+    }
+    if (!("identity_environment_ref" in request)) throw new TypeError("Mutation request is missing an identity reference.");
+    const facts = this.identityEnvironments.getFacts(request.identity_environment_ref);
+    return {
+      source_identity_environment_ref: request.identity_environment_ref,
+      source_profile_storage_ref: facts?.browser_storage.profile_storage_ref ?? null,
+      target_identity_environment_ref: request.operation === "copy_full" || request.operation === "copy_environment"
+        ? request.target.identity_environment_ref
+        : null,
+      target_profile_storage_ref: request.operation === "copy_full" || request.operation === "copy_environment"
+        ? `${request.target.profile_ref}:storage`
+        : null
+    };
   }
 
   deleteLocalIdentityEnvironment(identity_environment_ref: string): LocalIdentityEnvironmentPublicRecord | null {
@@ -858,6 +963,12 @@ export class HarborRuntime {
     if (result) this.detailReadTargets.clearSession(runtime_session_ref);
     return result;
   }
+}
+
+function requestedProfileStorageRef(input: ManagedLocalIdentityEnvironmentInput): string {
+  const identityRef = input.identity_environment_ref ?? "identity-env_fixture";
+  const profileRef = input.profile_ref ?? `${identityRef}:profile`;
+  return input.profile_storage_ref ?? `${profileRef}:storage`;
 }
 
 export interface ManualAuthenticationCompletionUnavailable {
