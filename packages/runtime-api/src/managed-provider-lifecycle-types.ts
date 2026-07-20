@@ -24,6 +24,11 @@ export interface ManagedProviderOperationInput {
   version?: string;
 }
 
+export interface ManagedProviderBeforeOperation {
+  state: "missing" | "ready" | "update_available" | "damaged";
+  version: string | null;
+}
+
 export interface ManagedProviderLifecycleProgress {
   phase: ManagedProviderLifecycleState;
   completed_steps: number;

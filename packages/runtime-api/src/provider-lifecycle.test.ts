@@ -188,18 +188,19 @@ test("reports available updates and leaves explicit binary overrides externally 
     resolve_latest_version: async () => "147.0.0.0",
     verify_launch: async (_path, version) => ({ browser_version: version })
   });
-  const external = new ManagedProviderLifecycle({
-    cache_dir: cacheDir,
-    env: { HARBOR_CLOAKBROWSER_PATH: join(cacheDir, "chromium-146.0.0.0", "chrome") },
-    platform: "linux",
-    arch: "x64"
-  });
+  let external: ManagedProviderLifecycle | null = null;
   try {
     const update = await lifecycle.recheck();
     assert.equal(update.state, "update_available");
     assert.equal(update.target_version, "147.0.0.0");
     assert.equal(update.available_actions.includes("update"), true);
 
+    external = new ManagedProviderLifecycle({
+      cache_dir: cacheDir,
+      env: { HARBOR_CLOAKBROWSER_PATH: join(cacheDir, "chromium-146.0.0.0", "chrome") },
+      platform: "linux",
+      arch: "x64"
+    });
     assert.equal(external.status().ownership, "external_override");
     const rejected = await external.start({ operation: "repair" });
     assert.equal(rejected.accepted, false);
@@ -207,7 +208,7 @@ test("reports available updates and leaves explicit binary overrides externally 
     assert.equal(rejected.error.code, "externally_managed");
   } finally {
     await lifecycle.close();
-    await external.close();
+    await external?.close();
     await rm(cacheDir, { recursive: true, force: true });
   }
 });

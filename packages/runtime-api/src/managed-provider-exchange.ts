@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { access, lstat, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
+import type { ProviderCacheOwnership } from "./managed-provider-cache-ownership.js";
 
 export const PROVIDER_EXCHANGE_JOURNAL = ".harbor-provider-exchange.json";
 
@@ -23,12 +24,18 @@ export interface ProviderExchangeFileOperations {
 }
 
 const defaultOperations: ProviderExchangeFileOperations = { rename, rm };
+const MAX_STALE_ARTIFACT_REMOVALS = 64;
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+const DOWNLOAD_ARTIFACT = new RegExp(`^\\.harbor-download-${UUID}\\.(?:zip|tar\\.gz)$`, "i");
+const STAGING_ARTIFACT = new RegExp(`^\\.harbor-staging-provider_operation_${UUID}$`, "i");
 
 export async function writeProviderExchangeJournal(
   cacheDir: string,
   journal: ProviderExchangeJournal,
+  ownership: ProviderCacheOwnership,
   signal?: AbortSignal
 ): Promise<void> {
+  ownership.assert(cacheDir);
   assertNotAborted(signal);
   await mkdir(cacheDir, { recursive: true });
   const existing = await readJournal(cacheDir);
@@ -61,37 +68,54 @@ export async function publishProviderExchange(
   cacheDir: string,
   journal: ProviderExchangeJournal,
   operations: ProviderExchangeFileOperations,
+  ownership: ProviderCacheOwnership,
   signal: AbortSignal
 ): Promise<void> {
-  await writeProviderExchangeJournal(cacheDir, journal, signal);
+  ownership.assert(cacheDir);
+  await writeProviderExchangeJournal(cacheDir, journal, ownership, signal);
   const paths = journalPaths(cacheDir, journal);
   if (await pathExists(paths.target)) {
     assertNotAborted(signal);
     await operations.rename(paths.target, paths.backup);
     journal.phase = "backup_created";
-    await writeProviderExchangeJournal(cacheDir, journal, signal);
+    await writeProviderExchangeJournal(cacheDir, journal, ownership, signal);
   }
   assertNotAborted(signal);
   await operations.rename(paths.staging, paths.target);
   journal.phase = "target_published";
-  await writeProviderExchangeJournal(cacheDir, journal, signal);
+  await writeProviderExchangeJournal(cacheDir, journal, ownership, signal);
 }
 
 export async function commitProviderExchange(
   cacheDir: string,
   journal: ProviderExchangeJournal,
-  operations: ProviderExchangeFileOperations
+  operations: ProviderExchangeFileOperations,
+  ownership: ProviderCacheOwnership
 ): Promise<void> {
+  ownership.assert(cacheDir);
   const paths = journalPaths(cacheDir, journal);
   await pruneManagedVersions(cacheDir, journal.version, operations);
   await operations.rm(paths.backup, { recursive: true, force: true });
   await operations.rm(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL), { force: true });
 }
 
+export async function writeProviderVersionMarker(
+  cacheDir: string,
+  markerName: string,
+  version: string,
+  ownership: ProviderCacheOwnership,
+  signal: AbortSignal
+): Promise<void> {
+  ownership.assert(cacheDir);
+  await writeMarker(cacheDir, markerName, version, signal);
+}
+
 export async function recoverProviderExchange(
   cacheDir: string,
+  ownership: ProviderCacheOwnership,
   operations: ProviderExchangeFileOperations = defaultOperations
 ): Promise<boolean> {
+  ownership.assert(cacheDir);
   const journal = await readJournal(cacheDir);
   if (!journal) return false;
   const paths = journalPaths(cacheDir, journal);
@@ -118,7 +142,8 @@ export async function recoverProviderExchange(
       await operations.rm(paths.target, { recursive: true, force: true });
     }
     await restoreMarker(cacheDir, journal);
-  } else if (journal.phase === "prepared" && await pathExists(paths.target) && !await pathExists(paths.backup)) {
+  } else if (journal.phase === "prepared" && await pathExists(paths.target) &&
+      await pathExists(paths.staging) && !await pathExists(paths.backup)) {
     // No exchange rename occurred before the crash.
   } else {
     if (await pathExists(paths.target)) await operations.rm(paths.target, { recursive: true, force: true });
@@ -133,8 +158,10 @@ export async function recoverProviderExchange(
 export async function rollbackProviderExchange(
   cacheDir: string,
   journal: ProviderExchangeJournal,
+  ownership: ProviderCacheOwnership,
   operations: ProviderExchangeFileOperations = defaultOperations
 ): Promise<boolean> {
+  ownership.assert(cacheDir);
   const paths = journalPaths(cacheDir, journal);
   try {
     const backupExists = await pathExists(paths.backup);
@@ -143,7 +170,7 @@ export async function rollbackProviderExchange(
     journal.rollback_action = backupExists
       ? "restore_backup"
       : originalPhase === "target_published" || originalPhase === "committed" ? "remove_target" : "none";
-    await writeProviderExchangeJournal(cacheDir, journal);
+    await writeProviderExchangeJournal(cacheDir, journal, ownership);
     if (backupExists && await pathExists(paths.target)) await operations.rm(paths.target, { recursive: true, force: true });
     else if (!backupExists && journal.rollback_action === "remove_target") {
       await operations.rm(paths.target, { recursive: true, force: true });
@@ -157,6 +184,29 @@ export async function rollbackProviderExchange(
   } catch {
     return false;
   }
+}
+
+export async function scavengeStaleProviderArtifacts(
+  cacheDir: string,
+  ownership: ProviderCacheOwnership,
+  operations: ProviderExchangeFileOperations = defaultOperations
+): Promise<number> {
+  ownership.assert(cacheDir);
+  const journal = await readJournal(cacheDir);
+  const protectedNames = new Set(journal ? [journal.staging_name, journal.backup_name] : []);
+  let removed = 0;
+  for (const name of (await readdir(cacheDir)).sort()) {
+    if (removed >= MAX_STALE_ARTIFACT_REMOVALS || protectedNames.has(name)) continue;
+    const download = DOWNLOAD_ARTIFACT.test(name);
+    const staging = STAGING_ARTIFACT.test(name);
+    if (!download && !staging) continue;
+    const path = join(cacheDir, name);
+    const entry = await lstat(path).catch(() => null);
+    if (!entry || entry.isSymbolicLink() || download && !entry.isFile() || staging && !entry.isDirectory()) continue;
+    await operations.rm(path, { recursive: staging, force: true });
+    removed += 1;
+  }
+  return removed;
 }
 
 export function providerExchangeJournal(
@@ -217,17 +267,23 @@ async function restoreMarker(cacheDir: string, journal: ProviderExchangeJournal)
   else await rm(join(cacheDir, journal.marker_name), { force: true });
 }
 
-async function writeMarker(cacheDir: string, markerName: string, version: string): Promise<void> {
+async function writeMarker(cacheDir: string, markerName: string, version: string, signal?: AbortSignal): Promise<void> {
   const path = join(cacheDir, markerName);
   const temporary = `${path}.tmp-${randomUUID()}`;
-  const file = await open(temporary, "w", 0o600);
   try {
-    await file.writeFile(version);
-    await file.sync();
-  } finally {
-    await file.close();
+    const file = await open(temporary, "w", 0o600);
+    try {
+      await file.writeFile(version);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    assertNotAborted(signal);
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
   }
-  await rename(temporary, path);
 }
 
 async function pruneManagedVersions(

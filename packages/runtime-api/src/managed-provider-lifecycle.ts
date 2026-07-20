@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, rename, rm } from "node:fs/promises";
 import { arch as hostArch, homedir, platform as hostPlatform } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import {
@@ -16,10 +16,17 @@ import {
   publishProviderExchange,
   recoverProviderExchange,
   rollbackProviderExchange,
+  scavengeStaleProviderArtifacts,
   writeProviderExchangeJournal,
+  writeProviderVersionMarker,
   type ProviderExchangeFileOperations,
   type ProviderExchangeJournal
 } from "./managed-provider-exchange.js";
+import {
+  acquireProviderCacheOwnership,
+  ProviderCacheOwnershipBusy,
+  type ProviderCacheOwnership
+} from "./managed-provider-cache-ownership.js";
 import { verifyLocalProviderLaunch } from "./local-provider-launcher.js";
 import {
   type ManagedProviderLifecycleCommandResult,
@@ -27,9 +34,20 @@ import {
   type ManagedProviderLifecycleOptions,
   type ManagedProviderLifecycleState,
   type ManagedProviderLifecycleStatus,
+  type ManagedProviderBeforeOperation,
   type ManagedProviderOperationInput
 } from "./managed-provider-lifecycle-types.js";
-import { baseStatus, error, progress, publicError, result } from "./managed-provider-lifecycle-status.js";
+import {
+  baseStatus,
+  cacheBusyError,
+  compatibleBrowserVersion,
+  error,
+  progress,
+  publicError,
+  recoveryError,
+  result,
+  versionNewer
+} from "./managed-provider-lifecycle-status.js";
 import {
   detectBrowserProviders,
   resolveCloakBrowserOverride,
@@ -47,16 +65,6 @@ export type {
   ManagedProviderOperationInput,
   ManagedProviderOperationKind
 } from "./managed-provider-lifecycle-types.js";
-
-interface BeforeOperation {
-  state: "missing" | "ready" | "update_available" | "damaged";
-  version: string | null;
-}
-
-const activeStates = new Set<ManagedProviderLifecycleState>([
-  "detecting", "downloading", "verifying", "installing", "launch_verifying", "cancelling"
-]);
-
 export class ManagedProviderLifecycle {
   private readonly cacheDir: string;
   private readonly env: Record<string, string | undefined>;
@@ -88,7 +96,7 @@ export class ManagedProviderLifecycle {
     this.exchangeOperations = options.exchange_file_operations ?? { rename, rm };
     this.now = options.now ?? (() => new Date());
     this.current = this.detectStatus();
-    this.initialization = this.recoverInterruptedExchange();
+    this.initialization = this.initializeCache();
   }
 
   status(): ManagedProviderLifecycleStatus {
@@ -98,37 +106,49 @@ export class ManagedProviderLifecycle {
   async recheck(): Promise<ManagedProviderLifecycleStatus> {
     return this.serial(async () => {
       await this.initialization;
-      if (this.running) return this.status();
-      await this.recoverInterruptedExchange();
-      if (this.recoveryBlocked) return this.status();
-      if (this.running) return this.status();
-      const previousResult = this.current.result;
-      this.current = this.detectStatus();
-      this.current.result = previousResult;
-      if (this.current.state === "ready" && this.current.ownership === "harbor") {
-        const latest = await this.resolveLatestVersion(this.platform, this.arch);
-        if (this.running) return this.status();
-        if (latest && this.current.installed_version && versionNewer(latest, this.current.installed_version)) {
-          this.current.state = "update_available";
-          this.current.target_version = latest;
-          this.current.available_actions = ["update", "repair", "recheck"];
+      if (this.running && this.current.operation?.cancellable) return this.status();
+      if (this.running) await this.running;
+      const ownership = await this.tryAcquireCacheOwnership();
+      if (!ownership) return this.status();
+      try {
+        await this.recoverCache(ownership);
+        if (this.recoveryBlocked) return this.status();
+        const previousResult = this.current.result;
+        this.current = this.detectStatus();
+        this.current.result = previousResult;
+        if (this.current.state === "ready" && this.current.ownership === "harbor") {
+          const latest = await this.resolveLatestVersion(this.platform, this.arch);
+          if (latest && this.current.installed_version && versionNewer(latest, this.current.installed_version)) {
+            this.current.state = "update_available";
+            this.current.target_version = latest;
+            this.current.available_actions = ["update", "repair", "recheck"];
+          }
         }
+        return this.status();
+      } finally {
+        await ownership.release();
       }
-      return this.status();
     });
   }
 
   async start(input: ManagedProviderOperationInput): Promise<ManagedProviderLifecycleCommandResult> {
     return this.serial(async () => {
       await this.initialization;
-      if (!this.running) {
-        if (this.recoveryBlocked) return this.rejected(this.recoveryError());
-        await this.recoverInterruptedExchange();
-        if (this.recoveryBlocked) return this.rejected(this.recoveryError());
-        this.refreshDetection();
+      if (this.recoveryBlocked) return this.rejected(recoveryError());
+      if (this.running) return this.rejected(error("busy", "Another provider operation is already active.", true, ["recheck"]));
+      const ownership = await this.tryAcquireCacheOwnership();
+      if (!ownership) return this.rejected(this.recoveryBlocked ? recoveryError() : cacheBusyError());
+      await this.recoverCache(ownership);
+      if (this.recoveryBlocked) {
+        await ownership.release();
+        return this.rejected(recoveryError());
       }
+      this.refreshDetection();
       const rejection = this.operationRejection(input);
-      if (rejection) return this.rejected(rejection);
+      if (rejection) {
+        await ownership.release();
+        return this.rejected(rejection);
+      }
       const before = this.beforeOperation();
       const operationId = `provider_operation_${randomUUID()}`;
       this.controller = new AbortController();
@@ -151,21 +171,15 @@ export class ManagedProviderLifecycle {
         available_actions: ["cancel", "recheck"]
       };
       const signal = this.controller.signal;
-      const running = this.runOperation(input, before, operationId, signal);
+      const running = this.runOperation(input, before, operationId, signal, ownership);
       this.running = running;
-      void running.then(() => {
+      void running.finally(() => {
         if (this.activeOperationId === operationId) {
           this.controller = null;
           this.running = null;
           this.activeOperationId = null;
         }
-      }, () => {
-        if (this.activeOperationId === operationId) {
-          this.controller = null;
-          this.running = null;
-          this.activeOperationId = null;
-        }
-      });
+      }).catch(() => undefined);
       return { accepted: true, lifecycle: this.status() };
     });
   }
@@ -173,7 +187,7 @@ export class ManagedProviderLifecycle {
   async cancel(): Promise<ManagedProviderLifecycleCommandResult> {
     return this.serial(async () => {
       await this.initialization;
-      if (this.recoveryBlocked) return this.rejected(this.recoveryError());
+      if (this.recoveryBlocked) return this.rejected(recoveryError());
       const operationId = this.activeOperationId;
       if (!operationId || !this.running || !this.controller || !this.current.operation?.cancellable ||
           this.current.operation.operation_id !== operationId) {
@@ -196,7 +210,13 @@ export class ManagedProviderLifecycle {
     await this.controlTail;
   }
 
-  private async runOperation(input: ManagedProviderOperationInput, before: BeforeOperation, operationId: string, signal: AbortSignal): Promise<void> {
+  private async runOperation(
+    input: ManagedProviderOperationInput,
+    before: ManagedProviderBeforeOperation,
+    operationId: string,
+    signal: AbortSignal,
+    ownership: ProviderCacheOwnership
+  ): Promise<void> {
     let stagingDir = "";
     let journal: ProviderExchangeJournal | null = null;
     let integrityVerified = false;
@@ -233,21 +253,21 @@ export class ManagedProviderLifecycle {
       launchVerified = true;
       this.setPhase(operationId, "installing", 4, true);
       journal = providerExchangeJournal(operationId, version, targetDir, stagingDir, backupDir, this.markerName(), before.version);
-      await publishProviderExchange(this.cacheDir, journal, this.exchangeOperations, signal);
+      await publishProviderExchange(this.cacheDir, journal, this.exchangeOperations, ownership, signal);
       const finalBinary = join(targetDir, stagedRelative);
       await access(finalBinary);
       this.assertActive(operationId, signal);
-      await this.writeVersionMarker(version, signal);
+      await writeProviderVersionMarker(this.cacheDir, this.markerName(), version, ownership, signal);
       this.assertActive(operationId, signal);
       if (this.current.operation) this.current.operation.cancellable = false;
       journal.phase = "committed";
-      await writeProviderExchangeJournal(this.cacheDir, journal);
+      await writeProviderExchangeJournal(this.cacheDir, journal, ownership);
       commitPersisted = true;
-      await commitProviderExchange(this.cacheDir, journal, this.exchangeOperations);
+      await commitProviderExchange(this.cacheDir, journal, this.exchangeOperations, ownership);
       this.completeSuccess(operationId, version);
     } catch (cause) {
       const rolledBack = journal && !commitPersisted
-        ? await rollbackProviderExchange(this.cacheDir, journal, this.exchangeOperations)
+        ? await rollbackProviderExchange(this.cacheDir, journal, ownership, this.exchangeOperations)
         : false;
       const recoveryFailed = commitPersisted || Boolean(journal) && !rolledBack;
       if (recoveryFailed) this.recoveryBlocked = true;
@@ -257,12 +277,19 @@ export class ManagedProviderLifecycle {
       else this.completeFailure(operationId, cause, rolledBack, integrityVerified, launchVerified, recoveryFailed);
     } finally {
       if (stagingDir) await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+      await ownership.release();
     }
   }
+  private async initializeCache(): Promise<void> {
+    const ownership = await this.tryAcquireCacheOwnership();
+    if (!ownership) return;
+    try { await this.recoverCache(ownership); } finally { await ownership.release(); }
+  }
 
-  private async recoverInterruptedExchange(): Promise<void> {
+  private async recoverCache(ownership: ProviderCacheOwnership): Promise<void> {
     try {
-      const recovered = await recoverProviderExchange(this.cacheDir, this.exchangeOperations);
+      const recovered = await recoverProviderExchange(this.cacheDir, ownership, this.exchangeOperations);
+      await scavengeStaleProviderArtifacts(this.cacheDir, ownership, this.exchangeOperations);
       this.recoveryBlocked = false;
       if (recovered) this.current = this.detectStatus();
     } catch {
@@ -270,13 +297,23 @@ export class ManagedProviderLifecycle {
       this.current = {
         ...this.detectStatus(),
         state: "repairable",
-        error: this.recoveryError(),
+        error: recoveryError(),
         available_actions: ["recheck"]
       };
     }
   }
 
-  private async targetVersion(input: ManagedProviderOperationInput, before: BeforeOperation, signal: AbortSignal): Promise<string> {
+  private async tryAcquireCacheOwnership(): Promise<ProviderCacheOwnership | null> {
+    try {
+      return await acquireProviderCacheOwnership(this.cacheDir);
+    } catch (cause) {
+      if (cause instanceof ProviderCacheOwnershipBusy) return null;
+      this.recoveryBlocked = true;
+      return null;
+    }
+  }
+
+  private async targetVersion(input: ManagedProviderOperationInput, before: ManagedProviderBeforeOperation, signal: AbortSignal): Promise<string> {
     if (input.version) return input.version;
     if (input.operation === "repair" && before.version) return before.version;
     if (input.operation === "update") {
@@ -290,8 +327,8 @@ export class ManagedProviderLifecycle {
   }
 
   private operationRejection(input: ManagedProviderOperationInput): ManagedProviderLifecycleError | null {
-    if (this.recoveryBlocked) return this.recoveryError();
-    if (this.running || activeStates.has(this.current.state)) return error("busy", "Another provider operation is already active.", true, ["recheck"]);
+    if (this.recoveryBlocked) return recoveryError();
+    if (this.running || this.current.operation?.cancellable) return error("busy", "Another provider operation is already active.", true, ["recheck"]);
     if (this.current.ownership === "external_override") {
       return error("externally_managed", "The configured CloakBrowser binary is externally managed and will not be replaced by Harbor.", false, ["open_external_management", "recheck"]);
     }
@@ -334,9 +371,9 @@ export class ManagedProviderLifecycle {
     }
   }
 
-  private beforeOperation(): BeforeOperation {
+  private beforeOperation(): ManagedProviderBeforeOperation {
     const detected = this.detectStatus();
-    const state: BeforeOperation["state"] = this.current.state === "update_available" && detected.state === "ready"
+    const state: ManagedProviderBeforeOperation["state"] = this.current.state === "update_available" && detected.state === "ready"
       ? "update_available" : detected.state === "ready" || detected.state === "damaged" ? detected.state : "missing";
     return { state, version: detected.installed_version };
   }
@@ -379,19 +416,6 @@ export class ManagedProviderLifecycle {
     this.current.checked_at = this.timestamp();
   }
 
-  private async writeVersionMarker(version: string, signal: AbortSignal): Promise<void> {
-    const marker = join(this.cacheDir, this.markerName());
-    const temporary = `${marker}.tmp-${randomUUID()}`;
-    try {
-      await writeFile(temporary, version, { mode: 0o600 });
-      this.assertSignal(signal);
-      await rename(temporary, marker);
-    } catch (cause) {
-      await rm(temporary, { force: true }).catch(() => undefined);
-      throw cause;
-    }
-  }
-
   private markerName(): string {
     const tag = cloakBrowserPlatformTag(this.platform, this.arch);
     if (!tag) throw new CloakBrowserReleaseError("unsupported_platform", "Managed CloakBrowser is unsupported on this platform.");
@@ -423,7 +447,7 @@ export class ManagedProviderLifecycle {
       state: recoveryFailed ? "repairable" : detected.state,
       result: result("cancelled", operationId, detected.installed_version, integrityVerified, launchVerified, rolledBack),
       operation: operation ? { ...operation, cancellable: false } : null,
-      error: recoveryFailed ? this.recoveryError("Cancellation could not fully roll back the provider exchange; the backup was preserved.") : null,
+      error: recoveryFailed ? recoveryError("Cancellation could not fully roll back the provider exchange; the backup was preserved.") : null,
       available_actions: recoveryFailed ? ["recheck"] : detected.available_actions
     };
     if (this.current.operation) this.current.operation.progress.phase = this.current.state;
@@ -433,7 +457,7 @@ export class ManagedProviderLifecycle {
     if (!this.isActive(operationId)) return;
     if (recoveryFailed) this.recoveryBlocked = true;
     const lifecycleError = recoveryFailed
-      ? this.recoveryError("The provider exchange could not be rolled back; the backup was preserved.")
+      ? recoveryError("The provider exchange could not be rolled back; the backup was preserved.")
       : publicError(cause, this.current.state, launchVerified);
     const detected = this.detectStatus();
     this.current = {
@@ -450,14 +474,6 @@ export class ManagedProviderLifecycle {
   private assertActive(operationId: string, signal: AbortSignal): void {
     if (signal.aborted || this.cancelRequested(operationId)) throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
     if (!this.isActive(operationId)) throw new Error("Provider operation is no longer active.");
-  }
-
-  private assertSignal(signal: AbortSignal): void {
-    if (signal.aborted) throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
-  }
-
-  private recoveryError(message = "Recover the interrupted provider exchange before starting another operation."): ManagedProviderLifecycleError {
-    return error("recovery_failed", message, true, ["recheck"]);
   }
 
   private isActive(operationId: string): boolean {
@@ -481,18 +497,4 @@ export class ManagedProviderLifecycle {
   private timestamp(): string {
     return this.now().toISOString();
   }
-}
-
-function compatibleBrowserVersion(observed: string, target: string): boolean {
-  return observed === target || observed.split(".").slice(0, 4).join(".") === target.split(".").slice(0, 4).join(".");
-}
-
-function versionNewer(candidate: string, installed: string): boolean {
-  const left = candidate.split(".").map(Number);
-  const right = installed.split(".").map(Number);
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    if ((left[index] ?? 0) > (right[index] ?? 0)) return true;
-    if ((left[index] ?? 0) < (right[index] ?? 0)) return false;
-  }
-  return false;
 }

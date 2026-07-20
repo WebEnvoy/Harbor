@@ -78,6 +78,28 @@ export function publicError(cause: unknown, phase: ManagedProviderLifecycleState
     : error("install_failed", "The verified CloakBrowser release could not be installed.", true, ["repair", "recheck"]);
 }
 
+export function recoveryError(message = "Recover the interrupted provider exchange before starting another operation."): ManagedProviderLifecycleError {
+  return error("recovery_failed", message, true, ["recheck"]);
+}
+
+export function cacheBusyError(): ManagedProviderLifecycleError {
+  return error("busy", "Another Harbor Runtime owns the managed provider cache.", true, ["recheck"]);
+}
+
+export function compatibleBrowserVersion(observed: string, target: string): boolean {
+  return observed === target || observed.split(".").slice(0, 4).join(".") === target.split(".").slice(0, 4).join(".");
+}
+
+export function versionNewer(candidate: string, installed: string): boolean {
+  const left = candidate.split(".").map(Number);
+  const right = installed.split(".").map(Number);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    if ((left[index] ?? 0) > (right[index] ?? 0)) return true;
+    if ((left[index] ?? 0) < (right[index] ?? 0)) return false;
+  }
+  return false;
+}
+
 function isLifecycleError(value: unknown): value is ManagedProviderLifecycleError {
   return Boolean(value && typeof value === "object" && "code" in value && "recovery_actions" in value);
 }

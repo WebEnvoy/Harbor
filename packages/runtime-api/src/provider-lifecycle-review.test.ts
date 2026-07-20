@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
 import type { InstallCloakBrowserReleaseInput } from "./cloakbrowser-release.js";
+import { acquireProviderCacheOwnership } from "./managed-provider-cache-ownership.js";
 import {
   PROVIDER_EXCHANGE_JOURNAL,
   providerExchangeJournal,
@@ -137,7 +138,7 @@ test("recovers a crashed target publication from the durable exchange journal", 
   await writeFile(join(cacheDir, "latest_version_linux-x64"), "147.0.0.0");
   const journal = providerExchangeJournal("crash", version, target, staging, backup, "latest_version_linux-x64", version);
   journal.phase = "target_published";
-  await writeProviderExchangeJournal(cacheDir, journal);
+  await writeJournal(cacheDir, journal);
   const lifecycle = new ManagedProviderLifecycle({ cache_dir: cacheDir, env: {}, platform: "linux", arch: "x64" });
   try {
     const status = await lifecycle.recheck();
@@ -175,7 +176,7 @@ test("a new mutation recovers an existing journal before creating its exchange",
     await writeFile(join(target, "chrome"), "interrupted");
     const journal = providerExchangeJournal("stale", version, target, staging, backup, "latest_version_linux-x64", version);
     journal.phase = "target_published";
-    await writeProviderExchangeJournal(cacheDir, journal);
+    await writeJournal(cacheDir, journal);
     assert.equal((await lifecycle.start({ operation: "repair" })).accepted, true);
     assert.equal((await waitForManager(lifecycle)).result?.status, "succeeded");
     assert.equal(await readFile(join(target, "chrome"), "utf8"), "replacement");
@@ -428,4 +429,9 @@ async function waitForManager(lifecycle: ManagedProviderLifecycle): Promise<Mana
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("timed out waiting for provider operation");
+}
+
+async function writeJournal(cacheDir: string, journal: ReturnType<typeof providerExchangeJournal>): Promise<void> {
+  const ownership = await acquireProviderCacheOwnership(cacheDir);
+  try { await writeProviderExchangeJournal(cacheDir, journal, ownership); } finally { await ownership.release(); }
 }
