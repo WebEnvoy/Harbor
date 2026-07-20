@@ -10,6 +10,7 @@ import {
   identityInput,
   importMutationInput,
   mutationTarget,
+  testProviderDetection,
   tempDir
 } from "./identity-environment-mutation-test-helpers.js";
 import { providerLaunchArguments } from "./local-provider-launcher.js";
@@ -131,6 +132,7 @@ test("reserves opening sessions before launcher readiness and forwards persisted
         await launchGate;
         return fixture(input);
       }, {
+        provider_detection: testProviderDetection,
         validate_proxy: () => "reachable",
         resolve_proxy: () => "http://127.0.0.1:8080"
       });
@@ -209,7 +211,7 @@ test("reserves a copy target profile before any copy transaction", async () => {
 
 test("checks create/import ownership and recovers cross-process locks without ABA release", () => {
   return withProfileRoot("ownership", () => {
-    const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+    const runtime = new HarborRuntime(createFixtureLauncher("ready"), { provider_detection: testProviderDetection });
     const lockedPath = profileStoragePath("locked-import-storage");
     mkdirSync(lockedPath, { recursive: true });
     writeFileSync(join(lockedPath, "SingletonLock"), "external-owner");

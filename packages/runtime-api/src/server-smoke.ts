@@ -83,8 +83,7 @@ try {
     login_state: "logged_in",
     storage_state: "present",
     language: "zh-CN",
-    timezone: "Asia/Shanghai",
-    fingerprint_summary: "fixture-provider-claim"
+    timezone: "Asia/Shanghai"
   });
   assert.match(identityEnvironment.identity_environment_ref, /^identity-env_[a-f0-9]{24}$/);
   assert.equal(identityEnvironment.public_boundary.raw_material, "not_exposed");

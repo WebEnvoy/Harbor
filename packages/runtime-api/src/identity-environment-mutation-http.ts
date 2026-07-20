@@ -1,10 +1,16 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
   IdentityEnvironmentConfigurationUpdate,
+  IdentityEnvironmentCreateInput,
+  LocalIdentityEnvironmentStateUpdate,
   IdentityEnvironmentMutationRequest,
-  IdentityEnvironmentMutationResult,
-  ManagedLocalIdentityEnvironmentInput
+  IdentityEnvironmentMutationResult
 } from "./index.js";
+import {
+  hasOnlyIdentityEnvironmentBusinessInputKeys,
+  IDENTITY_ENVIRONMENT_BUSINESS_INPUT_KEYS,
+  IDENTITY_ENVIRONMENT_SITE_INPUT_KEYS
+} from "./identity-environment-mutation-types.js";
 import type { ManualAuthenticationAuthorizer } from "./manual-authentication-authorization.js";
 
 export function authorizeIdentityEnvironmentMutationRequest(
@@ -96,30 +102,67 @@ export function legacyIdentityEnvironmentCreateMutation(
   if (isIdentityEnvironmentMutationRequest(value)) {
     return value.operation === "create" || value.operation === "import" ? value : null;
   }
-  const input = value as ManagedLocalIdentityEnvironmentInput & { operation?: "create" | "import" };
+  const input = value as Record<string, unknown>;
   const idempotencyKey = legacyIdempotencyKey(request);
-  if (!idempotencyKey || !isIdentityEnvironmentInput(input)) return null;
+  if (!idempotencyKey) return null;
   const operation = input.operation ?? "create";
   if (operation !== "create" && operation !== "import") return null;
-  const {
-    operation: _operation,
-    identity_environment_ref: _identityRef,
-    execution_identity_ref: _executionRef,
-    profile_ref: _profileRef,
-    cookie_jar_ref: _cookieRef,
-    browser_storage_ref: _browserStorageRef,
-    credential_ref: _credentialRef,
-    keychain_ref: _keychainRef,
-    local_secret_ref: _localSecretRef,
-    profile_storage_ref,
-    ...businessInput
-  } = input;
+  const legacyKeys = [
+    ...IDENTITY_ENVIRONMENT_BUSINESS_INPUT_KEYS,
+    "operation",
+    "identity_environment_ref",
+    "execution_identity_ref",
+    "profile_ref",
+    "profile_storage_ref",
+    "cookie_jar_ref",
+    "browser_storage_ref",
+    "credential_ref",
+    "keychain_ref",
+    "local_secret_ref",
+    "imported_from",
+    "login_state",
+    "login_state_reason",
+    "storage_state",
+    "manual_authentication_state"
+  ];
+  if (!onlyKeys(input, legacyKeys)) return null;
+  const legacyStateKeys = ["login_state", "login_state_reason", "storage_state", "manual_authentication_state"];
+  if (legacyStateKeys.some((key) => Object.hasOwn(input, key)) && !legacyIdentityEnvironmentStateUpdate(input)) return null;
+  const businessInput = Object.fromEntries(
+    IDENTITY_ENVIRONMENT_BUSINESS_INPUT_KEYS
+      .filter((key) => Object.hasOwn(input, key))
+      .map((key) => [key, input[key]])
+  ) as unknown as IdentityEnvironmentCreateInput;
+  if (!isIdentityEnvironmentInput(businessInput)) return null;
   if (operation === "import") {
-    return nonEmptyString(profile_storage_ref)
-      ? { operation, idempotency_key: idempotencyKey, identity_environment: { ...businessInput, import_source_ref: profile_storage_ref } }
+    return nonEmptyString(input.profile_storage_ref)
+      ? { operation, idempotency_key: idempotencyKey, identity_environment: { ...businessInput, import_source_ref: input.profile_storage_ref } }
       : null;
   }
   return { operation, idempotency_key: idempotencyKey, identity_environment: businessInput };
+}
+
+export function legacyIdentityEnvironmentStateUpdate(value: unknown): LocalIdentityEnvironmentStateUpdate | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const input = value as Record<string, unknown>;
+  const update: LocalIdentityEnvironmentStateUpdate = {};
+  if (input.login_state !== undefined) {
+    if (!optionalEnum(input.login_state, ["logged_in", "logged_out", "expired", "unknown", "manual_auth_required"])) return null;
+    update.login_state = input.login_state as LocalIdentityEnvironmentStateUpdate["login_state"];
+  }
+  if (input.login_state_reason !== undefined) {
+    if (typeof input.login_state_reason !== "string" || input.login_state_reason === "user_confirmed_managed_session") return null;
+    update.login_state_reason = input.login_state_reason;
+  }
+  if (input.storage_state !== undefined) {
+    if (!optionalEnum(input.storage_state, ["present", "missing", "cleared", "unknown"])) return null;
+    update.storage_state = input.storage_state as LocalIdentityEnvironmentStateUpdate["storage_state"];
+  }
+  if (input.manual_authentication_state !== undefined) {
+    if (!optionalEnum(input.manual_authentication_state, ["not_required", "required", "in_progress", "completed", "failed"])) return null;
+    update.manual_authentication_state = input.manual_authentication_state as LocalIdentityEnvironmentStateUpdate["manual_authentication_state"];
+  }
+  return Object.keys(update).length > 0 ? update : null;
 }
 
 export function legacyIdentityEnvironmentDeleteMutation(
@@ -147,45 +190,31 @@ export function legacyIdentityEnvironmentIdempotencyKey(request: IncomingMessage
 function isIdentityEnvironmentInput(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const input = value as Record<string, unknown>;
+  if (!hasOnlyIdentityEnvironmentBusinessInputKeys(
+    input,
+    Object.hasOwn(input, "import_source_ref") ? "import" : "create"
+  )) return false;
   if (!input.site || typeof input.site !== "object" || Array.isArray(input.site)) return false;
   const site = input.site as Record<string, unknown>;
+  if (!onlyKeys(site, [...IDENTITY_ENVIRONMENT_SITE_INPUT_KEYS])) return false;
   if (!nonEmptyString(site.site_id) || !isHttpOrigin(site.origin) ||
     !optionalString(site.display_name) || !optionalString(site.account_identifier) || !optionalRef(site.account_ref)) return false;
   for (const key of [
-    "login_state_reason", "profile_storage_ref", "import_source_ref", "proxy_ref", "proxy_label", "region", "language", "timezone",
-    "browser_family", "user_agent_summary", "viewport", "gpu_profile", "fingerprint_summary", "credential_ref",
-    "keychain_ref", "local_secret_ref", "imported_from", "cookie_jar_ref", "browser_storage_ref"
+    "import_source_ref", "proxy_ref", "proxy_label", "region", "language", "timezone", "viewport", "gpu_profile"
   ]) {
     if (!optionalString(input[key])) return false;
   }
-  return optionalRef(input.identity_environment_ref) && optionalRef(input.execution_identity_ref) && optionalRef(input.profile_ref) &&
-    optionalNumber(input.hardware_concurrency) && optionalNumber(input.device_memory_gb) &&
-    optionalEnum(input.login_state, ["logged_in", "logged_out", "expired", "unknown", "manual_auth_required"]) &&
-    optionalEnum(input.storage_state, ["present", "missing", "cleared", "unknown"]) &&
+  return optionalNumber(input.hardware_concurrency) && optionalNumber(input.device_memory_gb) &&
     optionalEnum(input.geoip_mode, ["proxy", "system", "disabled"]) &&
     optionalEnum(input.interaction_preset, ["default", "humanized"]) &&
     optionalEnum(input.fingerprint_strategy, ["provider_default", "stable"]) &&
-    optionalEnum(input.login_method, ["manual", "qr", "sso", "password_manager", "unknown"]) &&
-    optionalEnum(input.manual_authentication_state, ["not_required", "required", "in_progress", "completed", "failed"]) &&
-    optionalEnum(input.requested_provider_id, ["cloakbrowser", "chrome_official"]) &&
-    optionalStringArray(input.human_verification, ["manual_login", "qr_scan", "two_factor", "captcha", "login_expired"]);
+    optionalEnum(input.requested_provider_id, ["cloakbrowser", "chrome_official"]);
 }
 
 function isIdentityEnvironmentMutationInput(value: unknown, operation: "create" | "import"): boolean {
   if (!isIdentityEnvironmentInput(value)) return false;
   const input = value as Record<string, unknown>;
-  const harborOwned = [
-    "identity_environment_ref",
-    "execution_identity_ref",
-    "profile_ref",
-    "cookie_jar_ref",
-    "browser_storage_ref",
-    "credential_ref",
-    "keychain_ref",
-    "local_secret_ref",
-    "imported_from"
-  ];
-  if (harborOwned.some((key) => Object.hasOwn(input, key))) return false;
+  if (!hasOnlyIdentityEnvironmentBusinessInputKeys(input, operation)) return false;
   if (operation === "create") {
     return !Object.hasOwn(input, "profile_storage_ref") && !Object.hasOwn(input, "import_source_ref");
   }
@@ -221,9 +250,6 @@ function optionalNullableString(value: unknown): boolean { return value === unde
 function optionalRef(value: unknown): boolean { return value === undefined || nonEmptyString(value); }
 function optionalNumber(value: unknown): boolean { return value === undefined || typeof value === "number" && Number.isFinite(value); }
 function optionalEnum(value: unknown, allowed: string[]): boolean { return value === undefined || typeof value === "string" && allowed.includes(value); }
-function optionalStringArray(value: unknown, allowed: string[]): boolean {
-  return value === undefined || Array.isArray(value) && value.every((item) => typeof item === "string" && allowed.includes(item));
-}
 function onlyKeys(value: Record<string, unknown>, keys: string[]): boolean {
   return Object.keys(value).every((key) => keys.includes(key));
 }

@@ -1,10 +1,11 @@
-import type { BrowserProviderId } from "./provider-management.js";
+import type { BrowserProviderDetectionInput, BrowserProviderId } from "./provider-management.js";
 import type { stageProfileStorageCopy, stageProfileStorageDelete } from "./profile-storage.js";
 import type {
   LocalIdentityEnvironmentPublicRecord,
   ManagedLocalIdentityEnvironmentInput,
   StoredLocalIdentityEnvironmentRecord
 } from "./identity-environment-manager.js";
+import type { SiteBindingInput } from "./identity-environment.js";
 
 export const HARBOR_IDENTITY_ENVIRONMENT_MUTATION_SCHEMA = "harbor-identity-environment-mutation/v1";
 
@@ -30,26 +31,61 @@ export interface MutationBase {
   idempotency_key: string;
 }
 
-type HarborOwnedIdentityEnvironmentKeys =
-  | "identity_environment_ref"
-  | "execution_identity_ref"
-  | "profile_ref"
-  | "cookie_jar_ref"
-  | "browser_storage_ref"
-  | "credential_ref"
-  | "keychain_ref"
-  | "local_secret_ref"
-  | "imported_from";
+export const IDENTITY_ENVIRONMENT_BUSINESS_INPUT_KEYS = [
+  "site",
+  "requested_provider_id",
+  "proxy_ref",
+  "proxy_label",
+  "geoip_mode",
+  "region",
+  "language",
+  "timezone",
+  "viewport",
+  "hardware_concurrency",
+  "device_memory_gb",
+  "gpu_profile",
+  "interaction_preset",
+  "fingerprint_strategy"
+] as const;
 
-export type IdentityEnvironmentCreateInput = Omit<
-  ManagedLocalIdentityEnvironmentInput,
-  HarborOwnedIdentityEnvironmentKeys | "profile_storage_ref"
->;
+export const IDENTITY_ENVIRONMENT_SITE_INPUT_KEYS = [
+  "site_id",
+  "origin",
+  "display_name",
+  "account_identifier",
+  "account_ref"
+] as const;
 
-export type IdentityEnvironmentImportInput = Omit<
-  ManagedLocalIdentityEnvironmentInput,
-  HarborOwnedIdentityEnvironmentKeys | "profile_storage_ref"
-> & { import_source_ref: string };
+export interface IdentityEnvironmentBusinessInput {
+  site: SiteBindingInput;
+  requested_provider_id?: BrowserProviderId;
+  proxy_ref?: string;
+  proxy_label?: string;
+  geoip_mode?: "proxy" | "system" | "disabled";
+  region?: string;
+  language?: string;
+  timezone?: string;
+  viewport?: string;
+  hardware_concurrency?: number;
+  device_memory_gb?: number;
+  gpu_profile?: string;
+  interaction_preset?: "default" | "humanized";
+  fingerprint_strategy?: "provider_default" | "stable";
+}
+
+export type IdentityEnvironmentCreateInput = IdentityEnvironmentBusinessInput;
+export type IdentityEnvironmentImportInput = IdentityEnvironmentBusinessInput & { import_source_ref: string };
+
+export function hasOnlyIdentityEnvironmentBusinessInputKeys(value: unknown, operation: "create" | "import"): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const input = value as Record<string, unknown>;
+  const allowed = operation === "import"
+    ? [...IDENTITY_ENVIRONMENT_BUSINESS_INPUT_KEYS, "import_source_ref"]
+    : IDENTITY_ENVIRONMENT_BUSINESS_INPUT_KEYS;
+  if (!Object.keys(input).every((key) => allowed.includes(key as never))) return false;
+  if (!input.site || typeof input.site !== "object" || Array.isArray(input.site)) return false;
+  return Object.keys(input.site).every((key) => IDENTITY_ENVIRONMENT_SITE_INPUT_KEYS.includes(key as never));
+}
 
 export type IdentityEnvironmentMutationRequest =
   | (MutationBase & { operation: "create"; identity_environment: IdentityEnvironmentCreateInput })
@@ -157,6 +193,7 @@ export interface IdentityEnvironmentMutationConflict {
 }
 
 export interface IdentityEnvironmentMutationOptions {
+  provider_detection?: BrowserProviderDetectionInput;
   validate_proxy?: (proxy_ref: string) => "reachable" | "unreachable" | "incompatible";
   resolve_proxy?: (proxy_ref: string) => string | null;
   delete_local_material?: (refs: IdentityEnvironmentLocalMaterialRefs) => "deleted" | "unknown" | "failed";
