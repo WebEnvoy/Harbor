@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
-import { access, lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { access, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { InstallCloakBrowserReleaseInput } from "./cloakbrowser-release.js";
 import {
   acquireProviderCacheOwnership,
+  ProviderCacheOwnershipBusy,
+  PROVIDER_CACHE_OWNERSHIP_DIRECTORY,
+  PROVIDER_CACHE_OWNERSHIP_STALE_MS,
   PROVIDER_CACHE_OWNERSHIP_LOCK
 } from "./managed-provider-cache-ownership.js";
 import {
@@ -113,6 +117,78 @@ test("a fresh malformed ownership lock is not stolen", async () => {
   }
 });
 
+test("500 deterministic dual stale reclaimers never both acquire ownership", async () => {
+  const cacheDir = await emptyCache();
+  const claimsDir = join(cacheDir, PROVIDER_CACHE_OWNERSHIP_DIRECTORY);
+  await mkdir(claimsDir);
+  let dualOwnership = 0;
+  try {
+    for (let round = 0; round < 500; round += 1) {
+      await writeStaleClaim(claimsDir, 90_000_000 + round);
+      const ready = barrier(2);
+      const published = barrier(2);
+      const options = {
+        on_ready_to_publish: ready.arrive,
+        on_claim_published: published.arrive
+      };
+      const attempts = [acquireProviderCacheOwnership(cacheDir, options), acquireProviderCacheOwnership(cacheDir, options)];
+      await ready.reached;
+      ready.release();
+      await published.reached;
+      published.release();
+      const settled = await Promise.allSettled(attempts);
+      const owners = settled.flatMap((entry) => entry.status === "fulfilled" ? [entry.value] : []);
+      if (owners.length > 1) dualOwnership += 1;
+      assert.equal(owners.length <= 1, true, `round ${round} returned multiple owners`);
+      for (const owner of owners) await owner.release();
+      if (owners.length === 0) {
+        const retry = await acquireProviderCacheOwnership(cacheDir);
+        await retry.release();
+      }
+    }
+    assert.equal(dualOwnership, 0);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("an unrelated reused PID blocks only while its lease is fresh", async () => {
+  const cacheDir = await emptyCache();
+  const claimsDir = join(cacheDir, PROVIDER_CACHE_OWNERSHIP_DIRECTORY);
+  await mkdir(claimsDir);
+  const claim = await writeClaim(claimsDir, process.pid);
+  try {
+    await assert.rejects(acquireProviderCacheOwnership(cacheDir), ProviderCacheOwnershipBusy);
+    const stale = new Date(Date.now() - PROVIDER_CACHE_OWNERSHIP_STALE_MS - 1_000);
+    await utimes(claim, stale, stale);
+    const recovered = await acquireProviderCacheOwnership(cacheDir);
+    await recovered.assert(cacheDir);
+    await recovered.release();
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("ownership assert rejects a replaced actual claim without deleting its replacement", async () => {
+  const cacheDir = await emptyCache();
+  const ownership = await acquireProviderCacheOwnership(cacheDir);
+  const claimsDir = join(cacheDir, PROVIDER_CACHE_OWNERSHIP_DIRECTORY);
+  const name = (await readdir(claimsDir)).find((entry) => entry.endsWith(".lock"));
+  assert.ok(name);
+  const claim = join(claimsDir, name);
+  const moved = `${claim}.moved`;
+  try {
+    await rename(claim, moved);
+    await writeFile(claim, "replacement");
+    await assert.rejects(ownership.assert(cacheDir), /not held/);
+    await ownership.release();
+    assert.equal(await readFile(claim, "utf8"), "replacement");
+  } finally {
+    await ownership.release();
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 function lifecycle(cacheDir: string, installRelease: (input: InstallCloakBrowserReleaseInput) => Promise<never>): ManagedProviderLifecycle {
   return new ManagedProviderLifecycle({
     cache_dir: cacheDir,
@@ -131,4 +207,41 @@ async function writeJournal(cacheDir: string, journal: ReturnType<typeof provide
 
 function emptyCache(): Promise<string> {
   return mkdtemp(join(tmpdir(), "harbor-provider-ownership-"));
+}
+
+async function writeStaleClaim(claimsDir: string, pid: number): Promise<string> {
+  const path = await writeClaim(claimsDir, pid);
+  const stale = new Date(Date.now() - PROVIDER_CACHE_OWNERSHIP_STALE_MS - 1_000);
+  await utimes(path, stale, stale);
+  return path;
+}
+
+async function writeClaim(claimsDir: string, pid: number): Promise<string> {
+  const token = randomUUID();
+  const path = join(claimsDir, `claim-${token}.lock`);
+  await writeFile(path, JSON.stringify({
+    schema_version: "harbor-provider-cache-ownership/v1",
+    pid,
+    process_started_at: "2000-01-01T00:00:00.000Z",
+    created_at: "2000-01-01T00:00:00.000Z",
+    token
+  }));
+  return path;
+}
+
+function barrier(participants: number): { reached: Promise<void>; arrive: () => Promise<void>; release: () => void } {
+  let arrived = 0;
+  let reached!: () => void;
+  let release!: () => void;
+  const reachedPromise = new Promise<void>((resolve) => { reached = resolve; });
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  return {
+    reached: reachedPromise,
+    arrive: async () => {
+      arrived += 1;
+      if (arrived === participants) reached();
+      await released;
+    },
+    release
+  };
 }

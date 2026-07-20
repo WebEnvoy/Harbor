@@ -35,7 +35,7 @@ export async function writeProviderExchangeJournal(
   ownership: ProviderCacheOwnership,
   signal?: AbortSignal
 ): Promise<void> {
-  ownership.assert(cacheDir);
+  await ownership.assert(cacheDir);
   assertNotAborted(signal);
   await mkdir(cacheDir, { recursive: true });
   const existing = await readJournal(cacheDir);
@@ -71,7 +71,7 @@ export async function publishProviderExchange(
   ownership: ProviderCacheOwnership,
   signal: AbortSignal
 ): Promise<void> {
-  ownership.assert(cacheDir);
+  await ownership.assert(cacheDir);
   await writeProviderExchangeJournal(cacheDir, journal, ownership, signal);
   const paths = journalPaths(cacheDir, journal);
   if (await pathExists(paths.target)) {
@@ -92,7 +92,7 @@ export async function commitProviderExchange(
   operations: ProviderExchangeFileOperations,
   ownership: ProviderCacheOwnership
 ): Promise<void> {
-  ownership.assert(cacheDir);
+  await ownership.assert(cacheDir);
   const paths = journalPaths(cacheDir, journal);
   await pruneManagedVersions(cacheDir, journal.version, operations);
   await operations.rm(paths.backup, { recursive: true, force: true });
@@ -106,7 +106,7 @@ export async function writeProviderVersionMarker(
   ownership: ProviderCacheOwnership,
   signal: AbortSignal
 ): Promise<void> {
-  ownership.assert(cacheDir);
+  await ownership.assert(cacheDir);
   await writeMarker(cacheDir, markerName, version, signal);
 }
 
@@ -115,7 +115,7 @@ export async function recoverProviderExchange(
   ownership: ProviderCacheOwnership,
   operations: ProviderExchangeFileOperations = defaultOperations
 ): Promise<boolean> {
-  ownership.assert(cacheDir);
+  await ownership.assert(cacheDir);
   const journal = await readJournal(cacheDir);
   if (!journal) return false;
   const paths = journalPaths(cacheDir, journal);
@@ -161,7 +161,7 @@ export async function rollbackProviderExchange(
   ownership: ProviderCacheOwnership,
   operations: ProviderExchangeFileOperations = defaultOperations
 ): Promise<boolean> {
-  ownership.assert(cacheDir);
+  await ownership.assert(cacheDir);
   const paths = journalPaths(cacheDir, journal);
   try {
     const backupExists = await pathExists(paths.backup);
@@ -191,7 +191,7 @@ export async function scavengeStaleProviderArtifacts(
   ownership: ProviderCacheOwnership,
   operations: ProviderExchangeFileOperations = defaultOperations
 ): Promise<number> {
-  ownership.assert(cacheDir);
+  await ownership.assert(cacheDir);
   const journal = await readJournal(cacheDir);
   const protectedNames = new Set(journal ? [journal.staging_name, journal.backup_name] : []);
   let removed = 0;

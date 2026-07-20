@@ -30,6 +30,13 @@ export interface ExtractCloakBrowserArchiveInput {
   limits: CloakBrowserArchiveLimits;
 }
 
+export interface PowerShellZipExtractionCommand {
+  executable: "powershell";
+  args: ["-NoProfile", "-NonInteractive", "-Command", string];
+  env: NodeJS.ProcessEnv;
+  timeout_ms: 120_000;
+}
+
 export async function extractCloakBrowserArchive(input: ExtractCloakBrowserArchiveInput): Promise<void> {
   assertNotAborted(input.signal);
   await rm(input.destination_dir, { recursive: true, force: true });
@@ -154,6 +161,24 @@ async function runTarPreflight(archivePath: string, parser: Parser, signal: Abor
 }
 
 async function extractZip(input: ExtractCloakBrowserArchiveInput): Promise<void> {
+  const command = buildPowerShellZipExtractionCommand(input);
+  await execFileAsync(command.executable, command.args, {
+    timeout: command.timeout_ms,
+    signal: input.signal,
+    env: command.env
+  });
+}
+
+export function buildPowerShellZipExtractionCommand(
+  input: Pick<ExtractCloakBrowserArchiveInput, "archive_path" | "destination_dir" | "limits">
+): PowerShellZipExtractionCommand {
+  if (!validCommandPath(input.archive_path) || !validCommandPath(input.destination_dir)) {
+    throw new Error("Windows archive paths must be non-empty and contain no NUL bytes.");
+  }
+  if (!Number.isSafeInteger(input.limits.max_entries) || input.limits.max_entries < 1 || input.limits.max_entries > 2_147_483_647 ||
+      !Number.isSafeInteger(input.limits.max_expanded_bytes) || input.limits.max_expanded_bytes < 1) {
+    throw new Error("Windows archive limits must be positive bounded integers.");
+  }
   const script = [
     "Add-Type -AssemblyName System.IO.Compression.FileSystem",
     "$root=[IO.Path]::GetFullPath($env:CB_DEST + [IO.Path]::DirectorySeparatorChar)",
@@ -165,12 +190,14 @@ async function extractZip(input: ExtractCloakBrowserArchiveInput): Promise<void>
     "$target=[IO.Path]::GetFullPath([IO.Path]::Combine($root,$entry.FullName))",
     "if(-not $target.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)){throw 'unsafe archive path'}",
     "$unixType=($entry.ExternalAttributes -shr 16) -band 0xF000",
-    "if($unixType -eq 0xA000 -or $unixType -eq 0x1000){throw 'archive links are not allowed'}",
+    "$dosType=$entry.ExternalAttributes -band 0xFFFF",
+    "if($unixType -eq 0xA000 -or $unixType -eq 0x1000 -or ($dosType -band 0x400)){throw 'archive links are not allowed'}",
     "}; [IO.Compression.ZipFile]::ExtractToDirectory($env:CB_ARCHIVE,$env:CB_DEST) } finally { $zip.Dispose() }"
   ].join("; ");
-  await execFileAsync("powershell", ["-NoProfile", "-Command", script], {
-    timeout: 120_000,
-    signal: input.signal,
+  return {
+    executable: "powershell",
+    args: ["-NoProfile", "-NonInteractive", "-Command", script],
+    timeout_ms: 120_000,
     env: {
       ...process.env,
       CB_ARCHIVE: input.archive_path,
@@ -178,7 +205,11 @@ async function extractZip(input: ExtractCloakBrowserArchiveInput): Promise<void>
       CB_MAX_ENTRIES: String(input.limits.max_entries),
       CB_MAX_EXPANDED: String(input.limits.max_expanded_bytes)
     }
-  });
+  };
+}
+
+function validCommandPath(value: string): boolean {
+  return value.length > 0 && value.length <= 32_767 && !value.includes("\0");
 }
 
 function safeArchivePath(entryPath: string): boolean {

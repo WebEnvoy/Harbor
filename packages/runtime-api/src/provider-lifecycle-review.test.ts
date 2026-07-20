@@ -298,6 +298,65 @@ test("committed cleanup failure keeps the journal-required backup until recheck"
   }
 });
 
+test("terminal commit cleanup keeps recheck waiting and concurrent repair excluded", async () => {
+  const cacheDir = await installedCache("old");
+  let cleanupEntered!: () => void;
+  let releaseCleanup!: () => void;
+  const entered = new Promise<void>((resolve) => { cleanupEntered = resolve; });
+  const gate = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+  const first = new ManagedProviderLifecycle({
+    cache_dir: cacheDir,
+    env: {},
+    platform: "linux",
+    arch: "x64",
+    install_release: fakeInstaller("new"),
+    resolve_latest_version: async () => version,
+    verify_launch: async (_path, expected) => ({ browser_version: expected }),
+    exchange_file_operations: {
+      rename,
+      rm: async (path, options) => {
+        if (basename(String(path)).startsWith(".harbor-backup-")) {
+          cleanupEntered();
+          await gate;
+        }
+        await rm(path, options);
+      }
+    }
+  });
+  const second = new ManagedProviderLifecycle({
+    cache_dir: cacheDir,
+    env: {},
+    platform: "linux",
+    arch: "x64",
+    resolve_latest_version: async () => version
+  });
+  try {
+    await first.recheck();
+    await second.recheck();
+    assert.equal((await first.start({ operation: "repair" })).accepted, true);
+    await entered;
+    assert.equal(first.status().operation?.cancellable, false);
+    let recheckResolved = false;
+    const recheck = first.recheck().then((status) => {
+      recheckResolved = true;
+      return status;
+    });
+    const repair = await second.start({ operation: "repair" });
+    assert.equal(repair.accepted, false);
+    assert.equal(repair.error?.code, "busy");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(recheckResolved, false);
+    releaseCleanup();
+    assert.equal((await recheck).state, "ready");
+    assert.equal((await waitForManager(first)).result?.status, "succeeded");
+  } finally {
+    releaseCleanup();
+    await first.close();
+    await second.close();
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 test("recheck and cancel serialize without overwriting an active operation", async () => {
   const cacheDir = await emptyCache();
   let verificationStarted!: () => void;

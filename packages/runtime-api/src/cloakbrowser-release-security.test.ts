@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { create as createTar } from "tar";
-import { extractCloakBrowserArchive, flattenSingleDirectory } from "./cloakbrowser-archive.js";
+import {
+  buildPowerShellZipExtractionCommand,
+  extractCloakBrowserArchive,
+  flattenSingleDirectory
+} from "./cloakbrowser-archive.js";
 import { installCloakBrowserRelease } from "./cloakbrowser-release.js";
 
 const version = "146.0.7680.177.5";
@@ -66,6 +70,43 @@ test("archive, manifest, and signature downloads enforce independent byte limits
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("Windows ZIP command construction is injection-safe and rejects invalid inputs without execution", () => {
+  const archivePath = "C:\\fixture\\release'; throw 'injected.zip";
+  const destinationDir = "C:\\fixture\\staging & exit";
+  const command = buildPowerShellZipExtractionCommand({
+    archive_path: archivePath,
+    destination_dir: destinationDir,
+    limits: { max_entries: 1_024, max_expanded_bytes: 3_221_225_472 }
+  });
+  assert.equal(command.executable, "powershell");
+  assert.deepEqual(command.args.slice(0, 3), ["-NoProfile", "-NonInteractive", "-Command"]);
+  assert.equal(command.args[3].includes(archivePath), false);
+  assert.equal(command.args[3].includes(destinationDir), false);
+  assert.match(command.args[3], /archive entry limit exceeded/);
+  assert.match(command.args[3], /archive expanded-byte limit exceeded/);
+  assert.match(command.args[3], /unsafe archive path/);
+  assert.match(command.args[3], /archive links are not allowed/);
+  assert.equal(command.env.CB_ARCHIVE, archivePath);
+  assert.equal(command.env.CB_DEST, destinationDir);
+  assert.equal(command.env.CB_MAX_ENTRIES, "1024");
+  assert.equal(command.env.CB_MAX_EXPANDED, "3221225472");
+  assert.throws(() => buildPowerShellZipExtractionCommand({
+    archive_path: "",
+    destination_dir: destinationDir,
+    limits: { max_entries: 1, max_expanded_bytes: 1 }
+  }), /paths must be non-empty/);
+  assert.throws(() => buildPowerShellZipExtractionCommand({
+    archive_path: "C:\\archive.zip\0ignored",
+    destination_dir: destinationDir,
+    limits: { max_entries: 1, max_expanded_bytes: 1 }
+  }), /NUL bytes/);
+  assert.throws(() => buildPowerShellZipExtractionCommand({
+    archive_path: archivePath,
+    destination_dir: destinationDir,
+    limits: { max_entries: 0, max_expanded_bytes: Number.MAX_SAFE_INTEGER + 1 }
+  }), /positive bounded integers/);
 });
 
 test("tar extraction rejects entry count, expanded bytes, and links", async () => {
