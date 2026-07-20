@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   bindIdentityEnvironmentDefaultProvider,
@@ -108,6 +109,21 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
       message: error instanceof Error ? error.message : "Browser launch failed."
     });
     return unavailable("launch_failed", diagnostic.app_summary, [...providerBindingFacts(providerBinding), ...profileStorage.facts]);
+  }
+}
+
+export async function verifyLocalProviderLaunch(browserPath: string, timeoutMs = 10_000): Promise<void> {
+  const profileDir = await mkdtemp(join(tmpdir(), "harbor-provider-verify-"));
+  const child = spawn(browserPath, providerLaunchArguments({ headless: true, url: "about:blank" }, profileDir, null), { stdio: "ignore" });
+  const deadline = Date.now() + Math.max(1, timeoutMs);
+  try {
+    const port = await waitForDevtoolsPort(profileDir, deadline);
+    const signal = AbortSignal.timeout(remainingLaunchTime(deadline));
+    await fetchVersion(port, signal);
+    const page = await readPageFacts(port, "about:blank", signal);
+    if (page.status !== "ready") throw new Error("Provider launch readback was not ready.");
+  } finally {
+    await closeBrowser(child, profileDir, true);
   }
 }
 

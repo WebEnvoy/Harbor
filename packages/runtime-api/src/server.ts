@@ -18,6 +18,7 @@ import {
   legacyIdentityEnvironmentIdempotencyKey
 } from "./identity-environment-mutation-http.js";
 import { ManualAuthenticationAuthorizer } from "./manual-authentication-authorization.js";
+import { isManagedProviderOperationInput } from "./managed-provider-lifecycle.js";
 
 export const HARBOR_RUNTIME_API_READINESS_SCHEMA = "harbor-runtime-api-readiness/v0";
 
@@ -99,6 +100,11 @@ async function route(
     return;
   }
 
+  if (parts.length <= 5 && parts[0] === "runtime" && parts[1] === "browser-providers" && parts[2] === "cloakbrowser" && parts[3] === "lifecycle") {
+    await routeManagedProviderLifecycle(runtime, manualAuthenticationAuthorizer, parts[4], method, request, response);
+    return;
+  }
+
   if (method === "GET" && url.pathname === "/runtime/identity-environments") {
     writeJson(response, 200, {
       schema_version: "harbor-runtime-api-identity-environments/v0",
@@ -174,6 +180,10 @@ function readinessBody(): object {
       "/readiness",
       "/runtime/health",
       "/runtime/browser-providers",
+      "/runtime/browser-providers/cloakbrowser/lifecycle",
+      "/runtime/browser-providers/cloakbrowser/lifecycle/operations",
+      "/runtime/browser-providers/cloakbrowser/lifecycle/cancel",
+      "/runtime/browser-providers/cloakbrowser/lifecycle/recheck",
       "/runtime/identity-environments",
       "/runtime/identity-environment-mutations",
       "/runtime/identity-environments/{identity_environment_ref}",
@@ -197,6 +207,44 @@ function readinessBody(): object {
       external_write_actions: "not_performed"
     }
   };
+}
+
+async function routeManagedProviderLifecycle(
+  runtime: HarborRuntime,
+  authorizer: ManualAuthenticationAuthorizer,
+  action: string | undefined,
+  method: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> {
+  if (!action && method === "GET") {
+    writeJson(response, 200, runtime.getManagedProviderLifecycle());
+    return;
+  }
+  if (method !== "POST") {
+    writeJson(response, 405, { error: "method_not_allowed", method });
+    return;
+  }
+  if (!authorizeCoreControl(authorizer, request, response)) return;
+  if (action === "operations") {
+    const input = await readJson<unknown>(request);
+    if (!isManagedProviderOperationInput(input)) throw new BadRequest("Invalid managed provider operation request.");
+    const result = runtime.startManagedProviderOperation(input);
+    writeJson(response, result.accepted ? 202 : 409, result);
+    return;
+  }
+  if (action === "cancel") {
+    await requireEmptyRequestBody(request, "Provider cancellation requires an empty request body.");
+    const result = runtime.cancelManagedProviderOperation();
+    writeJson(response, result.accepted ? 202 : 409, result);
+    return;
+  }
+  if (action === "recheck") {
+    await requireEmptyRequestBody(request, "Provider recheck requires an empty request body.");
+    writeJson(response, 200, await runtime.recheckManagedProviderLifecycle());
+    return;
+  }
+  writeJson(response, 404, { error: "not_found", path: "/runtime/browser-providers/cloakbrowser/lifecycle" });
 }
 
 async function routeIdentityEnvironment(
@@ -373,10 +421,10 @@ async function readJson<T>(request: IncomingMessage, fallback?: T): Promise<T> {
   }
 }
 
-async function requireEmptyRequestBody(request: IncomingMessage): Promise<void> {
+async function requireEmptyRequestBody(request: IncomingMessage, message = "Manual authentication completion requires an empty request body."): Promise<void> {
   for await (const chunk of request) {
     if ((Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk)) > 0) {
-      throw new BadRequest("Manual authentication completion requires an empty request body.");
+      throw new BadRequest(message);
     }
   }
 }

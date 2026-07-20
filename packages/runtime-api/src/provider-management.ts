@@ -2,6 +2,11 @@ import { constants, existsSync, readFileSync, readdirSync, statSync, accessSync 
 import { arch as hostArch, homedir, platform as hostPlatform } from "node:os";
 import { join } from "node:path";
 import {
+  CLOAKBROWSER_FREE_VERSIONS,
+  cloakBrowserBinaryPath,
+  cloakBrowserPlatformTag
+} from "./cloakbrowser-release.js";
+import {
   chromeCapabilities,
   chromeDownloadGuide,
   chromeLimitations,
@@ -57,7 +62,7 @@ export interface BrowserProviderCapabilityFact {
 }
 
 export interface BrowserProviderDownloadGuide {
-  action: "manual_install";
+  action: "managed_install" | "manual_install";
   primary_url: string;
   fallback_url?: string;
   install_hint: string;
@@ -156,14 +161,6 @@ interface ProviderPathCandidate {
   version: string | null;
   explicit: boolean;
 }
-
-const CLOAK_DEFAULT_VERSION: Record<string, string> = {
-  "linux-x64": "146.0.7680.177.5",
-  "linux-arm64": "146.0.7680.177.3",
-  "darwin-arm64": "145.0.7632.109.2",
-  "darwin-x64": "145.0.7632.109.2",
-  "windows-x64": "146.0.7680.177.5"
-};
 
 export function detectBrowserProviders(input: BrowserProviderDetectionInput = {}): BrowserProviderCatalog {
   const ctx = context(input);
@@ -327,13 +324,13 @@ function cloakCandidates(ctx: DetectionContext): ProviderPathCandidate[] {
     .map((path) => ({ path, version: cloakVersionFromPath(path), explicit: true }));
   if (envCandidates.length > 0) return envCandidates;
 
-  const tag = platformTag(ctx.platform, ctx.arch);
+  const tag = cloakBrowserPlatformTag(ctx.platform, ctx.arch);
   const cacheDir = ctx.env.CLOAKBROWSER_CACHE_DIR || join(ctx.home, ".cloakbrowser");
   const markerVersions = tag ? [`latest_version_${tag}`, "latest_version"].flatMap((name) => readVersionMarker(ctx, join(cacheDir, name))) : [];
-  const defaultVersion = tag ? CLOAK_DEFAULT_VERSION[tag] : null;
+  const defaultVersion = tag ? CLOAKBROWSER_FREE_VERSIONS[tag] : null;
   const versions = [...new Set([...markerVersions, defaultVersion].filter((value): value is string => Boolean(value)))];
   return versions.map((version) => ({
-    path: cloakBinaryPath(ctx.platform, cacheDir, version),
+    path: cloakBrowserBinaryPath(ctx.platform, cacheDir, version),
     version,
     explicit: false
   }));
@@ -356,13 +353,6 @@ function chromeCandidates(ctx: DetectionContext): ProviderPathCandidate[] {
     { path: "/usr/bin/google-chrome", version: null, explicit: false },
     { path: "/usr/bin/google-chrome-stable", version: null, explicit: false }
   ];
-}
-
-function cloakBinaryPath(platform: NodeJS.Platform, cacheDir: string, version: string): string {
-  const dir = join(cacheDir, `chromium-${version}`);
-  if (platform === "darwin") return join(dir, "Chromium.app", "Contents", "MacOS", "Chromium");
-  if (platform === "win32") return join(dir, "chrome.exe");
-  return join(dir, "chrome");
 }
 
 function diagnosticsFor(provider_id: BrowserProviderId, install: BrowserProviderInstallFacts): BrowserProviderDiagnostic[] {
@@ -458,13 +448,4 @@ function readChromeBundleVersion(ctx: DetectionContext, executablePath: string):
   const plistPath = `${executablePath.slice(0, markerAt)}.app/Contents/Info.plist`;
   const plist = ctx.readText(plistPath);
   return plist?.match(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/)?.[1] ?? null;
-}
-
-function platformTag(platform: NodeJS.Platform, arch: string): string | null {
-  if (platform === "linux" && arch === "x64") return "linux-x64";
-  if (platform === "linux" && arch === "arm64") return "linux-arm64";
-  if (platform === "darwin" && arch === "arm64") return "darwin-arm64";
-  if (platform === "darwin" && arch === "x64") return "darwin-x64";
-  if (platform === "win32" && arch === "x64") return "windows-x64";
-  return null;
 }
