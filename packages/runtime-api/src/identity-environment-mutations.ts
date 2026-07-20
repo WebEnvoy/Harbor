@@ -14,7 +14,6 @@ import {
   profileStorageHasExternalLock,
   profileStoragePathExists,
   stageProfileStorageCopy,
-  stageProfileStorageDelete,
   type StagedProfileStorageMutation
 } from "./profile-storage.js";
 import type {
@@ -24,6 +23,7 @@ import type {
 } from "./identity-environment-manager.js";
 import {
   type IdentityEnvironmentConfigurationUpdate,
+  hasOnlyIdentityEnvironmentBusinessInputKeys,
   type IdentityEnvironmentLocalMaterialRefs,
   type IdentityEnvironmentMutationConflict,
   type MaterializedIdentityEnvironmentMutationRequest,
@@ -80,6 +80,10 @@ export function executeIdentityEnvironmentMutation(
   options: IdentityEnvironmentMutationOptions = {},
   conflict: IdentityEnvironmentMutationConflict | null = null
 ): IdentityEnvironmentMutationResult {
+  if ((request.operation === "create" || request.operation === "import") &&
+    !hasOnlyIdentityEnvironmentBusinessInputKeys(request.identity_environment, request.operation)) {
+    return rejected(request.operation, null, "invalid_request", false, []);
+  }
   try {
     assertNoSensitiveMaterialInput(request);
   } catch {
@@ -95,7 +99,7 @@ export function executeIdentityEnvironmentMutation(
     if (receipt.result.status !== "repair_required") return receipt.result;
   }
   if (conflict) return rejected(request.operation, requestRef(request), conflict.code, true, conflict.recovery_actions);
-  const materializedRequest = materializeIdentityEnvironmentMutation(request);
+  const materializedRequest = materializeIdentityEnvironmentMutation(request, options.provider_detection);
   let ownership;
   try {
     ownership = acquireProfileStorageOwnership(profileStorageRefsForMutation(materializedRequest, store, receipt));
@@ -127,7 +131,8 @@ export function executeIdentityEnvironmentMutation(
 }
 
 export function materializeIdentityEnvironmentMutation(
-  request: IdentityEnvironmentMutationRequest
+  request: IdentityEnvironmentMutationRequest,
+  providerDetection: IdentityEnvironmentMutationOptions["provider_detection"] = {}
 ): MaterializedIdentityEnvironmentMutationRequest {
   if (request.operation === "create" || request.operation === "import") {
     const {
@@ -147,6 +152,7 @@ export function materializeIdentityEnvironmentMutation(
     return {
       ...request,
       identity_environment: {
+        ...providerDetection,
         ...businessInput,
         ...(request.operation === "import" ? {
           profile_storage_ref: importSourceRef,
@@ -274,13 +280,7 @@ function deleteIdentity(
   if (hasLocalMaterialRefs(current.local_material_refs) && !options.delete_local_material) {
     return rejected("delete", request.identity_environment_ref, "local_material_cleanup_unavailable", false, ["configure_local_material_adapter", "retry"]);
   }
-  let transaction: StagedProfileStorageMutation;
-  try {
-    transaction = (options.stage_profile_delete ?? stageProfileStorageDelete)(current.local_material_refs.profile_storage_ref);
-  } catch (error) {
-    return profileFailure("delete", request.identity_environment_ref, error);
-  }
-  return commitProfileDelete(request, hash, store, current, transaction, options, !options.stage_profile_delete);
+  return commitProfileDelete(request, hash, store, current, options, !options.stage_profile_delete);
 }
 function copiedRecord(
   source: StoredLocalIdentityEnvironmentRecord,

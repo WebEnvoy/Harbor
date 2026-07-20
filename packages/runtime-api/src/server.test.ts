@@ -12,14 +12,23 @@ import { startHarborRuntimeServer as startUnconfiguredHarborRuntimeServer } from
 
 const testProfileRoot = mkdtempSync(join(tmpdir(), "harbor-server-profiles-"));
 const identityAliases = new Map<string, string>();
+const identityEnvironmentOwners = new Map<string, HarborRuntime>();
 process.env.HARBOR_PROFILE_STORAGE_ROOT = testProfileRoot;
 after(() => rmSync(testProfileRoot, { recursive: true, force: true }));
 
-function startHarborRuntimeServer(options: Parameters<typeof startUnconfiguredHarborRuntimeServer>[0] = {}) {
-  return startUnconfiguredHarborRuntimeServer({
+async function startHarborRuntimeServer(options: Parameters<typeof startUnconfiguredHarborRuntimeServer>[0] = {}) {
+  const running = await startUnconfiguredHarborRuntimeServer({
     ...options,
     manual_authentication_supervisor_token: options.manual_authentication_supervisor_token ?? supervisorToken()
   });
+  if (options.runtime) identityEnvironmentOwners.set(running.url, options.runtime);
+  return {
+    ...running,
+    close: async () => {
+      identityEnvironmentOwners.delete(running.url);
+      await running.close();
+    }
+  };
 }
 
 test("serves readiness and provider facts as JSON", async () => {
@@ -50,7 +59,7 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
     const emptyList = await getJson(`${running.url}/runtime/identity-environments`);
     assert.deepEqual(emptyList.identity_environments, []);
 
-    const created = await postJson(`${running.url}/runtime/identity-environments`, {
+    const created = await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_server-test",
       execution_identity_ref: "execution-identity_server-test",
       profile_ref: "profile_server-test",
@@ -64,8 +73,7 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
       login_state: "manual_auth_required",
       storage_state: "present",
       language: "zh-CN",
-      timezone: "Asia/Shanghai",
-      fingerprint_summary: "fixture-provider-claim"
+      timezone: "Asia/Shanghai"
     });
     assert.match(created.identity_environment_ref, /^identity-env_[a-f0-9]{24}$/);
     assert.equal(created.public_boundary.raw_material, "not_exposed");
@@ -158,6 +166,35 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
 
     const nestedIdentityPath = await fetch(`${running.url}/runtime/identity-environments/identity-env_server-test/extra`);
     assert.equal(nestedIdentityPath.status, 404);
+  } finally {
+    await running.close();
+  }
+});
+
+test("rejects Harbor-owned identity state on the legacy create endpoint", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    const response = await fetch(`${running.url}/runtime/identity-environments`, {
+      method: "POST",
+      body: JSON.stringify({
+        login_state: "logged_in",
+        login_state_reason: "caller_claim",
+        storage_state: "present",
+        manual_authentication_state: "completed"
+      }),
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": opaqueRef("request"),
+        ...manualAuthHeaders()
+      }
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "bad_request",
+      message: "Invalid identity environment create/import request."
+    });
+    assert.deepEqual(runtime.listLocalIdentityEnvironments(), []);
   } finally {
     await running.close();
   }
@@ -388,7 +425,7 @@ test("persists identity environment public records for the local runtime API", a
   const persistence_path = join(mkdtempSync(join(tmpdir(), "harbor-identity-")), "identity-environments.json");
   const first = await startHarborRuntimeServer({ port: 0, runtime: new HarborRuntime(createFixtureLauncher("ready"), { persistence_path }) });
   try {
-    await postJson(`${first.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${first.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_persisted",
       execution_identity_ref: "execution-identity_persisted",
       profile_ref: "profile_persisted",
@@ -403,8 +440,7 @@ test("persists identity environment public records for the local runtime API", a
       storage_state: "present",
       language: "zh-CN",
       timezone: "Asia/Shanghai",
-      viewport: "1280x720",
-      fingerprint_summary: "provider_claim:persisted"
+      viewport: "1280x720"
     });
   } finally {
     await first.close();
@@ -428,7 +464,7 @@ test("records user-confirmed manual authentication for an active managed session
   const runtime = new HarborRuntime(createFixtureLauncher("ready"), { persistence_path });
   const first = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
-    await postJson(`${first.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${first.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_manual-auth",
       execution_identity_ref: "execution-identity_manual-auth",
       profile_ref: "profile_manual-auth",
@@ -509,7 +545,7 @@ test("keeps a confirmed headed session trusted across separately released Core r
   const runtime = new HarborRuntime(unsupportedViewerLauncher("local_provider"));
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_local-provider-auth"));
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_local-provider-auth"));
     const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_local-provider-auth",
       url: "https://www.zhipin.com/web/geek/job",
@@ -605,7 +641,7 @@ test("never reuses a released headless user-action session for manual visibility
   });
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_visibility-handoff"));
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_visibility-handoff"));
     const core = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_visibility-handoff",
       url: "https://www.zhipin.com/web/geek/job",
@@ -662,7 +698,7 @@ test("rebinds persisted user-confirmed authentication to a fresh headed session 
     manual_authentication_supervisor_token: supervisorToken()
   });
   try {
-    await postJson(`${first.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_persisted-headed-handoff"));
+    await postIdentityEnvironment(`${first.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_persisted-headed-handoff"));
     const initial = await postJson(`${first.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_persisted-headed-handoff",
       url: "https://www.zhipin.com/web/geek/job",
@@ -714,7 +750,7 @@ test("rejects direct user confirmation for fixture, unknown, and non-user local-
     const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
     try {
       const identityEnvironmentRef = `identity-env_rejected-${surface ?? "unknown"}-${owner}`;
-      await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment(identityEnvironmentRef));
+      await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment(identityEnvironmentRef));
       const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
         identity_environment_ref: identityEnvironmentRef,
         url: "https://www.zhipin.com/",
@@ -758,7 +794,7 @@ test("fails closed before session lookup and requires one valid fixed-format sup
     manual_authentication_supervisor_token: supervisorToken()
   });
   try {
-    await postJson(`${configured.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_authorization"));
+    await postIdentityEnvironment(`${configured.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_authorization"));
     const session = await postJson(`${configured.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_authorization",
       url: "https://example.test/authorization",
@@ -811,7 +847,7 @@ test("requires the supervisor bearer for Core control routes", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_core-control"));
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, manualAuthenticationEnvironment("identity-env_core-control"));
     const request = {
       identity_environment_ref: "identity-env_core-control",
       url: "https://www.zhipin.com/web/geek/job",
@@ -847,7 +883,7 @@ test("rejects missing, unmanaged, closed, and failed sessions without changing i
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_manual-auth-reject",
       execution_identity_ref: "execution-identity_manual-auth-reject",
       profile_ref: "profile_manual-auth-reject",
@@ -882,7 +918,7 @@ test("rejects missing, unmanaged, closed, and failed sessions without changing i
     assert.equal(unmanagedResponse.status, 409);
     assert.equal((await unmanagedResponse.json()).failure_class, "identity_environment_unmanaged");
 
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_manual-auth-agent",
       execution_identity_ref: "execution-identity_manual-auth-agent",
       profile_ref: "profile_manual-auth-agent",
@@ -950,7 +986,7 @@ test("ignores caller-supplied owner refs when creating identities through the co
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
-    const first = await postJson(`${running.url}/runtime/identity-environments`, {
+    const first = await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_same-profile-a",
       execution_identity_ref: "identity-env_same-profile-a:execution",
       profile_ref: "profile_same-profile",
@@ -980,7 +1016,7 @@ test("does not reuse or confirm a session with a different execution identity", 
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_execution-boundary",
       execution_identity_ref: "execution-identity_a",
       profile_ref: "profile_execution-boundary",
@@ -1023,7 +1059,7 @@ test("rejects manual authentication when a session differs from the managed prof
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_profile-storage-boundary",
       execution_identity_ref: "execution-identity_profile-storage-boundary",
       profile_ref: "profile_canonical",
@@ -1065,13 +1101,13 @@ test("does not publish a confirmed login state when identity persistence fails",
     load_state: () => state,
     persist_state: (next) => {
       persistenceWrites += 1;
-      if (persistenceWrites > 1) throw new Error("simulated persistence failure at /private/identity-environments.json");
+      if (persistenceWrites > 2) throw new Error("simulated persistence failure at /private/identity-environments.json");
       state = structuredClone(next);
     }
   });
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: supervisorToken() });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_persist-failure",
       execution_identity_ref: "execution-identity_persist-failure",
       profile_ref: "profile_persist-failure",
@@ -1104,7 +1140,7 @@ test("rejects every fixture-backed allowlisted read operation without leaking pr
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_read-operation-fixture",
       execution_identity_ref: "execution-identity_read-operation-fixture",
       profile_ref: "profile_read-operation-fixture",
@@ -1162,7 +1198,7 @@ test("blocks an allowlisted read operation before provider execution when the ma
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_read-operation-login",
       execution_identity_ref: "execution-identity_read-operation-login",
       profile_ref: "profile_read-operation-login",
@@ -1193,7 +1229,7 @@ test("rejects an injected local-provider probe rather than minting a completed r
   const runtime = new HarborRuntime(successfulBossReadLauncher);
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_read-operation-success",
       execution_identity_ref: "execution-identity_read-operation-success",
       profile_ref: "profile_read-operation-success",
@@ -1237,7 +1273,7 @@ test("fails closed when session control is released while a trusted read probe i
   const runtime = new HarborRuntime(createBossReadLauncher(probe));
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_read-operation-race",
       execution_identity_ref: "execution-identity_read-operation-race",
       profile_ref: "profile_read-operation-race",
@@ -1279,7 +1315,7 @@ test("fails closed before probing when PATCH login state or release lacks a conf
   const runtime = new HarborRuntime(successfulBossReadLauncher);
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_read-operation-bypass",
       execution_identity_ref: "execution-identity_read-operation-bypass",
       profile_ref: "profile_read-operation-bypass",
@@ -1392,7 +1428,7 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
   const runtime = new HarborRuntime(createBossReadLauncher(probe));
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
-    await postJson(`${running.url}/runtime/identity-environments`, {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_boss-detail",
       execution_identity_ref: "execution-identity_boss-detail",
       profile_ref: "profile_boss-detail",
@@ -1583,6 +1619,24 @@ async function postJson(url: string, body: unknown): Promise<any> {
     identityAliases.set(createAlias, result.identity_environment_ref);
   }
   return result;
+}
+
+async function postIdentityEnvironment(url: string, body: Record<string, unknown>): Promise<any> {
+  const stateKeys = ["login_state", "login_state_reason", "storage_state", "manual_authentication_state"] as const;
+  const businessInput = Object.fromEntries(Object.entries(body).filter(([key]) => !stateKeys.includes(key as typeof stateKeys[number])));
+  const stateUpdate = Object.fromEntries(stateKeys.flatMap((key) => Object.hasOwn(body, key) ? [[key, body[key]]] : []));
+  const result = await postJson(url, businessInput);
+  if (Object.keys(stateUpdate).length === 0) return result;
+
+  const serverUrl = url.slice(0, -"/runtime/identity-environments".length);
+  const owner = identityEnvironmentOwners.get(serverUrl);
+  assert.ok(owner, "identity environment test state requires a Harbor owner");
+  const record = owner.updateLocalIdentityEnvironment(
+    result.identity_environment_ref,
+    stateUpdate as Parameters<HarborRuntime["updateLocalIdentityEnvironment"]>[1]
+  );
+  assert.ok(record);
+  return { ...result, record };
 }
 
 async function postReadOperation(url: string, body: unknown): Promise<{ status: number; body: any }> {
