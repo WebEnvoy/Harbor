@@ -25,6 +25,7 @@ import {
   type IdentityEnvironmentConfigurationUpdate,
   hasOnlyIdentityEnvironmentBusinessInputKeys,
   type IdentityEnvironmentLocalMaterialRefs,
+  type LegacyIdentityEnvironmentInitialState,
   type IdentityEnvironmentMutationConflict,
   type MaterializedIdentityEnvironmentMutationRequest,
   type IdentityEnvironmentMutationOptions,
@@ -78,21 +79,29 @@ export function executeIdentityEnvironmentMutation(
   request: IdentityEnvironmentMutationRequest,
   store: IdentityEnvironmentMutationStore,
   options: IdentityEnvironmentMutationOptions = {},
-  conflict: IdentityEnvironmentMutationConflict | null = null
+  conflict: IdentityEnvironmentMutationConflict | null = null,
+  legacyInitialState: LegacyIdentityEnvironmentInitialState | null = null
 ): IdentityEnvironmentMutationResult {
+  if (legacyInitialState && request.operation !== "create" && request.operation !== "import") {
+    return rejected(request.operation, requestRef(request), "invalid_request", false, []);
+  }
   if ((request.operation === "create" || request.operation === "import") &&
     !hasOnlyIdentityEnvironmentBusinessInputKeys(request.identity_environment, request.operation)) {
     return rejected(request.operation, null, "invalid_request", false, []);
   }
   try {
     assertNoSensitiveMaterialInput(request);
+    assertNoSensitiveMaterialInput(legacyInitialState);
   } catch {
+    return rejected(request.operation, requestRef(request), "invalid_request", false, []);
+  }
+  if (legacyInitialState?.login_state_reason === "user_confirmed_managed_session") {
     return rejected(request.operation, requestRef(request), "invalid_request", false, []);
   }
   if (!request.idempotency_key?.trim() || request.idempotency_key.length > 200) {
     return rejected(request.operation, requestRef(request), "invalid_request", false, []);
   }
-  const hash = requestHash(request);
+  const hash = requestHash(request, legacyInitialState);
   const receipt = store.receipts.get(request.idempotency_key);
   if (receipt) {
     if (receipt.request_hash !== hash) return rejected(request.operation, requestRef(request), "idempotency_conflict", false, []);
@@ -114,7 +123,7 @@ export function executeIdentityEnvironmentMutation(
     switch (materializedRequest.operation) {
       case "create":
       case "import":
-        return createOrImport(materializedRequest, hash, store, options);
+        return createOrImport(materializedRequest, hash, store, options, legacyInitialState);
       case "edit":
         return edit(materializedRequest, hash, store, options);
       case "copy_full":
@@ -180,9 +189,13 @@ function createOrImport(
   request: Extract<MaterializedIdentityEnvironmentMutationRequest, { operation: "create" | "import" }>,
   hash: string,
   store: IdentityEnvironmentMutationStore,
-  options: IdentityEnvironmentMutationOptions
+  options: IdentityEnvironmentMutationOptions,
+  legacyInitialState: LegacyIdentityEnvironmentInitialState | null
 ): IdentityEnvironmentMutationResult {
-  const record = createStoredIdentityRecord(request.identity_environment, request.operation === "create" ? "created" : "imported");
+  const input = legacyInitialState
+    ? { ...request.identity_environment, ...legacyInitialState }
+    : request.identity_environment;
+  const record = createStoredIdentityRecord(input, request.operation === "create" ? "created" : "imported");
   const ref = record.identity_environment.identity_environment_ref;
   if (request.identity_environment.login_state_reason === "user_confirmed_managed_session") {
     return rejected(request.operation, ref, "invalid_request", false, []);
@@ -455,7 +468,13 @@ function requestRef(request: IdentityEnvironmentMutationRequest): string | null 
   return "identity_environment_ref" in request ? request.identity_environment_ref : null;
 }
 
-function requestHash(request: IdentityEnvironmentMutationRequest): string { return createHash("sha256").update(JSON.stringify(normalize(request))).digest("hex"); }
+function requestHash(
+  request: IdentityEnvironmentMutationRequest,
+  legacyInitialState: LegacyIdentityEnvironmentInitialState | null
+): string {
+  const input = legacyInitialState ? { request, legacy_initial_state: legacyInitialState } : request;
+  return createHash("sha256").update(JSON.stringify(normalize(input))).digest("hex");
+}
 
 function normalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalize);

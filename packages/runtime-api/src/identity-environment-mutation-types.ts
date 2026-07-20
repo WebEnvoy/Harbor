@@ -1,6 +1,7 @@
 import type { BrowserProviderDetectionInput, BrowserProviderId } from "./provider-management.js";
 import type { stageProfileStorageCopy, stageProfileStorageDelete } from "./profile-storage.js";
 import type {
+  LocalIdentityEnvironmentStateUpdate,
   LocalIdentityEnvironmentPublicRecord,
   ManagedLocalIdentityEnvironmentInput,
   StoredLocalIdentityEnvironmentRecord
@@ -75,6 +76,10 @@ export interface IdentityEnvironmentBusinessInput {
 
 export type IdentityEnvironmentCreateInput = IdentityEnvironmentBusinessInput;
 export type IdentityEnvironmentImportInput = IdentityEnvironmentBusinessInput & { import_source_ref: string };
+export type LegacyIdentityEnvironmentInitialState = Pick<
+  LocalIdentityEnvironmentStateUpdate,
+  "login_state" | "login_state_reason" | "storage_state" | "manual_authentication_state"
+>;
 
 export function hasOnlyIdentityEnvironmentBusinessInputKeys(value: unknown, operation: "create" | "import"): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;

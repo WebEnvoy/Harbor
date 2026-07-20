@@ -25,6 +25,7 @@ import {
   createStoredIdentityRecord,
   executeIdentityEnvironmentMutation,
   type IdentityEnvironmentMutationConflict,
+  type LegacyIdentityEnvironmentInitialState,
   type IdentityEnvironmentMutationOptions,
   type IdentityEnvironmentMutationPersistenceState,
   type IdentityEnvironmentMutationRequest,
@@ -171,14 +172,18 @@ export class LocalIdentityEnvironmentManager {
     return this.withStoreMutation(() => this.upsert(input, "imported"));
   }
 
-  mutate(request: IdentityEnvironmentMutationRequest, conflict: IdentityEnvironmentMutationConflict | null = null): IdentityEnvironmentMutationResult {
+  mutate(
+    request: IdentityEnvironmentMutationRequest,
+    conflict: IdentityEnvironmentMutationConflict | null = null,
+    legacyInitialState: LegacyIdentityEnvironmentInitialState | null = null
+  ): IdentityEnvironmentMutationResult {
     return this.withStoreMutation(() => executeIdentityEnvironmentMutation(request, {
         records: this.records,
         receipts: this.receipts,
         repairs: this.repairs,
         persist: (records, receipts, repairs) => this.persist(records, receipts, repairs),
         public_record: publicRecord
-      }, this.options, conflict));
+      }, this.options, conflict, legacyInitialState));
   }
 
   update(identity_environment_ref: string, input: LocalIdentityEnvironmentStateUpdate): LocalIdentityEnvironmentPublicRecord | null {

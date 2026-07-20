@@ -122,12 +122,8 @@ async function route(
     const body = await readJson<unknown>(request);
     const mutation = legacyIdentityEnvironmentCreateMutation(body, request);
     if (!mutation) throw new BadRequest("Invalid identity environment create/import request.");
-    let result = runtime.mutateLocalIdentityEnvironment(mutation);
     const stateUpdate = legacyIdentityEnvironmentStateUpdate(body);
-    if (result.status === "completed" && result.identity_environment_ref && stateUpdate) {
-      const record = runtime.updateLocalIdentityEnvironment(result.identity_environment_ref, stateUpdate);
-      if (record) result = { ...result, record };
-    }
+    const result = runtime.mutateLocalIdentityEnvironment(mutation, stateUpdate);
     writeJson(response, identityEnvironmentMutationStatusCode(result), result);
     return;
   }

@@ -421,6 +421,92 @@ test("persists identity environment public records for the local runtime API", a
   }
 });
 
+test("keeps compatibility create state atomic and covered by idempotency", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  const body = {
+    site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+    login_state: "manual_auth_required",
+    login_state_reason: "initial_login_required",
+    manual_authentication_state: "required",
+    storage_state: "present"
+  };
+  const headers = {
+    "content-type": "application/json",
+    "idempotency-key": "legacy-create-state-idempotency",
+    ...manualAuthHeaders()
+  };
+  try {
+    const first = await fetch(`${running.url}/runtime/identity-environments`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body)
+    });
+    assert.equal(first.status, 201);
+    const created = await first.json();
+    assert.equal(created.record.status.login_state, "manual_auth_required");
+    assert.equal(created.record.status.manual_authentication_state, "required");
+
+    const replayed = await fetch(`${running.url}/runtime/identity-environments`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body)
+    });
+    assert.equal(replayed.status, 201);
+    assert.equal((await replayed.json()).identity_environment_ref, created.identity_environment_ref);
+
+    const conflicting = await fetch(`${running.url}/runtime/identity-environments`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...body,
+        login_state: "logged_in",
+        login_state_reason: "caller_changed_state",
+        manual_authentication_state: "completed"
+      })
+    });
+    assert.equal(conflicting.status, 409);
+    assert.equal((await conflicting.json()).failure.code, "idempotency_conflict");
+
+    const unchanged = await getJson(`${running.url}/runtime/identity-environments/${created.identity_environment_ref}`);
+    assert.equal(unchanged.status.login_state, "manual_auth_required");
+    assert.equal(unchanged.status.manual_authentication_state, "required");
+  } finally {
+    await running.close();
+  }
+});
+
+test("does not leave a compatibility identity when its atomic persistence fails", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"), {
+    load_state: () => null,
+    persist_state: () => { throw new Error("simulated compatibility create persistence failure"); }
+  });
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    const response = await fetch(`${running.url}/runtime/identity-environments`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": "legacy-create-atomic-failure",
+        ...manualAuthHeaders()
+      },
+      body: JSON.stringify({
+        site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+        login_state: "manual_auth_required",
+        manual_authentication_state: "required",
+        storage_state: "present"
+      })
+    });
+    assert.equal(response.status, 422);
+    assert.equal((await response.json()).failure.code, "persistence_failed");
+
+    const listed = await getJson(`${running.url}/runtime/identity-environments`);
+    assert.deepEqual(listed.identity_environments, []);
+  } finally {
+    await running.close();
+  }
+});
+
 test("records user-confirmed manual authentication for an active managed session and persists the public record", async () => {
   const persistence_path = join(mkdtempSync(join(tmpdir(), "harbor-manual-auth-")), "identity-environments.json");
   const runtime = new HarborRuntime(createFixtureLauncher("ready"), { persistence_path });
@@ -1063,7 +1149,7 @@ test("does not publish a confirmed login state when identity persistence fails",
     load_state: () => state,
     persist_state: (next) => {
       persistenceWrites += 1;
-      if (persistenceWrites > 2) throw new Error("simulated persistence failure at /private/identity-environments.json");
+      if (persistenceWrites > 1) throw new Error("simulated persistence failure at /private/identity-environments.json");
       state = structuredClone(next);
     }
   });
