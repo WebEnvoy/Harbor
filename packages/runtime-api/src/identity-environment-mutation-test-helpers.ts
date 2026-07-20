@@ -5,11 +5,22 @@ import type {
   IdentityEnvironmentCreateInput,
   IdentityEnvironmentImportInput,
   IdentityEnvironmentMutationRequest,
-  ManagedLocalIdentityEnvironmentInput
+  ManagedLocalIdentityEnvironmentInput,
+  BrowserProviderDetectionInput
 } from "./index.js";
 import { materializeIdentityEnvironmentMutation } from "./identity-environment-mutations.js";
 
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+
+export const testProviderDetection: BrowserProviderDetectionInput = {
+  platform: "darwin",
+  arch: "arm64",
+  home_dir: "/Users/test",
+  env: {},
+  path_exists: (path) => path === chromePath,
+  is_executable: (path) => path === chromePath,
+  read_text: () => null
+};
 
 export function identityInput(identityRef: string, profileRef: string): ManagedLocalIdentityEnvironmentInput {
   return {
@@ -29,13 +40,10 @@ export function identityInput(identityRef: string, profileRef: string): ManagedL
 }
 
 export function createMutationInput(): IdentityEnvironmentCreateInput {
-  const {
-    identity_environment_ref: _identityRef,
-    execution_identity_ref: _executionRef,
-    profile_ref: _profileRef,
-    ...input
-  } = identityInput("owner-assigned", "owner-assigned");
-  return input;
+  return {
+    requested_provider_id: "chrome_official",
+    site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com", display_name: "小红书" }
+  };
 }
 
 export function importMutationInput(profileStorageRef: string): IdentityEnvironmentImportInput {

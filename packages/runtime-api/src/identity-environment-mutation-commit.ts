@@ -3,6 +3,7 @@ import {
   profileStorageHasResiduals,
   profileStoragePathExists,
   repairProfileStorageResiduals,
+  stageProfileStorageDelete,
   type StagedProfileStorageMutation
 } from "./profile-storage.js";
 import type {
@@ -110,15 +111,14 @@ export function commitProfileDelete(
   hash: string,
   store: IdentityEnvironmentMutationStore,
   current: StoredLocalIdentityEnvironmentRecord,
-  transaction: StagedProfileStorageMutation,
   options: IdentityEnvironmentMutationOptions,
   automaticRepair: boolean
 ): IdentityEnvironmentMutationResult {
   const ref = request.identity_environment_ref;
   const localMaterialRefs = localMaterialRefsFor(current);
   const repair = repairResult("delete", null, ref);
-  const records = new Map(store.records);
-  records.delete(ref);
+  const provisional = { ...current, repair_state: "repair_required" as const, repair_reasons: ["profile_mutation_incomplete"] };
+  const records = new Map(store.records).set(ref, provisional);
   const repairs = new Map(store.repairs).set(ref, repairRecord(
     "delete",
     ref,
@@ -133,23 +133,18 @@ export function commitProfileDelete(
     request_hash: hash,
     result: repair
   });
-  let provisionalPersisted = false;
   try {
     store.persist(records, receipts, repairs);
-    provisionalPersisted = true;
     replace(store.records, records);
     replace(store.receipts, receipts);
     replace(store.repairs, repairs);
+  } catch {
+    return rejected("delete", ref, "persistence_failed", true, ["retry"]);
+  }
+  try {
+    const transaction = (options.stage_profile_delete ?? stageProfileStorageDelete)(current.local_material_refs.profile_storage_ref);
     transaction.commit();
   } catch {
-    if (provisionalPersisted) return repair;
-    if (transaction.rollback()) return rejected("delete", ref, "persistence_failed", true, ["retry"]);
-    const manualRepairs = new Map(repairs);
-    const currentRepair = manualRepairs.get(ref);
-    if (currentRepair) manualRepairs.set(ref, { ...currentRepair, automatic_repair: false });
-    replace(store.records, records);
-    replace(store.receipts, receipts);
-    replace(store.repairs, manualRepairs);
     return repair;
   }
   const cleanup = deleteLocalMaterials(localMaterialRefs, options);
@@ -157,7 +152,9 @@ export function commitProfileDelete(
     return persistDeleteRepair(store, request.idempotency_key, hash, ref, records, repairs, cleanup);
   }
   const result = completed("delete", null, ref, "removed", "deleted", "unchanged");
-  return finishProfileMutation(store, request.idempotency_key, hash, result, records, repairs, ref);
+  const completedRecords = new Map(records);
+  completedRecords.delete(ref);
+  return finishProfileMutation(store, request.idempotency_key, hash, result, completedRecords, repairs, ref);
 }
 
 export function reconcileRepair(
@@ -168,9 +165,18 @@ export function reconcileRepair(
   if (receipt.result.status !== "repair_required" || !receipt.result.identity_environment_ref) return receipt.result;
   const repair = store.repairs.get(receipt.result.identity_environment_ref);
   if (repair && !repair.automatic_repair) return receipt.result;
-  if (!repair || !repairProfileStorageResiduals(repair.profile_storage_ref)) return receipt.result;
+  if (!repair) return receipt.result;
+  if (repair.operation === "delete" && profileStoragePathExists(repair.profile_storage_ref)) {
+    try {
+      const transaction = (options.stage_profile_delete ?? stageProfileStorageDelete)(repair.profile_storage_ref);
+      transaction.commit();
+    } catch {
+      return receipt.result;
+    }
+  }
+  if (!repairProfileStorageResiduals(repair.profile_storage_ref)) return receipt.result;
   const clean = repair.operation === "delete"
-    ? !profileStoragePathExists(repair.profile_storage_ref)
+    ? !profileStoragePathExists(repair.profile_storage_ref) && !profileStorageHasResiduals(repair.profile_storage_ref)
     : profileStoragePathExists(repair.profile_storage_ref) && !profileStorageHasResiduals(repair.profile_storage_ref);
   if (!clean && repair.operation !== "delete" && !profileStorageHasResiduals(repair.profile_storage_ref)) {
     return clearRolledBackRepair(receipt, store, repair);
@@ -192,7 +198,10 @@ export function reconcileRepair(
   }
   let record = store.records.get(repair.identity_environment_ref);
   const records = new Map(store.records);
-  if (record) {
+  if (repair.operation === "delete") {
+    records.delete(repair.identity_environment_ref);
+    record = undefined;
+  } else if (record) {
     record = { ...record, repair_state: "clean", repair_reasons: [] };
     records.set(repair.identity_environment_ref, record);
   }

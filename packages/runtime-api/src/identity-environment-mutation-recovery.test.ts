@@ -14,6 +14,7 @@ import {
   identityInput,
   isolateProfileStorage,
   mutationTarget,
+  testProviderDetection,
   tempDir
 } from "./identity-environment-mutation-test-helpers.js";
 import { profileStoragePath } from "./profile-storage.js";
@@ -36,11 +37,11 @@ test("custom persistence reloads records, receipts, and configuration", () => {
       viewport: "1280x720"
     }
   };
-  const first = new LocalIdentityEnvironmentManager(persistence).mutate(createRequest);
+  const first = new LocalIdentityEnvironmentManager({ ...persistence, provider_detection: testProviderDetection }).mutate(createRequest);
   const identityRef = mutationTarget(createRequest).identity_environment_ref;
   assert.equal(first.status, "completed");
 
-  const reloaded = new LocalIdentityEnvironmentManager(persistence);
+  const reloaded = new LocalIdentityEnvironmentManager({ ...persistence, provider_detection: testProviderDetection });
   assert.deepEqual(reloaded.mutate(createRequest), first);
   assert.deepEqual(reloaded.get(identityRef)?.environment_summary, first.record?.environment_summary);
   assert.equal(requiredState(state).mutation_receipts.length, 1);
@@ -126,9 +127,9 @@ test("delete removes all local material and resumes durable repair after restart
     const interrupted = manager.mutate(request);
     assert.equal(interrupted.status, "repair_required");
     assert.equal(interrupted.failure?.code, "local_material_cleanup_unavailable");
-    assert.equal(manager.get("identity-delete"), null);
+    assert.equal(manager.get("identity-delete")?.status.repair_state, "repair_required");
     assert.equal(existsSync(profilePath), false);
-    assert.equal(requiredState(state).records.length, 0);
+    assert.equal(requiredState(state).records[0]?.repair_state, "repair_required");
     assert.equal(requiredState(state).mutation_receipts[0]?.result.status, "repair_required");
     assert.equal(requiredState(state).repairs.length, 1);
 
@@ -147,8 +148,51 @@ test("delete removes all local material and resumes durable repair after restart
       local_secret_ref: "secret-owner"
     });
     assert.equal(requiredState(state).repairs.length, 0);
+    assert.equal(requiredState(state).records.length, 0);
     assert.deepEqual(new LocalIdentityEnvironmentManager(persistence).mutate(request), repaired);
     assert.equal(JSON.stringify(repaired).includes("cookie-owner"), false);
+  } finally {
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("persists delete intent before staging profile storage", () => {
+  const root = tempDir("delete-intent-order");
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = root;
+  let state: IdentityEnvironmentMutationPersistenceState | null = null;
+  let stageCalls = 0;
+  try {
+    const manager = new LocalIdentityEnvironmentManager({
+      load_state: () => state,
+      persist_state: (next) => { state = structuredClone(next); },
+      stage_profile_delete: (profileStorageRef) => {
+        stageCalls += 1;
+        const persisted = requiredState(state);
+        assert.equal(persisted.mutation_receipts[0]?.result.status, "repair_required");
+        assert.equal(persisted.repairs[0]?.operation, "delete");
+        assert.equal(persisted.records[0]?.repair_state, "repair_required");
+        assert.equal(existsSync(profileStoragePath(profileStorageRef)), true);
+        throw new Error("simulated process interruption before profile staging");
+      }
+    });
+    manager.create(identityInput("identity-delete-order", "profile-delete-order"));
+    const profilePath = profileStoragePath("profile-delete-order:storage");
+    mkdirSync(profilePath, { recursive: true });
+    writeFileSync(join(profilePath, "Cookies"), "owner-session");
+
+    const result = manager.mutate({
+      operation: "delete",
+      idempotency_key: "delete-intent-order",
+      identity_environment_ref: "identity-delete-order",
+      confirmation: "delete_local_data"
+    });
+    assert.equal(result.status, "repair_required");
+    assert.equal(stageCalls, 1);
+    assert.equal(existsSync(profilePath), true);
+    assert.equal(manager.get("identity-delete-order")?.status.repair_state, "repair_required");
   } finally {
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;

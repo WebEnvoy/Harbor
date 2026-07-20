@@ -64,8 +64,7 @@ test("serves identity, session, and evidence endpoint plumbing", async () => {
       login_state: "manual_auth_required",
       storage_state: "present",
       language: "zh-CN",
-      timezone: "Asia/Shanghai",
-      fingerprint_summary: "fixture-provider-claim"
+      timezone: "Asia/Shanghai"
     });
     assert.match(created.identity_environment_ref, /^identity-env_[a-f0-9]{24}$/);
     assert.equal(created.public_boundary.raw_material, "not_exposed");
@@ -403,8 +402,7 @@ test("persists identity environment public records for the local runtime API", a
       storage_state: "present",
       language: "zh-CN",
       timezone: "Asia/Shanghai",
-      viewport: "1280x720",
-      fingerprint_summary: "provider_claim:persisted"
+      viewport: "1280x720"
     });
   } finally {
     await first.close();
@@ -1065,7 +1063,7 @@ test("does not publish a confirmed login state when identity persistence fails",
     load_state: () => state,
     persist_state: (next) => {
       persistenceWrites += 1;
-      if (persistenceWrites > 1) throw new Error("simulated persistence failure at /private/identity-environments.json");
+      if (persistenceWrites > 2) throw new Error("simulated persistence failure at /private/identity-environments.json");
       state = structuredClone(next);
     }
   });

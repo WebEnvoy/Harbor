@@ -17,6 +17,7 @@ import {
   isolateProfileStorage,
   mutationTarget,
   mutationHeaders,
+  testProviderDetection,
   tempDir
 } from "./identity-environment-mutation-test-helpers.js";
 import { profileStoragePath } from "./profile-storage.js";
@@ -35,12 +36,12 @@ test("persists idempotent receipts and rejects sensitive or conflicting payloads
       identity_environment: createMutationInput()
     };
     const target = mutationTarget(request);
-    const first = new LocalIdentityEnvironmentManager({ persistence_path }).mutate(request);
+    const first = new LocalIdentityEnvironmentManager({ persistence_path, provider_detection: testProviderDetection }).mutate(request);
     assert.equal(first.status, "completed");
     assert.equal(first.record?.identity_environment_ref, target.identity_environment_ref);
     assert.equal(JSON.stringify(first).includes(`${target.profile_ref}:storage`), false);
 
-    const reloaded = new LocalIdentityEnvironmentManager({ persistence_path });
+    const reloaded = new LocalIdentityEnvironmentManager({ persistence_path, provider_detection: testProviderDetection });
     assert.deepEqual(reloaded.mutate(request), first);
     assert.equal(reloaded.mutate({
       ...request,
@@ -65,7 +66,7 @@ test("persists idempotent receipts and rejects sensitive or conflicting payloads
 });
 
 test("allocates owner refs and rejects provider metadata that conflicts with the selected provider", () => {
-  const manager = new LocalIdentityEnvironmentManager();
+  const manager = new LocalIdentityEnvironmentManager({ provider_detection: testProviderDetection });
   const request: IdentityEnvironmentMutationRequest = {
     operation: "create",
     idempotency_key: "owner-allocated-create",
@@ -90,10 +91,22 @@ test("allocates owner refs and rejects provider metadata that conflicts with the
       imported_from: "caller-import-source"
     }
   } as unknown as IdentityEnvironmentMutationRequest);
-  assert.equal(bypassedTypes.status, "completed");
-  assert.notEqual(bypassedTypes.identity_environment_ref, "caller-identity");
-  assert.equal(bypassedTypes.record?.refs.cookie_jar_ref, null);
-  assert.equal(JSON.stringify(bypassedTypes).includes("caller-storage"), false);
+    assert.equal(bypassedTypes.failure?.code, "invalid_request");
+    assert.equal(bypassedTypes.identity_environment_ref, null);
+    assert.equal(JSON.stringify(bypassedTypes).includes("caller-storage"), false);
+
+    const detectionBypass = manager.mutate({
+      operation: "create",
+      idempotency_key: "owner-detection-bypassed-types",
+      identity_environment: {
+        ...createMutationInput(),
+        env: { HARBOR_CHROME_PATH: "/bin/echo" },
+        platform: "linux",
+        path_exists: "not-a-function",
+        login_state: "logged_in"
+      }
+    } as unknown as IdentityEnvironmentMutationRequest);
+    assert.equal(detectionBypass.failure?.code, "invalid_request");
 
   const mismatch = manager.mutate({
     operation: "create",
@@ -103,8 +116,8 @@ test("allocates owner refs and rejects provider metadata that conflicts with the
       requested_provider_id: "chrome_official",
       browser_family: "cloakbrowser"
     }
-  });
-  assert.equal(mismatch.failure?.code, "provider_mismatch");
+  } as unknown as IdentityEnvironmentMutationRequest);
+  assert.equal(mismatch.failure?.code, "invalid_request");
 });
 
 test("derives internal import ownership only from the Harbor import source ref", () => {
@@ -116,26 +129,33 @@ test("derives internal import ownership only from the Harbor import source ref",
   let state: IdentityEnvironmentMutationPersistenceState | null = null;
   try {
     const manager = new LocalIdentityEnvironmentManager({
+      provider_detection: testProviderDetection,
       load_state: () => state,
       persist_state: (next) => { state = structuredClone(next); }
     });
     const imported = manager.mutate({
       operation: "import",
       idempotency_key: "import-source-boundary",
-      identity_environment: {
-        ...importMutationInput(importSourceRef),
-        profile_storage_ref: "caller-profile-storage",
-        imported_from: "caller-import-source"
-      }
-    } as unknown as IdentityEnvironmentMutationRequest);
+      identity_environment: importMutationInput(importSourceRef)
+    });
     assert.equal(imported.status, "completed");
     const persisted = state as IdentityEnvironmentMutationPersistenceState | null;
     assert.ok(persisted);
     const record = persisted.records[0];
     assert.equal(record?.local_material_refs.profile_storage_ref, importSourceRef);
     assert.equal(record?.imported_from, importSourceRef);
-    assert.equal(JSON.stringify(persisted).includes("caller-profile-storage"), false);
-    assert.equal(JSON.stringify(persisted).includes("caller-import-source"), false);
+    const bypassed = manager.mutate({
+      operation: "import",
+      idempotency_key: "import-source-bypass",
+      identity_environment: {
+        ...importMutationInput(importSourceRef),
+        profile_storage_ref: "caller-profile-storage",
+        imported_from: "caller-import-source"
+      }
+    } as unknown as IdentityEnvironmentMutationRequest);
+    assert.equal(bypassed.failure?.code, "invalid_request");
+    assert.equal(JSON.stringify(state).includes("caller-profile-storage"), false);
+    assert.equal(JSON.stringify(state).includes("caller-import-source"), false);
   } finally {
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
@@ -145,6 +165,7 @@ test("derives internal import ownership only from the Harbor import source ref",
 
 test("persists supported launch configuration and normalizes proxy clearing", () => {
   const manager = new LocalIdentityEnvironmentManager({
+    provider_detection: testProviderDetection,
     validate_proxy: (ref) => ref === "proxy-reachable" ? "reachable" : "unreachable",
     resolve_proxy: () => "http://127.0.0.1:8080"
   });
@@ -210,6 +231,7 @@ test("full copy includes owner session material while configuration-only copy ex
   let deletedRefs: unknown = null;
   try {
     const manager = new LocalIdentityEnvironmentManager({
+      provider_detection: testProviderDetection,
       stage_local_material_copy: (refs, target) => {
         localCopyCalls += 1;
         assert.deepEqual(refs, { cookie_jar_ref: "source-cookie-ref", browser_storage_ref: "source-browser-storage" });
@@ -300,7 +322,7 @@ test("full copy includes owner session material while configuration-only copy ex
 
 test("exposes redacted mutation HTTP results with stable authorization and status codes", async () => {
   const token = Buffer.alloc(32, 9).toString("base64url");
-  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"), { provider_detection: testProviderDetection });
   const running = await startHarborRuntimeServer({ port: 0, runtime, manual_authentication_supervisor_token: token });
   try {
     const unauthorized = await fetch(`${running.url}/runtime/identity-environment-mutations`, {
@@ -355,6 +377,34 @@ test("exposes redacted mutation HTTP results with stable authorization and statu
       })
     });
     assert.equal(callerAssignedCreateOwner.status, 400);
+
+    for (const [key, value] of [
+      ["env", { HARBOR_CHROME_PATH: "/bin/echo" }],
+      ["path_exists", "not-a-function"],
+      ["login_state", "logged_in"]
+    ] as const) {
+      const injected = await fetch(`${running.url}/runtime/identity-environment-mutations`, {
+        method: "POST",
+        headers: mutationHeaders(token),
+        body: JSON.stringify({
+          operation: "create",
+          idempotency_key: `caller-injected-${key}`,
+          identity_environment: { ...createMutationInput(), [key]: value }
+        })
+      });
+      assert.equal(injected.status, 400);
+    }
+
+    const legacyInjected = await fetch(`${running.url}/runtime/identity-environments`, {
+      method: "POST",
+      headers: { ...mutationHeaders(token), "idempotency-key": "legacy-injected-detection" },
+      body: JSON.stringify({
+        ...createMutationInput(),
+        env: { HARBOR_CHROME_PATH: "/bin/echo" },
+        login_state: "logged_in"
+      })
+    });
+    assert.equal(legacyInjected.status, 400);
 
     const callerAssignedCopyTarget = await fetch(`${running.url}/runtime/identity-environment-mutations`, {
       method: "POST",
