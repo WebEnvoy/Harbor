@@ -15,13 +15,13 @@ import {
   providerExchangeJournal,
   publishProviderExchange,
   recoverProviderExchange,
-  rollbackProviderExchange,
   scavengeStaleProviderArtifacts,
   writeProviderExchangeJournal,
   writeProviderVersionMarker,
   type ProviderExchangeFileOperations,
   type ProviderExchangeJournal
 } from "./managed-provider-exchange.js";
+import { attemptProviderRollback, settleProviderOperation } from "./managed-provider-lifecycle-recovery.js";
 import {
   acquireProviderCacheOwnership,
   ProviderCacheOwnershipBusy,
@@ -43,7 +43,6 @@ import {
   compatibleBrowserVersion,
   error,
   progress,
-  publicError,
   recoveryError,
   result,
   versionNewer
@@ -268,20 +267,24 @@ export class ManagedProviderLifecycle {
       await commitProviderExchange(this.cacheDir, journal, this.exchangeOperations, ownership);
       this.completeSuccess(operationId, version);
     } catch (cause) {
-      const rolledBack = journal && !commitPersisted
-        ? await rollbackProviderExchange(this.cacheDir, journal, ownership, this.exchangeOperations)
-        : false;
+      const rollback = await attemptProviderRollback(
+        this.cacheDir, journal, commitPersisted, ownership, this.exchangeOperations
+      );
+      const rolledBack = rollback.rolled_back;
+      const rollbackFailure = rollback.failure;
       const recoveryFailed = commitPersisted || Boolean(journal) && !rolledBack;
       if (recoveryFailed) this.recoveryBlocked = true;
-      if (signal.aborted || this.cancelRequested(operationId)) {
-        this.completeCancellation(operationId, rolledBack, recoveryFailed, integrityVerified, launchVerified);
+      if (this.isActive(operationId)) {
+        this.current = settleProviderOperation({
+          detected: this.detectStatus(), operation: this.current.operation, operation_id: operationId,
+          phase: this.current.state, cause, cancelled: signal.aborted || this.cancelRequested(operationId),
+          rolled_back: rolledBack, recovery_failed: recoveryFailed, integrity_verified: integrityVerified,
+          launch_verified: launchVerified, rollback_failure: rollbackFailure, commit_persisted: commitPersisted
+        });
       }
-      else this.completeFailure(operationId, cause, rolledBack, integrityVerified, launchVerified, recoveryFailed);
     } finally {
-      if (stagingDir) {
-        await ownership.mutate(this.cacheDir, "operation:remove-staging", () =>
-          rm(stagingDir, { recursive: true, force: true })).catch(() => undefined);
-      }
+      if (stagingDir) await ownership.mutate(this.cacheDir, "operation:remove-staging", () =>
+        rm(stagingDir, { recursive: true, force: true })).catch(() => undefined);
       await ownership.release();
     }
   }
@@ -434,46 +437,6 @@ export class ManagedProviderLifecycle {
     this.current.result = result("succeeded", operationId, version, true, true, false);
     this.current.error = null;
     this.current.available_actions = ["update", "repair", "recheck"];
-  }
-
-  private completeCancellation(
-    operationId: string,
-    rolledBack: boolean,
-    recoveryFailed: boolean,
-    integrityVerified: boolean,
-    launchVerified: boolean
-  ): void {
-    if (!this.isActive(operationId)) return;
-    if (recoveryFailed) this.recoveryBlocked = true;
-    const operation = this.current.operation;
-    const detected = this.detectStatus();
-    this.current = {
-      ...detected,
-      state: recoveryFailed ? "repairable" : detected.state,
-      result: result("cancelled", operationId, detected.installed_version, integrityVerified, launchVerified, rolledBack),
-      operation: operation ? { ...operation, cancellable: false } : null,
-      error: recoveryFailed ? recoveryError("Cancellation could not fully roll back the provider exchange; the backup was preserved.") : null,
-      available_actions: recoveryFailed ? ["recheck"] : detected.available_actions
-    };
-    if (this.current.operation) this.current.operation.progress.phase = this.current.state;
-  }
-
-  private completeFailure(operationId: string, cause: unknown, rolledBack: boolean, integrityVerified: boolean, launchVerified: boolean, recoveryFailed: boolean): void {
-    if (!this.isActive(operationId)) return;
-    if (recoveryFailed) this.recoveryBlocked = true;
-    const lifecycleError = recoveryFailed
-      ? recoveryError("The provider exchange could not be rolled back; the backup was preserved.")
-      : publicError(cause, this.current.state, launchVerified);
-    const detected = this.detectStatus();
-    this.current = {
-      ...detected,
-      state: recoveryFailed ? "repairable" : detected.state === "ready" ? "ready" : lifecycleError.code === "unsupported_platform" ? "unsupported" : "repairable",
-      operation: this.current.operation ? { ...this.current.operation, cancellable: false } : null,
-      result: result("failed", operationId, detected.installed_version, integrityVerified, launchVerified, rolledBack),
-      error: lifecycleError,
-      available_actions: recoveryFailed ? ["recheck"] : detected.state !== "ready" ? ["repair", "recheck"] : ["update", "repair", "recheck"]
-    };
-    if (this.current.operation) this.current.operation.progress.phase = this.current.state;
   }
 
   private assertActive(operationId: string, signal: AbortSignal): void {

@@ -49,6 +49,12 @@ export class ProviderCacheOwnershipBusy extends Error {
   }
 }
 
+export class ProviderCacheOwnershipLost extends Error {
+  constructor() {
+    super("Managed provider cache ownership is not held by this runtime.");
+  }
+}
+
 export class ProviderCacheOwnership {
   private released = false;
   private lost = false;
@@ -108,15 +114,16 @@ export class ProviderCacheOwnership {
   }
 
   private async refreshLeaseOnce(): Promise<void> {
-    if (this.released || this.lost || !await this.matchesActualClaim() || !await this.matchesActualFence()) {
+    try {
+      if (this.released || this.lost || !await this.matchesActualClaim() || !await this.matchesActualFence()) {
+        throw ownershipLost();
+      }
+      const now = new Date();
+      await this.claim.utimes(now, now);
+      if (!await this.matchesActualClaim() || !await this.matchesActualFence()) throw ownershipLost();
+    } catch (error) {
       this.lost = true;
-      throw ownershipLost();
-    }
-    const now = new Date();
-    await this.claim.utimes(now, now);
-    if (!await this.matchesActualClaim() || !await this.matchesActualFence()) {
-      this.lost = true;
-      throw ownershipLost();
+      throw error instanceof ProviderCacheOwnershipLost ? error : ownershipLost();
     }
   }
 
@@ -158,8 +165,11 @@ export async function acquireProviderCacheOwnership(
     await options.on_before_legacy_fence?.();
     const acquiredFence = await acquireLegacyFence(normalized, claimsDir, token, leaseDurationMs);
     fence = acquiredFence.handle;
-    if (!await matchesHeldLock(claim, claimPath, claimEntry.dev, claimEntry.ino, token) ||
-        !await matchesHeldLock(fence, acquiredFence.path, acquiredFence.device, acquiredFence.inode, token, true)) {
+    const validClaim = await matchesHeldLock(claim, claimPath, claimEntry.dev, claimEntry.ino, token).catch(() => false);
+    const validFence = await matchesHeldLock(
+      fence, acquiredFence.path, acquiredFence.device, acquiredFence.inode, token, true
+    ).catch(() => false);
+    if (!validClaim || !validFence) {
       throw ownershipLost();
     }
     return new ProviderCacheOwnership(
@@ -410,8 +420,8 @@ function boundedDuration(value: number | undefined, fallback: number, allowZero 
   return value;
 }
 
-function ownershipLost(): Error {
-  return new Error("Managed provider cache ownership is not held by this runtime.");
+function ownershipLost(): ProviderCacheOwnershipLost {
+  return new ProviderCacheOwnershipLost();
 }
 
 function isAlreadyExists(error: unknown): boolean {

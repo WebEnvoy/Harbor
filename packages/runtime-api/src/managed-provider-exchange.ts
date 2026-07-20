@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { access, lstat, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
+import { access, lstat, open, readFile, readdir, rename, rm, type FileHandle } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { ProviderCacheOwnership } from "./managed-provider-cache-ownership.js";
+import { ProviderCacheOwnershipLost, type ProviderCacheOwnership } from "./managed-provider-cache-ownership.js";
 
 export const PROVIDER_EXCHANGE_JOURNAL = ".harbor-provider-exchange.json";
 
@@ -23,11 +23,18 @@ export interface ProviderExchangeFileOperations {
   rm: typeof rm;
 }
 
+export interface ProviderRollbackResult {
+  rolled_back: boolean;
+  failure: unknown | null;
+}
+
 const defaultOperations: ProviderExchangeFileOperations = { rename, rm };
 const MAX_STALE_ARTIFACT_REMOVALS = 64;
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 const DOWNLOAD_ARTIFACT = new RegExp(`^\\.harbor-download-${UUID}\\.(?:zip|tar\\.gz)$`, "i");
 const STAGING_ARTIFACT = new RegExp(`^\\.harbor-staging-provider_operation_${UUID}$`, "i");
+const JOURNAL_TEMPORARY = new RegExp(`^\\.harbor-provider-exchange\\.json\\.tmp-${UUID}$`, "i");
+const MARKER_TEMPORARY = new RegExp(`^latest_version_[a-z0-9_-]{1,64}\\.tmp-${UUID}$`, "i");
 
 export async function writeProviderExchangeJournal(
   cacheDir: string,
@@ -37,31 +44,12 @@ export async function writeProviderExchangeJournal(
 ): Promise<void> {
   await ownership.assert(cacheDir);
   assertNotAborted(signal);
-  await mkdir(cacheDir, { recursive: true });
   const existing = await readJournal(cacheDir);
   if (existing && existing.operation_id !== journal.operation_id) {
     throw new Error("An unresolved provider exchange journal already exists.");
   }
   const path = join(cacheDir, PROVIDER_EXCHANGE_JOURNAL);
-  const temporary = `${path}.tmp-${randomUUID()}`;
-  try {
-    const file = await open(temporary, "wx", 0o600);
-    try {
-      await file.writeFile(JSON.stringify(journal));
-      await file.sync();
-    } finally {
-      await file.close();
-    }
-    assertNotAborted(signal);
-    await ownership.mutate(cacheDir, "journal:publish", () => rename(temporary, path));
-  } catch (error) {
-    await ownership.mutate(cacheDir, "journal:discard-temporary", () => rm(temporary, { force: true })).catch(() => undefined);
-    throw error;
-  }
-  try {
-    const directory = await open(cacheDir, "r");
-    try { await directory.sync(); } finally { await directory.close(); }
-  } catch {}
+  await writeCacheFileAtomically(cacheDir, path, JSON.stringify(journal), ownership, "journal", signal);
 }
 
 export async function publishProviderExchange(
@@ -166,10 +154,10 @@ export async function rollbackProviderExchange(
   journal: ProviderExchangeJournal,
   ownership: ProviderCacheOwnership,
   operations: ProviderExchangeFileOperations = defaultOperations
-): Promise<boolean> {
-  await ownership.assert(cacheDir);
-  const paths = journalPaths(cacheDir, journal);
+): Promise<ProviderRollbackResult> {
   try {
+    await ownership.assert(cacheDir);
+    const paths = journalPaths(cacheDir, journal);
     const backupExists = await pathExists(paths.backup);
     const originalPhase = journal.phase;
     journal.phase = "rollback_started";
@@ -188,9 +176,9 @@ export async function rollbackProviderExchange(
     }
     await restoreMarker(cacheDir, journal, ownership);
     await fencedRemove(cacheDir, ownership, "rollback:remove-journal", operations, join(cacheDir, PROVIDER_EXCHANGE_JOURNAL), { force: true });
-    return true;
-  } catch {
-    return false;
+    return { rolled_back: true, failure: null };
+  } catch (failure) {
+    return { rolled_back: false, failure };
   }
 }
 
@@ -207,10 +195,11 @@ export async function scavengeStaleProviderArtifacts(
     if (removed >= MAX_STALE_ARTIFACT_REMOVALS || protectedNames.has(name)) continue;
     const download = DOWNLOAD_ARTIFACT.test(name);
     const staging = STAGING_ARTIFACT.test(name);
-    if (!download && !staging) continue;
+    const temporary = JOURNAL_TEMPORARY.test(name) || MARKER_TEMPORARY.test(name);
+    if (!download && !staging && !temporary) continue;
     const path = join(cacheDir, name);
     const entry = await lstat(path).catch(() => null);
-    if (!entry || entry.isSymbolicLink() || download && !entry.isFile() || staging && !entry.isDirectory()) continue;
+    if (!entry || entry.isSymbolicLink() || (download || temporary) && !entry.isFile() || staging && !entry.isDirectory()) continue;
     await fencedRemove(cacheDir, ownership, "scavenge:remove-artifact", operations, path, { recursive: staging, force: true });
     removed += 1;
   }
@@ -272,7 +261,7 @@ async function readJournal(cacheDir: string): Promise<ProviderExchangeJournal | 
 
 async function restoreMarker(cacheDir: string, journal: ProviderExchangeJournal, ownership: ProviderCacheOwnership): Promise<void> {
   if (journal.previous_version) await writeMarker(cacheDir, journal.marker_name, journal.previous_version, ownership);
-  else await ownership.mutate(cacheDir, "marker:remove", () => rm(join(cacheDir, journal.marker_name), { force: true }));
+  else await fencedMutation(cacheDir, ownership, "marker:remove", () => rm(join(cacheDir, journal.marker_name), { force: true }));
 }
 
 async function writeMarker(
@@ -283,20 +272,44 @@ async function writeMarker(
   signal?: AbortSignal
 ): Promise<void> {
   const path = join(cacheDir, markerName);
+  await writeCacheFileAtomically(cacheDir, path, version, ownership, "marker", signal);
+}
+
+async function writeCacheFileAtomically(
+  cacheDir: string,
+  path: string,
+  contents: string,
+  ownership: ProviderCacheOwnership,
+  label: "journal" | "marker",
+  signal?: AbortSignal
+): Promise<void> {
   const temporary = `${path}.tmp-${randomUUID()}`;
+  let file: FileHandle | null = null;
   try {
-    const file = await open(temporary, "wx", 0o600);
-    try {
-      await file.writeFile(version);
-      await file.sync();
-    } finally {
-      await file.close();
-    }
+    file = await fencedMutation(cacheDir, ownership, `${label}:create-temporary`, () => open(temporary, "wx", 0o600));
+    await fencedMutation(cacheDir, ownership, `${label}:write-temporary`, () => file!.writeFile(contents));
+    await fencedMutation(cacheDir, ownership, `${label}:sync-temporary`, () => file!.sync());
+    await file.close();
+    file = null;
     assertNotAborted(signal);
-    await ownership.mutate(cacheDir, "marker:publish", () => rename(temporary, path));
+    await fencedMutation(cacheDir, ownership, `${label}:publish`, () => rename(temporary, path));
   } catch (error) {
-    await ownership.mutate(cacheDir, "marker:discard-temporary", () => rm(temporary, { force: true })).catch(() => undefined);
+    await file?.close().catch(() => undefined);
+    await fencedMutation(cacheDir, ownership, `${label}:discard-temporary`, () => rm(temporary, { force: true })).catch(() => undefined);
     throw error;
+  }
+  await syncCacheDirectory(cacheDir, ownership, label);
+}
+
+async function syncCacheDirectory(cacheDir: string, ownership: ProviderCacheOwnership, label: string): Promise<void> {
+  let directory: FileHandle | null = null;
+  try {
+    directory = await fencedMutation(cacheDir, ownership, `${label}:open-directory`, () => open(cacheDir, "r"));
+    await fencedMutation(cacheDir, ownership, `${label}:sync-directory`, () => directory!.sync());
+  } catch (error) {
+    if (error instanceof ProviderCacheOwnershipLost) throw error;
+  } finally {
+    await directory?.close().catch(() => undefined);
   }
 }
 
@@ -322,7 +335,7 @@ async function fencedRename(
   source: string,
   destination: string
 ): Promise<void> {
-  await ownership.mutate(cacheDir, label, () => operations.rename(source, destination));
+  await fencedMutation(cacheDir, ownership, label, () => operations.rename(source, destination));
 }
 
 async function fencedRemove(
@@ -333,7 +346,16 @@ async function fencedRemove(
   path: string,
   options: Parameters<typeof rm>[1]
 ): Promise<void> {
-  await ownership.mutate(cacheDir, label, () => operations.rm(path, options));
+  await fencedMutation(cacheDir, ownership, label, () => operations.rm(path, options));
+}
+
+async function fencedMutation<T>(
+  cacheDir: string,
+  ownership: ProviderCacheOwnership,
+  label: string,
+  mutation: () => Promise<T>
+): Promise<T> {
+  return ownership.mutate(cacheDir, label, mutation);
 }
 
 function journalPaths(cacheDir: string, journal: ProviderExchangeJournal): { target: string; staging: string; backup: string } {

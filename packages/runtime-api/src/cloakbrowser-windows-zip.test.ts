@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,7 +7,7 @@ import { extractCloakBrowserArchive } from "./cloakbrowser-archive.js";
 
 const windowsOnly = { skip: process.platform !== "win32" };
 
-test("Windows ZIP extraction rejects traversal, links, reparse entries, and expanded-size overflow", windowsOnly, async () => {
+test("Windows ZIP extraction reaches ExtractToDirectory for safe content and rejects unsafe fixtures", windowsOnly, async () => {
   const root = await mkdtemp(join(tmpdir(), "harbor-windows-zip-"));
   const cases = [
     { name: "traversal", entry: "../escaped.txt", contents: "escape", attributes: 0, limit: 1_024, error: /unsafe archive path/i },
@@ -16,6 +16,19 @@ test("Windows ZIP extraction rejects traversal, links, reparse entries, and expa
     { name: "expanded", entry: "browser.exe", contents: "too-large", attributes: 0, limit: 4, error: /expanded-byte limit/i }
   ] as const;
   try {
+    const validArchive = join(root, "valid.zip");
+    const validDestination = join(root, "valid-destination");
+    await writeFile(validArchive, zipWithSingleStoredEntry("release/browser.exe", "valid-browser", 0));
+    await extractCloakBrowserArchive({
+      archive_path: validArchive,
+      destination_dir: validDestination,
+      platform: "win32",
+      signal: new AbortController().signal,
+      limits: { max_entries: 4, max_expanded_bytes: 1_024 }
+    });
+    assert.equal(await readFile(join(validDestination, "browser.exe"), "utf8"), "valid-browser");
+    await assert.rejects(access(join(validDestination, "release")));
+
     for (const fixture of cases) {
       const archive = join(root, `${fixture.name}.zip`);
       const destination = join(root, `${fixture.name}-destination`);

@@ -1,4 +1,5 @@
 import { CloakBrowserReleaseError } from "./cloakbrowser-release.js";
+import { ProviderCacheOwnershipLost } from "./managed-provider-cache-ownership.js";
 import {
   HARBOR_MANAGED_PROVIDER_LIFECYCLE_SCHEMA,
   type ManagedProviderLifecycleError,
@@ -86,6 +87,59 @@ export function cacheBusyError(): ManagedProviderLifecycleError {
   return error("busy", "Another Harbor Runtime owns the managed provider cache.", true, ["recheck"]);
 }
 
+export function cancelledTerminalStatus(
+  detected: ManagedProviderLifecycleStatus,
+  operation: ManagedProviderLifecycleStatus["operation"],
+  operationId: string,
+  rolledBack: boolean,
+  recoveryFailed: boolean,
+  integrityVerified: boolean,
+  launchVerified: boolean,
+  rollbackFailure: unknown,
+  commitPersisted: boolean
+): ManagedProviderLifecycleStatus {
+  const state = recoveryFailed ? "repairable" : detected.state;
+  return {
+    ...detected,
+    state,
+    result: result("cancelled", operationId, detected.installed_version, integrityVerified, launchVerified, rolledBack),
+    operation: terminalOperation(operation, state),
+    error: recoveryFailed ? recoveryError(recoveryFailureMessage("Cancellation was accepted", null, rollbackFailure, commitPersisted)) : null,
+    available_actions: recoveryFailed ? ["recheck"] : detected.available_actions
+  };
+}
+
+export function failedTerminalStatus(
+  detected: ManagedProviderLifecycleStatus,
+  operation: ManagedProviderLifecycleStatus["operation"],
+  operationId: string,
+  phase: ManagedProviderLifecycleState,
+  cause: unknown,
+  rolledBack: boolean,
+  recoveryFailed: boolean,
+  integrityVerified: boolean,
+  launchVerified: boolean,
+  rollbackFailure: unknown,
+  commitPersisted: boolean
+): ManagedProviderLifecycleStatus {
+  const operationError = publicError(cause, phase, launchVerified);
+  const operationFailure = cause instanceof ProviderCacheOwnershipLost ? "cache_ownership_lost" : operationError.code;
+  const lifecycleError = recoveryFailed
+    ? recoveryError(recoveryFailureMessage("The provider operation failed", operationFailure, rollbackFailure, commitPersisted))
+    : operationError;
+  const state = recoveryFailed
+    ? "repairable"
+    : detected.state === "ready" ? "ready" : lifecycleError.code === "unsupported_platform" ? "unsupported" : "repairable";
+  return {
+    ...detected,
+    state,
+    operation: terminalOperation(operation, state),
+    result: result("failed", operationId, detected.installed_version, integrityVerified, launchVerified, rolledBack),
+    error: lifecycleError,
+    available_actions: recoveryFailed ? ["recheck"] : detected.state !== "ready" ? ["repair", "recheck"] : ["update", "repair", "recheck"]
+  };
+}
+
 export function compatibleBrowserVersion(observed: string, target: string): boolean {
   return observed === target || observed.split(".").slice(0, 4).join(".") === target.split(".").slice(0, 4).join(".");
 }
@@ -102,4 +156,26 @@ export function versionNewer(candidate: string, installed: string): boolean {
 
 function isLifecycleError(value: unknown): value is ManagedProviderLifecycleError {
   return Boolean(value && typeof value === "object" && "code" in value && "recovery_actions" in value);
+}
+
+function terminalOperation(
+  operation: ManagedProviderLifecycleStatus["operation"],
+  phase: ManagedProviderLifecycleState
+): ManagedProviderLifecycleStatus["operation"] {
+  return operation ? { ...operation, cancellable: false, progress: { ...operation.progress, phase } } : null;
+}
+
+function recoveryFailureMessage(
+  prefix: string,
+  operationCode: ManagedProviderLifecycleError["code"] | "cache_ownership_lost" | null,
+  rollbackFailure: unknown,
+  commitPersisted: boolean
+): string {
+  const attributed = operationCode ? `${prefix} with ${operationCode}` : prefix;
+  if (rollbackFailure instanceof ProviderCacheOwnershipLost) {
+    return `${attributed}, and rollback could not complete because cache ownership was lost; recheck is required.`;
+  }
+  if (rollbackFailure) return `${attributed}, and a filesystem rollback step failed; recheck is required.`;
+  if (commitPersisted) return `${attributed} after the commit journal was persisted; recheck is required to complete recovery.`;
+  return `${attributed}, and rollback could not complete; recheck is required.`;
 }
