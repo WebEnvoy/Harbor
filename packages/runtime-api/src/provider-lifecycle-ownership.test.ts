@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { access, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -117,6 +117,54 @@ test("a fresh malformed ownership lock is not stolen", async () => {
   }
 });
 
+test("a new owner continuously fences legacy fixed-path acquisition", async () => {
+  const cacheDir = await emptyCache();
+  const lock = join(cacheDir, PROVIDER_CACHE_OWNERSHIP_LOCK);
+  const ownership = await acquireProviderCacheOwnership(cacheDir);
+  try {
+    await assert.rejects(open(lock, "wx"), (error: NodeJS.ErrnoException) => error.code === "EEXIST");
+    await ownership.assert(cacheDir);
+  } finally {
+    await ownership.release();
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("a legacy owner winning the fixed-path race blocks new ownership", async () => {
+  const cacheDir = await emptyCache();
+  const lock = join(cacheDir, PROVIDER_CACHE_OWNERSHIP_LOCK);
+  let closeLegacy = async (): Promise<void> => undefined;
+  try {
+    await assert.rejects(acquireProviderCacheOwnership(cacheDir, {
+      on_before_legacy_fence: async () => {
+        const legacy = await open(lock, "wx", 0o600);
+        closeLegacy = () => legacy.close();
+        await legacy.writeFile(JSON.stringify({ pid: process.pid, token: "live-legacy-race" }));
+        await legacy.sync();
+      }
+    }), ProviderCacheOwnershipBusy);
+    assert.equal(await readFile(lock, "utf8"), JSON.stringify({ pid: process.pid, token: "live-legacy-race" }));
+  } finally {
+    await closeLegacy();
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("a live legacy owner is not reclaimed after sixty seconds", async () => {
+  const cacheDir = await emptyCache();
+  const lock = join(cacheDir, PROVIDER_CACHE_OWNERSHIP_LOCK);
+  const contents = JSON.stringify({ pid: process.pid, token: "live-legacy-owner" });
+  await writeFile(lock, contents);
+  const old = new Date(Date.now() - PROVIDER_CACHE_OWNERSHIP_STALE_MS - 10_000);
+  await utimes(lock, old, old);
+  try {
+    await assert.rejects(acquireProviderCacheOwnership(cacheDir), ProviderCacheOwnershipBusy);
+    assert.equal(await readFile(lock, "utf8"), contents);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 test("500 deterministic dual stale reclaimers never both acquire ownership", async () => {
   const cacheDir = await emptyCache();
   const claimsDir = join(cacheDir, PROVIDER_CACHE_OWNERSHIP_DIRECTORY);
@@ -189,6 +237,58 @@ test("ownership assert rejects a replaced actual claim without deleting its repl
   }
 });
 
+test("a lease-fenced terminal commit cannot mutate after another owner takes over", async () => {
+  const cacheDir = await emptyCache();
+  const target = join(cacheDir, `chromium-${version}`);
+  const marker = join(cacheDir, "latest_version_linux-x64");
+  await mkdir(target);
+  await writeFile(join(target, "chrome"), "old", { mode: 0o755 });
+  await writeFile(marker, version);
+  const paused = barrier(1);
+  let acquisitions = 0;
+  const managed = new ManagedProviderLifecycle({
+    cache_dir: cacheDir,
+    env: {},
+    platform: "linux",
+    arch: "x64",
+    acquire_cache_ownership: async (path) => acquireProviderCacheOwnership(path, ++acquisitions === 2 ? {
+      lease_duration_ms: 40,
+      heartbeat_interval_ms: 0,
+      on_before_mutation: async (label) => {
+        if (label === "commit:remove-backup") await paused.arrive();
+      }
+    } : {}),
+    install_release: async (input) => {
+      await mkdir(input.destination_dir, { recursive: true });
+      const binaryPath = join(input.destination_dir, "chrome");
+      await writeFile(binaryPath, "new", { mode: 0o755 });
+      return { binary_path: binaryPath, integrity: "ed25519_sha256", source: "official_release" };
+    },
+    verify_launch: async (_path, expected) => ({ browser_version: expected })
+  });
+  let successor: Awaited<ReturnType<typeof acquireProviderCacheOwnership>> | null = null;
+  try {
+    assert.equal((await managed.start({ operation: "repair", version })).accepted, true);
+    await paused.reached;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    successor = await acquireProviderCacheOwnership(cacheDir, { lease_duration_ms: 40 });
+    paused.release();
+    const completed = await waitForTerminal(managed);
+    assert.equal(completed.result?.status, "failed");
+    assert.equal(completed.error?.code, "recovery_failed");
+    assert.equal(await readFile(join(target, "chrome"), "utf8"), "new");
+    const backup = (await readdir(cacheDir)).find((name) => name.startsWith(".harbor-backup-provider_operation_"));
+    assert.ok(backup);
+    assert.equal(await readFile(join(cacheDir, backup, "chrome"), "utf8"), "old");
+    await access(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL));
+  } finally {
+    paused.release();
+    await successor?.release();
+    await managed.close();
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 function lifecycle(cacheDir: string, installRelease: (input: InstallCloakBrowserReleaseInput) => Promise<never>): ManagedProviderLifecycle {
   return new ManagedProviderLifecycle({
     cache_dir: cacheDir,
@@ -207,6 +307,15 @@ async function writeJournal(cacheDir: string, journal: ReturnType<typeof provide
 
 function emptyCache(): Promise<string> {
   return mkdtemp(join(tmpdir(), "harbor-provider-ownership-"));
+}
+
+async function waitForTerminal(lifecycle: ManagedProviderLifecycle): Promise<ReturnType<ManagedProviderLifecycle["status"]>> {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    const status = lifecycle.status();
+    if (status.result) return status;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("timed out waiting for provider lifecycle terminal state");
 }
 
 async function writeStaleClaim(claimsDir: string, pid: number): Promise<string> {

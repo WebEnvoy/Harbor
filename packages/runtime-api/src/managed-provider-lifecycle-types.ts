@@ -1,5 +1,6 @@
 import { isCloakBrowserVersion, type InstallCloakBrowserReleaseInput, type InstalledCloakBrowserRelease } from "./cloakbrowser-release.js";
 import type { ProviderExchangeFileOperations } from "./managed-provider-exchange.js";
+import type { ProviderCacheOwnership } from "./managed-provider-cache-ownership.js";
 
 export const HARBOR_MANAGED_PROVIDER_LIFECYCLE_SCHEMA = "harbor-managed-provider-lifecycle/v0";
 
@@ -113,6 +114,7 @@ export interface ManagedProviderLifecycleOptions {
   resolve_latest_version?: (platform: NodeJS.Platform, arch: string, signal?: AbortSignal) => Promise<string | null>;
   verify_launch?: (binaryPath: string, expectedVersion: string, signal: AbortSignal) => Promise<{ browser_version: string }>;
   exchange_file_operations?: ProviderExchangeFileOperations;
+  acquire_cache_ownership?: (cacheDir: string) => Promise<ProviderCacheOwnership>;
   now?: () => Date;
 }
 

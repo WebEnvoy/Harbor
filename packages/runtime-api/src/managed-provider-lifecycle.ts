@@ -74,6 +74,7 @@ export class ManagedProviderLifecycle {
   private readonly resolveLatestVersion: NonNullable<ManagedProviderLifecycleOptions["resolve_latest_version"]>;
   private readonly verifyLaunch: NonNullable<ManagedProviderLifecycleOptions["verify_launch"]>;
   private readonly exchangeOperations: ProviderExchangeFileOperations;
+  private readonly acquireCacheOwnership: NonNullable<ManagedProviderLifecycleOptions["acquire_cache_ownership"]>;
   private readonly now: () => Date;
   private current: ManagedProviderLifecycleStatus;
   private controller: AbortController | null = null;
@@ -94,6 +95,7 @@ export class ManagedProviderLifecycle {
     this.verifyLaunch = options.verify_launch ?? ((binaryPath, expectedVersion, signal) =>
       verifyLocalProviderLaunch(binaryPath, { expected_version: expectedVersion, signal }));
     this.exchangeOperations = options.exchange_file_operations ?? { rename, rm };
+    this.acquireCacheOwnership = options.acquire_cache_ownership ?? acquireProviderCacheOwnership;
     this.now = options.now ?? (() => new Date());
     this.current = this.detectStatus();
     this.initialization = this.initializeCache();
@@ -276,7 +278,10 @@ export class ManagedProviderLifecycle {
       }
       else this.completeFailure(operationId, cause, rolledBack, integrityVerified, launchVerified, recoveryFailed);
     } finally {
-      if (stagingDir) await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+      if (stagingDir) {
+        await ownership.mutate(this.cacheDir, "operation:remove-staging", () =>
+          rm(stagingDir, { recursive: true, force: true })).catch(() => undefined);
+      }
       await ownership.release();
     }
   }
@@ -305,7 +310,7 @@ export class ManagedProviderLifecycle {
 
   private async tryAcquireCacheOwnership(): Promise<ProviderCacheOwnership | null> {
     try {
-      return await acquireProviderCacheOwnership(this.cacheDir);
+      return await this.acquireCacheOwnership(this.cacheDir);
     } catch (cause) {
       if (cause instanceof ProviderCacheOwnershipBusy) return null;
       this.recoveryBlocked = true;

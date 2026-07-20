@@ -45,7 +45,7 @@ export async function writeProviderExchangeJournal(
   const path = join(cacheDir, PROVIDER_EXCHANGE_JOURNAL);
   const temporary = `${path}.tmp-${randomUUID()}`;
   try {
-    const file = await open(temporary, "w", 0o600);
+    const file = await open(temporary, "wx", 0o600);
     try {
       await file.writeFile(JSON.stringify(journal));
       await file.sync();
@@ -53,9 +53,9 @@ export async function writeProviderExchangeJournal(
       await file.close();
     }
     assertNotAborted(signal);
-    await rename(temporary, path);
+    await ownership.mutate(cacheDir, "journal:publish", () => rename(temporary, path));
   } catch (error) {
-    await rm(temporary, { force: true }).catch(() => undefined);
+    await ownership.mutate(cacheDir, "journal:discard-temporary", () => rm(temporary, { force: true })).catch(() => undefined);
     throw error;
   }
   try {
@@ -76,12 +76,12 @@ export async function publishProviderExchange(
   const paths = journalPaths(cacheDir, journal);
   if (await pathExists(paths.target)) {
     assertNotAborted(signal);
-    await operations.rename(paths.target, paths.backup);
+    await fencedRename(cacheDir, ownership, "exchange:create-backup", operations, paths.target, paths.backup);
     journal.phase = "backup_created";
     await writeProviderExchangeJournal(cacheDir, journal, ownership, signal);
   }
   assertNotAborted(signal);
-  await operations.rename(paths.staging, paths.target);
+  await fencedRename(cacheDir, ownership, "exchange:publish-target", operations, paths.staging, paths.target);
   journal.phase = "target_published";
   await writeProviderExchangeJournal(cacheDir, journal, ownership, signal);
 }
@@ -94,9 +94,9 @@ export async function commitProviderExchange(
 ): Promise<void> {
   await ownership.assert(cacheDir);
   const paths = journalPaths(cacheDir, journal);
-  await pruneManagedVersions(cacheDir, journal.version, operations);
-  await operations.rm(paths.backup, { recursive: true, force: true });
-  await operations.rm(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL), { force: true });
+  await pruneManagedVersions(cacheDir, journal.version, operations, ownership);
+  await fencedRemove(cacheDir, ownership, "commit:remove-backup", operations, paths.backup, { recursive: true, force: true });
+  await fencedRemove(cacheDir, ownership, "commit:remove-journal", operations, join(cacheDir, PROVIDER_EXCHANGE_JOURNAL), { force: true });
 }
 
 export async function writeProviderVersionMarker(
@@ -107,7 +107,7 @@ export async function writeProviderVersionMarker(
   signal: AbortSignal
 ): Promise<void> {
   await ownership.assert(cacheDir);
-  await writeMarker(cacheDir, markerName, version, signal);
+  await writeMarker(cacheDir, markerName, version, ownership, signal);
 }
 
 export async function recoverProviderExchange(
@@ -121,37 +121,43 @@ export async function recoverProviderExchange(
   const paths = journalPaths(cacheDir, journal);
   if (journal.phase === "committed") {
     if (await pathExists(paths.target)) {
-      await writeMarker(cacheDir, journal.marker_name, journal.version);
-      await pruneManagedVersions(cacheDir, journal.version, operations);
-      await operations.rm(paths.backup, { recursive: true, force: true });
+      await writeMarker(cacheDir, journal.marker_name, journal.version, ownership);
+      await pruneManagedVersions(cacheDir, journal.version, operations, ownership);
+      await fencedRemove(cacheDir, ownership, "recovery:remove-backup", operations, paths.backup, { recursive: true, force: true });
     } else if (await pathExists(paths.backup)) {
-      await operations.rename(paths.backup, paths.target);
-      await restoreMarker(cacheDir, journal);
+      await fencedRename(cacheDir, ownership, "recovery:restore-backup", operations, paths.backup, paths.target);
+      await restoreMarker(cacheDir, journal, ownership);
     } else {
       throw new Error("Committed provider exchange is missing both target and backup.");
     }
   } else if (journal.phase === "rollback_started") {
     if (journal.rollback_action === "restore_backup") {
       if (await pathExists(paths.backup)) {
-        if (await pathExists(paths.target)) await operations.rm(paths.target, { recursive: true, force: true });
-        await operations.rename(paths.backup, paths.target);
+        if (await pathExists(paths.target)) {
+          await fencedRemove(cacheDir, ownership, "recovery:remove-target", operations, paths.target, { recursive: true, force: true });
+        }
+        await fencedRename(cacheDir, ownership, "recovery:restore-backup", operations, paths.backup, paths.target);
       } else if (!await pathExists(paths.target)) {
         throw new Error("Provider rollback lost both target and backup.");
       }
     } else if (journal.rollback_action === "remove_target") {
-      await operations.rm(paths.target, { recursive: true, force: true });
+      await fencedRemove(cacheDir, ownership, "recovery:remove-target", operations, paths.target, { recursive: true, force: true });
     }
-    await restoreMarker(cacheDir, journal);
+    await restoreMarker(cacheDir, journal, ownership);
   } else if (journal.phase === "prepared" && await pathExists(paths.target) &&
       await pathExists(paths.staging) && !await pathExists(paths.backup)) {
     // No exchange rename occurred before the crash.
   } else {
-    if (await pathExists(paths.target)) await operations.rm(paths.target, { recursive: true, force: true });
-    if (await pathExists(paths.backup)) await operations.rename(paths.backup, paths.target);
-    await restoreMarker(cacheDir, journal);
+    if (await pathExists(paths.target)) {
+      await fencedRemove(cacheDir, ownership, "recovery:remove-target", operations, paths.target, { recursive: true, force: true });
+    }
+    if (await pathExists(paths.backup)) {
+      await fencedRename(cacheDir, ownership, "recovery:restore-backup", operations, paths.backup, paths.target);
+    }
+    await restoreMarker(cacheDir, journal, ownership);
   }
-  await operations.rm(paths.staging, { recursive: true, force: true });
-  await operations.rm(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL), { force: true });
+  await fencedRemove(cacheDir, ownership, "recovery:remove-staging", operations, paths.staging, { recursive: true, force: true });
+  await fencedRemove(cacheDir, ownership, "recovery:remove-journal", operations, join(cacheDir, PROVIDER_EXCHANGE_JOURNAL), { force: true });
   return true;
 }
 
@@ -171,15 +177,17 @@ export async function rollbackProviderExchange(
       ? "restore_backup"
       : originalPhase === "target_published" || originalPhase === "committed" ? "remove_target" : "none";
     await writeProviderExchangeJournal(cacheDir, journal, ownership);
-    if (backupExists && await pathExists(paths.target)) await operations.rm(paths.target, { recursive: true, force: true });
+    if (backupExists && await pathExists(paths.target)) {
+      await fencedRemove(cacheDir, ownership, "rollback:remove-target", operations, paths.target, { recursive: true, force: true });
+    }
     else if (!backupExists && journal.rollback_action === "remove_target") {
-      await operations.rm(paths.target, { recursive: true, force: true });
+      await fencedRemove(cacheDir, ownership, "rollback:remove-target", operations, paths.target, { recursive: true, force: true });
     }
     if (backupExists) {
-      await operations.rename(paths.backup, paths.target);
+      await fencedRename(cacheDir, ownership, "rollback:restore-backup", operations, paths.backup, paths.target);
     }
-    await restoreMarker(cacheDir, journal);
-    await operations.rm(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL), { force: true });
+    await restoreMarker(cacheDir, journal, ownership);
+    await fencedRemove(cacheDir, ownership, "rollback:remove-journal", operations, join(cacheDir, PROVIDER_EXCHANGE_JOURNAL), { force: true });
     return true;
   } catch {
     return false;
@@ -203,7 +211,7 @@ export async function scavengeStaleProviderArtifacts(
     const path = join(cacheDir, name);
     const entry = await lstat(path).catch(() => null);
     if (!entry || entry.isSymbolicLink() || download && !entry.isFile() || staging && !entry.isDirectory()) continue;
-    await operations.rm(path, { recursive: staging, force: true });
+    await fencedRemove(cacheDir, ownership, "scavenge:remove-artifact", operations, path, { recursive: staging, force: true });
     removed += 1;
   }
   return removed;
@@ -262,16 +270,22 @@ async function readJournal(cacheDir: string): Promise<ProviderExchangeJournal | 
   return value as ProviderExchangeJournal;
 }
 
-async function restoreMarker(cacheDir: string, journal: ProviderExchangeJournal): Promise<void> {
-  if (journal.previous_version) await writeMarker(cacheDir, journal.marker_name, journal.previous_version);
-  else await rm(join(cacheDir, journal.marker_name), { force: true });
+async function restoreMarker(cacheDir: string, journal: ProviderExchangeJournal, ownership: ProviderCacheOwnership): Promise<void> {
+  if (journal.previous_version) await writeMarker(cacheDir, journal.marker_name, journal.previous_version, ownership);
+  else await ownership.mutate(cacheDir, "marker:remove", () => rm(join(cacheDir, journal.marker_name), { force: true }));
 }
 
-async function writeMarker(cacheDir: string, markerName: string, version: string, signal?: AbortSignal): Promise<void> {
+async function writeMarker(
+  cacheDir: string,
+  markerName: string,
+  version: string,
+  ownership: ProviderCacheOwnership,
+  signal?: AbortSignal
+): Promise<void> {
   const path = join(cacheDir, markerName);
   const temporary = `${path}.tmp-${randomUUID()}`;
   try {
-    const file = await open(temporary, "w", 0o600);
+    const file = await open(temporary, "wx", 0o600);
     try {
       await file.writeFile(version);
       await file.sync();
@@ -279,9 +293,9 @@ async function writeMarker(cacheDir: string, markerName: string, version: string
       await file.close();
     }
     assertNotAborted(signal);
-    await rename(temporary, path);
+    await ownership.mutate(cacheDir, "marker:publish", () => rename(temporary, path));
   } catch (error) {
-    await rm(temporary, { force: true }).catch(() => undefined);
+    await ownership.mutate(cacheDir, "marker:discard-temporary", () => rm(temporary, { force: true })).catch(() => undefined);
     throw error;
   }
 }
@@ -289,14 +303,37 @@ async function writeMarker(cacheDir: string, markerName: string, version: string
 async function pruneManagedVersions(
   cacheDir: string,
   retainedVersion: string,
-  operations: ProviderExchangeFileOperations
+  operations: ProviderExchangeFileOperations,
+  ownership: ProviderCacheOwnership
 ): Promise<void> {
   const retainedName = `chromium-${retainedVersion}`;
   for (const name of await readdir(cacheDir)) {
     if (name !== retainedName && /^chromium-[0-9]+(?:\.[0-9]+){3,4}$/.test(name)) {
-      await operations.rm(join(cacheDir, name), { recursive: true, force: true });
+      await fencedRemove(cacheDir, ownership, "commit:prune-version", operations, join(cacheDir, name), { recursive: true, force: true });
     }
   }
+}
+
+async function fencedRename(
+  cacheDir: string,
+  ownership: ProviderCacheOwnership,
+  label: string,
+  operations: ProviderExchangeFileOperations,
+  source: string,
+  destination: string
+): Promise<void> {
+  await ownership.mutate(cacheDir, label, () => operations.rename(source, destination));
+}
+
+async function fencedRemove(
+  cacheDir: string,
+  ownership: ProviderCacheOwnership,
+  label: string,
+  operations: ProviderExchangeFileOperations,
+  path: string,
+  options: Parameters<typeof rm>[1]
+): Promise<void> {
+  await ownership.mutate(cacheDir, label, () => operations.rm(path, options));
 }
 
 function journalPaths(cacheDir: string, journal: ProviderExchangeJournal): { target: string; staging: string; backup: string } {
