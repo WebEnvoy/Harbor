@@ -80,8 +80,6 @@ try {
       display_name: "Xiaohongshu",
       account_ref: "account_api-smoke"
     },
-    login_state: "logged_in",
-    storage_state: "present",
     language: "zh-CN",
     timezone: "Asia/Shanghai"
   });
@@ -110,7 +108,19 @@ try {
   assert.equal(environments.identity_environments.length, 1);
 
   const session = await postJson(startup.url, "/runtime/identity-environment-sessions", {
-    identity_environment_ref: identityEnvironment.identity_environment_ref,
+    identity_environment: {
+      identity_environment_ref: "identity-env_api-smoke-session",
+      execution_identity_ref: "execution-identity_api-smoke-session",
+      profile_ref: "profile_api-smoke-session",
+      site: {
+        site_id: "xiaohongshu",
+        origin: "https://www.xiaohongshu.com",
+        display_name: "Xiaohongshu",
+        account_ref: "account_api-smoke-session"
+      },
+      language: "zh-CN",
+      timezone: "Asia/Shanghai"
+    },
     url: "https://example.test/runtime-api-smoke",
     control_owner: "agent",
     holder_ref: "api-smoke"

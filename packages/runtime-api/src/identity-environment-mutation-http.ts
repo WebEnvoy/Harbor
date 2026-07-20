@@ -2,7 +2,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
   IdentityEnvironmentConfigurationUpdate,
   IdentityEnvironmentCreateInput,
-  LocalIdentityEnvironmentStateUpdate,
   IdentityEnvironmentMutationRequest,
   IdentityEnvironmentMutationResult
 } from "./index.js";
@@ -119,15 +118,9 @@ export function legacyIdentityEnvironmentCreateMutation(
     "credential_ref",
     "keychain_ref",
     "local_secret_ref",
-    "imported_from",
-    "login_state",
-    "login_state_reason",
-    "storage_state",
-    "manual_authentication_state"
+    "imported_from"
   ];
   if (!onlyKeys(input, legacyKeys)) return null;
-  const legacyStateKeys = ["login_state", "login_state_reason", "storage_state", "manual_authentication_state"];
-  if (legacyStateKeys.some((key) => Object.hasOwn(input, key)) && !legacyIdentityEnvironmentStateUpdate(input)) return null;
   const businessInput = Object.fromEntries(
     IDENTITY_ENVIRONMENT_BUSINESS_INPUT_KEYS
       .filter((key) => Object.hasOwn(input, key))
@@ -140,29 +133,6 @@ export function legacyIdentityEnvironmentCreateMutation(
       : null;
   }
   return { operation, idempotency_key: idempotencyKey, identity_environment: businessInput };
-}
-
-export function legacyIdentityEnvironmentStateUpdate(value: unknown): LocalIdentityEnvironmentStateUpdate | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const input = value as Record<string, unknown>;
-  const update: LocalIdentityEnvironmentStateUpdate = {};
-  if (input.login_state !== undefined) {
-    if (!optionalEnum(input.login_state, ["logged_in", "logged_out", "expired", "unknown", "manual_auth_required"])) return null;
-    update.login_state = input.login_state as LocalIdentityEnvironmentStateUpdate["login_state"];
-  }
-  if (input.login_state_reason !== undefined) {
-    if (typeof input.login_state_reason !== "string" || input.login_state_reason === "user_confirmed_managed_session") return null;
-    update.login_state_reason = input.login_state_reason;
-  }
-  if (input.storage_state !== undefined) {
-    if (!optionalEnum(input.storage_state, ["present", "missing", "cleared", "unknown"])) return null;
-    update.storage_state = input.storage_state as LocalIdentityEnvironmentStateUpdate["storage_state"];
-  }
-  if (input.manual_authentication_state !== undefined) {
-    if (!optionalEnum(input.manual_authentication_state, ["not_required", "required", "in_progress", "completed", "failed"])) return null;
-    update.manual_authentication_state = input.manual_authentication_state as LocalIdentityEnvironmentStateUpdate["manual_authentication_state"];
-  }
-  return Object.keys(update).length > 0 ? update : null;
 }
 
 export function legacyIdentityEnvironmentDeleteMutation(

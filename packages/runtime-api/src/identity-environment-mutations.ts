@@ -280,7 +280,7 @@ function deleteIdentity(
   if (hasLocalMaterialRefs(current.local_material_refs) && !options.delete_local_material) {
     return rejected("delete", request.identity_environment_ref, "local_material_cleanup_unavailable", false, ["configure_local_material_adapter", "retry"]);
   }
-  return commitProfileDelete(request, hash, store, current, options, !options.stage_profile_delete);
+  return commitProfileDelete(request, hash, store, current, options, true);
 }
 function copiedRecord(
   source: StoredLocalIdentityEnvironmentRecord,

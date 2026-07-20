@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test, { after } from "node:test";
 import {
@@ -193,6 +193,106 @@ test("persists delete intent before staging profile storage", () => {
     assert.equal(stageCalls, 1);
     assert.equal(existsSync(profilePath), true);
     assert.equal(manager.get("identity-delete-order")?.status.repair_state, "repair_required");
+  } finally {
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resumes delete after restart when durable repair precedes profile staging", () => {
+  const root = tempDir("delete-restart-before-stage");
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = root;
+  let state: IdentityEnvironmentMutationPersistenceState | null = null;
+  const persistence = {
+    load_state: () => state,
+    persist_state: (next: IdentityEnvironmentMutationPersistenceState) => { state = structuredClone(next); }
+  };
+  const request: IdentityEnvironmentMutationRequest = {
+    operation: "delete",
+    idempotency_key: "delete-restart-before-stage",
+    identity_environment_ref: "identity-delete-before-stage",
+    confirmation: "delete_local_data"
+  };
+  try {
+    const manager = new LocalIdentityEnvironmentManager({
+      ...persistence,
+      stage_profile_delete: () => { throw new Error("simulated process interruption before profile staging"); }
+    });
+    manager.create(identityInput("identity-delete-before-stage", "profile-delete-before-stage"));
+    const profilePath = profileStoragePath("profile-delete-before-stage:storage");
+    mkdirSync(profilePath, { recursive: true });
+    writeFileSync(join(profilePath, "Cookies"), "owner-session");
+
+    assert.equal(manager.mutate(request).status, "repair_required");
+    assert.equal(existsSync(profilePath), true);
+    assert.equal(requiredState(state).repairs.length, 1);
+
+    const restarted = new LocalIdentityEnvironmentManager(persistence);
+    const repaired = restarted.mutate(request);
+    assert.equal(repaired.status, "completed");
+    assert.equal(existsSync(profilePath), false);
+    assert.equal(restarted.get("identity-delete-before-stage"), null);
+    assert.equal(requiredState(state).records.length, 0);
+    assert.equal(requiredState(state).repairs.length, 0);
+    assert.deepEqual(new LocalIdentityEnvironmentManager(persistence).mutate(request), repaired);
+  } finally {
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resumes delete after restart when profile is quarantined before commit failure", () => {
+  const root = tempDir("delete-restart-from-quarantine");
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = root;
+  let state: IdentityEnvironmentMutationPersistenceState | null = null;
+  const persistence = {
+    load_state: () => state,
+    persist_state: (next: IdentityEnvironmentMutationPersistenceState) => { state = structuredClone(next); }
+  };
+  const request: IdentityEnvironmentMutationRequest = {
+    operation: "delete",
+    idempotency_key: "delete-restart-from-quarantine",
+    identity_environment_ref: "identity-delete-from-quarantine",
+    confirmation: "delete_local_data"
+  };
+  try {
+    const profileRef = "profile-delete-from-quarantine:storage";
+    const profilePath = profileStoragePath(profileRef);
+    const quarantinePath = `${profilePath}.delete-interrupted`;
+    const manager = new LocalIdentityEnvironmentManager({
+      ...persistence,
+      stage_profile_delete: (profileStorageRef) => {
+        assert.equal(profileStorageRef, profileRef);
+        renameSync(profilePath, quarantinePath);
+        return {
+          commit: () => { throw new Error("simulated process interruption after quarantine"); },
+          rollback: () => false,
+          residual: () => existsSync(quarantinePath)
+        };
+      }
+    });
+    manager.create(identityInput("identity-delete-from-quarantine", "profile-delete-from-quarantine"));
+    mkdirSync(profilePath, { recursive: true });
+    writeFileSync(join(profilePath, "Cookies"), "owner-session");
+
+    assert.equal(manager.mutate(request).status, "repair_required");
+    assert.equal(existsSync(profilePath), false);
+    assert.equal(existsSync(quarantinePath), true);
+    assert.equal(requiredState(state).repairs.length, 1);
+
+    const restarted = new LocalIdentityEnvironmentManager(persistence);
+    const repaired = restarted.mutate(request);
+    assert.equal(repaired.status, "completed");
+    assert.equal(existsSync(profilePath), false);
+    assert.equal(existsSync(quarantinePath), false);
+    assert.equal(restarted.get("identity-delete-from-quarantine"), null);
+    assert.equal(requiredState(state).records.length, 0);
+    assert.equal(requiredState(state).repairs.length, 0);
+    assert.deepEqual(new LocalIdentityEnvironmentManager(persistence).mutate(request), repaired);
   } finally {
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;

@@ -15,8 +15,7 @@ import {
   isIdentityEnvironmentMutationRequest,
   legacyIdentityEnvironmentCreateMutation,
   legacyIdentityEnvironmentDeleteMutation,
-  legacyIdentityEnvironmentIdempotencyKey,
-  legacyIdentityEnvironmentStateUpdate
+  legacyIdentityEnvironmentIdempotencyKey
 } from "./identity-environment-mutation-http.js";
 import { ManualAuthenticationAuthorizer } from "./manual-authentication-authorization.js";
 
@@ -119,15 +118,9 @@ async function route(
 
   if (method === "POST" && url.pathname === "/runtime/identity-environments") {
     if (!authorizeIdentityEnvironmentMutationRequest(manualAuthenticationAuthorizer, request, response)) return;
-    const body = await readJson<unknown>(request);
-    const mutation = legacyIdentityEnvironmentCreateMutation(body, request);
+    const mutation = legacyIdentityEnvironmentCreateMutation(await readJson<unknown>(request), request);
     if (!mutation) throw new BadRequest("Invalid identity environment create/import request.");
-    let result = runtime.mutateLocalIdentityEnvironment(mutation);
-    const stateUpdate = legacyIdentityEnvironmentStateUpdate(body);
-    if (result.status === "completed" && result.identity_environment_ref && stateUpdate) {
-      const record = runtime.updateLocalIdentityEnvironment(result.identity_environment_ref, stateUpdate);
-      if (record) result = { ...result, record };
-    }
+    const result = runtime.mutateLocalIdentityEnvironment(mutation);
     writeJson(response, identityEnvironmentMutationStatusCode(result), result);
     return;
   }
