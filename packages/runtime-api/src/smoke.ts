@@ -1,4 +1,16 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createFixtureLauncher, DEFAULT_IDENTITY_SITE_URLS, HarborRuntime } from "./index.js";
+
+const smokeProfileRoot = mkdtempSync(join(tmpdir(), "harbor-runtime-smoke-"));
+const previousProfileRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+process.env.HARBOR_PROFILE_STORAGE_ROOT = smokeProfileRoot;
+process.once("exit", () => {
+  if (previousProfileRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousProfileRoot;
+  rmSync(smokeProfileRoot, { recursive: true, force: true });
+});
 
 const useLocalProvider = process.argv.includes("--local");
 const runtime = new HarborRuntime(
