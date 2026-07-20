@@ -6,7 +6,12 @@ import {
 } from "./provider-lifecycle-idempotency.js";
 
 export class ProviderLifecycleHttpError extends Error {
-  constructor(readonly statusCode: number, readonly code: string, message: string) {
+  constructor(
+    readonly statusCode: number,
+    readonly code: string,
+    message: string,
+    readonly retryAfterMs: number | null = null
+  ) {
     super(message);
   }
 }
@@ -47,7 +52,7 @@ export async function idempotentProviderMutation<T>(
       throw new ProviderLifecycleHttpError(409, "idempotency_conflict", error.message);
     }
     if (error instanceof ProviderLifecycleIdempotencyCapacityError) {
-      throw new ProviderLifecycleHttpError(503, "idempotency_capacity_exceeded", error.message);
+      throw new ProviderLifecycleHttpError(503, "idempotency_capacity_exceeded", error.message, error.retryAfterMs);
     }
     throw error;
   }

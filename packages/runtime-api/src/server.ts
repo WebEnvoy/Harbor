@@ -63,7 +63,11 @@ export function createHarborRuntimeHttpServer(
         : error instanceof BadRequest ? new ProviderLifecycleHttpError(400, "bad_request", error.message) : null;
       writeJson(response, requestError?.statusCode ?? 500, {
         error: requestError?.code ?? "internal_error",
-        message: requestError?.message ?? "Internal Harbor Runtime API error."
+        message: requestError?.message ?? "Internal Harbor Runtime API error.",
+        ...(requestError?.retryAfterMs === null || requestError?.retryAfterMs === undefined ? {} : {
+          retryable: true,
+          retry_after_ms: requestError.retryAfterMs
+        })
       });
     }
   });

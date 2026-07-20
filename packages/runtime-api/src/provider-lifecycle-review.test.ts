@@ -152,8 +152,43 @@ test("recovers a crashed target publication from the durable exchange journal", 
   }
 });
 
+test("a new mutation recovers an existing journal before creating its exchange", async () => {
+  const cacheDir = await installedCache("old");
+  const target = join(cacheDir, `chromium-${version}`);
+  const staging = join(cacheDir, ".harbor-staging-stale");
+  const backup = join(cacheDir, ".harbor-backup-stale");
+  const lifecycle = new ManagedProviderLifecycle({
+    cache_dir: cacheDir,
+    env: {},
+    platform: "linux",
+    arch: "x64",
+    install_release: fakeInstaller("replacement"),
+    verify_launch: async (_path, expected) => {
+      assert.equal(await readFile(join(target, "chrome"), "utf8"), "old");
+      return { browser_version: expected };
+    }
+  });
+  try {
+    await lifecycle.recheck();
+    await rename(target, backup);
+    await mkdir(target);
+    await writeFile(join(target, "chrome"), "interrupted");
+    const journal = providerExchangeJournal("stale", version, target, staging, backup, "latest_version_linux-x64", version);
+    journal.phase = "target_published";
+    await writeProviderExchangeJournal(cacheDir, journal);
+    assert.equal((await lifecycle.start({ operation: "repair" })).accepted, true);
+    assert.equal((await waitForManager(lifecycle)).result?.status, "succeeded");
+    assert.equal(await readFile(join(target, "chrome"), "utf8"), "replacement");
+    await assert.rejects(access(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL)));
+  } finally {
+    await lifecycle.close();
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 test("preserves backup and a recoverable error when rollback cannot restore it", async () => {
   const cacheDir = await installedCache("old");
+  let recoveryBlocked = true;
   const lifecycle = new ManagedProviderLifecycle({
     cache_dir: cacheDir,
     env: {},
@@ -168,7 +203,7 @@ test("preserves backup and a recoverable error when rollback cannot restore it",
           throw new Error("injected failure after target publication");
         }
         if (basename(String(source)).startsWith(".harbor-backup-") && basename(String(destination)).startsWith("chromium-")) {
-          throw new Error("injected rollback rename failure");
+          if (recoveryBlocked) throw new Error("injected rollback rename failure");
         }
         await rename(source, destination);
       },
@@ -181,18 +216,81 @@ test("preserves backup and a recoverable error when rollback cannot restore it",
     assert.equal(completed.result?.status, "failed");
     assert.equal(completed.result?.rolled_back, false);
     assert.equal(completed.error?.code, "recovery_failed");
+    assert.deepEqual(completed.available_actions, ["recheck"]);
     const backupName = (await readdir(cacheDir)).find((entry) => entry.startsWith(".harbor-backup-"));
     assert.ok(backupName);
     await access(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL));
+    const repair = await lifecycle.start({ operation: "repair" });
+    assert.equal(repair.accepted, false);
+    assert.equal(repair.error?.code, "recovery_failed");
+    assert.equal((await readdir(cacheDir)).filter((entry) => entry.startsWith(".harbor-backup-")).length, 1);
+    recoveryBlocked = false;
+    assert.equal((await lifecycle.recheck()).state, "ready");
+    assert.equal(await readFile(join(cacheDir, `chromium-${version}`, "chrome"), "utf8"), "old");
+    await assert.rejects(access(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL)));
+  } finally {
     await lifecycle.close();
-    const recovered = new ManagedProviderLifecycle({ cache_dir: cacheDir, env: {}, platform: "linux", arch: "x64" });
-    try {
-      assert.equal((await recovered.recheck()).state, "ready");
-      assert.equal(await readFile(join(cacheDir, `chromium-${version}`, "chrome"), "utf8"), "old");
-      await assert.rejects(access(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL)));
-    } finally {
-      await recovered.close();
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("successful commit removes all superseded managed versions", async () => {
+  const cacheDir = await installedCache("old");
+  const staleVersion = "145.0.0.0";
+  const nextVersion = "147.0.0.0";
+  await mkdir(join(cacheDir, `chromium-${staleVersion}`));
+  await writeFile(join(cacheDir, `chromium-${staleVersion}`, "chrome"), "stale");
+  const lifecycle = new ManagedProviderLifecycle({
+    cache_dir: cacheDir,
+    env: {},
+    platform: "linux",
+    arch: "x64",
+    install_release: fakeInstaller("new"),
+    verify_launch: async (_path, expected) => ({ browser_version: expected })
+  });
+  try {
+    assert.equal((await lifecycle.start({ operation: "update", version: nextVersion })).accepted, true);
+    assert.equal((await waitForManager(lifecycle)).result?.status, "succeeded");
+    assert.deepEqual(
+      (await readdir(cacheDir)).filter((entry) => entry.startsWith("chromium-")).sort(),
+      [`chromium-${nextVersion}`]
+    );
+  } finally {
+    await lifecycle.close();
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("committed cleanup failure keeps the journal-required backup until recheck", async () => {
+  const cacheDir = await installedCache("old");
+  const staleVersion = "145.0.0.0";
+  await mkdir(join(cacheDir, `chromium-${staleVersion}`));
+  let cleanupBlocked = true;
+  const lifecycle = new ManagedProviderLifecycle({
+    cache_dir: cacheDir,
+    env: {},
+    platform: "linux",
+    arch: "x64",
+    install_release: fakeInstaller("new"),
+    verify_launch: async (_path, expected) => ({ browser_version: expected }),
+    exchange_file_operations: {
+      rename,
+      rm: async (path, options) => {
+        if (cleanupBlocked && basename(String(path)) === `chromium-${staleVersion}`) throw new Error("injected old-version cleanup failure");
+        await rm(path, options);
+      }
     }
+  });
+  try {
+    await lifecycle.start({ operation: "repair" });
+    const failed = await waitForManager(lifecycle);
+    assert.equal(failed.error?.code, "recovery_failed");
+    assert.ok((await readdir(cacheDir)).some((entry) => entry.startsWith(".harbor-backup-")));
+    await access(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL));
+    cleanupBlocked = false;
+    assert.equal((await lifecycle.recheck()).state, "ready");
+    assert.equal((await readdir(cacheDir)).some((entry) => entry.startsWith(".harbor-backup-")), false);
+    await assert.rejects(access(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL)));
   } finally {
     await lifecycle.close();
     await rm(cacheDir, { recursive: true, force: true });
@@ -268,9 +366,11 @@ test("progress bytes and percent remain monotonic across verification", async ()
 
 test("external override remains external and exposes no managed action", async () => {
   const cacheDir = await installedCache("old");
+  const override = join(cacheDir, `chromium-${version}`, "chrome");
+  const env = { HARBOR_CLOAKBROWSER_PATH: "", CLOAKBROWSER_BINARY_PATH: override };
   const lifecycle = new ManagedProviderLifecycle({
     cache_dir: cacheDir,
-    env: { HARBOR_CLOAKBROWSER_PATH: join(cacheDir, `chromium-${version}`, "chrome") },
+    env,
     platform: "linux",
     arch: "x64"
   });
@@ -280,11 +380,12 @@ test("external override remains external and exposes no managed action", async (
     assert.equal(status.ownership, "external_override");
     assert.deepEqual(status.available_actions, ["recheck", "open_external_management"]);
     const catalog = detectBrowserProviders({
-      env: { HARBOR_CLOAKBROWSER_PATH: join(cacheDir, `chromium-${version}`, "chrome") },
+      env,
       platform: "linux",
       arch: "x64"
     });
     assert.equal(catalog.providers[0]?.management_mode, "external");
+    assert.equal(catalog.providers[0]?.install.path, override);
     assert.equal(catalog.providers[0]?.download_guide.action, "external_management");
   } finally {
     await lifecycle.close();

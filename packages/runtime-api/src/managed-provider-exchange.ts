@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { access, lstat, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 export const PROVIDER_EXCHANGE_JOURNAL = ".harbor-provider-exchange.json";
@@ -24,22 +24,68 @@ export interface ProviderExchangeFileOperations {
 
 const defaultOperations: ProviderExchangeFileOperations = { rename, rm };
 
-export async function writeProviderExchangeJournal(cacheDir: string, journal: ProviderExchangeJournal): Promise<void> {
+export async function writeProviderExchangeJournal(
+  cacheDir: string,
+  journal: ProviderExchangeJournal,
+  signal?: AbortSignal
+): Promise<void> {
+  assertNotAborted(signal);
   await mkdir(cacheDir, { recursive: true });
+  const existing = await readJournal(cacheDir);
+  if (existing && existing.operation_id !== journal.operation_id) {
+    throw new Error("An unresolved provider exchange journal already exists.");
+  }
   const path = join(cacheDir, PROVIDER_EXCHANGE_JOURNAL);
   const temporary = `${path}.tmp-${randomUUID()}`;
-  const file = await open(temporary, "w", 0o600);
   try {
-    await file.writeFile(JSON.stringify(journal));
-    await file.sync();
-  } finally {
-    await file.close();
+    const file = await open(temporary, "w", 0o600);
+    try {
+      await file.writeFile(JSON.stringify(journal));
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    assertNotAborted(signal);
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
   }
-  await rename(temporary, path);
   try {
     const directory = await open(cacheDir, "r");
     try { await directory.sync(); } finally { await directory.close(); }
   } catch {}
+}
+
+export async function publishProviderExchange(
+  cacheDir: string,
+  journal: ProviderExchangeJournal,
+  operations: ProviderExchangeFileOperations,
+  signal: AbortSignal
+): Promise<void> {
+  await writeProviderExchangeJournal(cacheDir, journal, signal);
+  const paths = journalPaths(cacheDir, journal);
+  if (await pathExists(paths.target)) {
+    assertNotAborted(signal);
+    await operations.rename(paths.target, paths.backup);
+    journal.phase = "backup_created";
+    await writeProviderExchangeJournal(cacheDir, journal, signal);
+  }
+  assertNotAborted(signal);
+  await operations.rename(paths.staging, paths.target);
+  journal.phase = "target_published";
+  await writeProviderExchangeJournal(cacheDir, journal, signal);
+}
+
+export async function commitProviderExchange(
+  cacheDir: string,
+  journal: ProviderExchangeJournal,
+  operations: ProviderExchangeFileOperations
+): Promise<void> {
+  const paths = journalPaths(cacheDir, journal);
+  await pruneManagedVersions(cacheDir, journal.version, operations);
+  await operations.rm(paths.backup, { recursive: true, force: true });
+  await operations.rm(join(cacheDir, PROVIDER_EXCHANGE_JOURNAL), { force: true });
 }
 
 export async function recoverProviderExchange(
@@ -52,6 +98,7 @@ export async function recoverProviderExchange(
   if (journal.phase === "committed") {
     if (await pathExists(paths.target)) {
       await writeMarker(cacheDir, journal.marker_name, journal.version);
+      await pruneManagedVersions(cacheDir, journal.version, operations);
       await operations.rm(paths.backup, { recursive: true, force: true });
     } else if (await pathExists(paths.backup)) {
       await operations.rename(paths.backup, paths.target);
@@ -183,6 +230,19 @@ async function writeMarker(cacheDir: string, markerName: string, version: string
   await rename(temporary, path);
 }
 
+async function pruneManagedVersions(
+  cacheDir: string,
+  retainedVersion: string,
+  operations: ProviderExchangeFileOperations
+): Promise<void> {
+  const retainedName = `chromium-${retainedVersion}`;
+  for (const name of await readdir(cacheDir)) {
+    if (name !== retainedName && /^chromium-[0-9]+(?:\.[0-9]+){3,4}$/.test(name)) {
+      await operations.rm(join(cacheDir, name), { recursive: true, force: true });
+    }
+  }
+}
+
 function journalPaths(cacheDir: string, journal: ProviderExchangeJournal): { target: string; staging: string; backup: string } {
   return {
     target: join(cacheDir, journal.target_name),
@@ -206,4 +266,8 @@ async function pathExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function assertNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
 }

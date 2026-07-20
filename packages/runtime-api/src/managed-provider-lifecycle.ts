@@ -11,8 +11,9 @@ import {
   latestCloakBrowserVersion
 } from "./cloakbrowser-release.js";
 import {
-  PROVIDER_EXCHANGE_JOURNAL,
+  commitProviderExchange,
   providerExchangeJournal,
+  publishProviderExchange,
   recoverProviderExchange,
   rollbackProviderExchange,
   writeProviderExchangeJournal,
@@ -29,7 +30,11 @@ import {
   type ManagedProviderOperationInput
 } from "./managed-provider-lifecycle-types.js";
 import { baseStatus, error, progress, publicError, result } from "./managed-provider-lifecycle-status.js";
-import { detectBrowserProviders, type BrowserProviderDetectionInput } from "./provider-management.js";
+import {
+  detectBrowserProviders,
+  resolveCloakBrowserOverride,
+  type BrowserProviderDetectionInput
+} from "./provider-management.js";
 
 export { HARBOR_MANAGED_PROVIDER_LIFECYCLE_SCHEMA, isManagedProviderOperationInput } from "./managed-provider-lifecycle-types.js";
 export type {
@@ -116,7 +121,12 @@ export class ManagedProviderLifecycle {
   async start(input: ManagedProviderOperationInput): Promise<ManagedProviderLifecycleCommandResult> {
     return this.serial(async () => {
       await this.initialization;
-      if (!this.running && !this.recoveryBlocked) this.refreshDetection();
+      if (!this.running) {
+        if (this.recoveryBlocked) return this.rejected(this.recoveryError());
+        await this.recoverInterruptedExchange();
+        if (this.recoveryBlocked) return this.rejected(this.recoveryError());
+        this.refreshDetection();
+      }
       const rejection = this.operationRejection(input);
       if (rejection) return this.rejected(rejection);
       const before = this.beforeOperation();
@@ -163,6 +173,7 @@ export class ManagedProviderLifecycle {
   async cancel(): Promise<ManagedProviderLifecycleCommandResult> {
     return this.serial(async () => {
       await this.initialization;
+      if (this.recoveryBlocked) return this.rejected(this.recoveryError());
       const operationId = this.activeOperationId;
       if (!operationId || !this.running || !this.controller || !this.current.operation?.cancellable ||
           this.current.operation.operation_id !== operationId) {
@@ -222,34 +233,24 @@ export class ManagedProviderLifecycle {
       launchVerified = true;
       this.setPhase(operationId, "installing", 4, true);
       journal = providerExchangeJournal(operationId, version, targetDir, stagingDir, backupDir, this.markerName(), before.version);
-      await writeProviderExchangeJournal(this.cacheDir, journal);
-      this.assertActive(operationId, signal);
-      if (await pathExists(targetDir)) {
-        await this.exchangeOperations.rename(targetDir, backupDir);
-        journal.phase = "backup_created";
-        await writeProviderExchangeJournal(this.cacheDir, journal);
-      }
-      this.assertActive(operationId, signal);
-      await this.exchangeOperations.rename(stagingDir, targetDir);
-      journal.phase = "target_published";
-      await writeProviderExchangeJournal(this.cacheDir, journal);
+      await publishProviderExchange(this.cacheDir, journal, this.exchangeOperations, signal);
       const finalBinary = join(targetDir, stagedRelative);
       await access(finalBinary);
       this.assertActive(operationId, signal);
-      await this.writeVersionMarker(version);
+      await this.writeVersionMarker(version, signal);
       this.assertActive(operationId, signal);
       if (this.current.operation) this.current.operation.cancellable = false;
       journal.phase = "committed";
       await writeProviderExchangeJournal(this.cacheDir, journal);
       commitPersisted = true;
-      await this.exchangeOperations.rm(backupDir, { recursive: true, force: true });
-      await this.exchangeOperations.rm(join(this.cacheDir, PROVIDER_EXCHANGE_JOURNAL), { force: true });
+      await commitProviderExchange(this.cacheDir, journal, this.exchangeOperations);
       this.completeSuccess(operationId, version);
     } catch (cause) {
       const rolledBack = journal && !commitPersisted
         ? await rollbackProviderExchange(this.cacheDir, journal, this.exchangeOperations)
         : false;
       const recoveryFailed = commitPersisted || Boolean(journal) && !rolledBack;
+      if (recoveryFailed) this.recoveryBlocked = true;
       if (signal.aborted || this.cancelRequested(operationId)) {
         this.completeCancellation(operationId, rolledBack, recoveryFailed, integrityVerified, launchVerified);
       }
@@ -269,8 +270,8 @@ export class ManagedProviderLifecycle {
       this.current = {
         ...this.detectStatus(),
         state: "repairable",
-        error: error("recovery_failed", "An interrupted provider exchange could not be recovered; the backup was preserved.", true, ["repair", "recheck"]),
-        available_actions: ["repair", "recheck"]
+        error: this.recoveryError(),
+        available_actions: ["recheck"]
       };
     }
   }
@@ -289,7 +290,7 @@ export class ManagedProviderLifecycle {
   }
 
   private operationRejection(input: ManagedProviderOperationInput): ManagedProviderLifecycleError | null {
-    if (this.recoveryBlocked) return error("recovery_failed", "Recover the interrupted provider exchange before starting another operation.", true, ["recheck"]);
+    if (this.recoveryBlocked) return this.recoveryError();
     if (this.running || activeStates.has(this.current.state)) return error("busy", "Another provider operation is already active.", true, ["recheck"]);
     if (this.current.ownership === "external_override") {
       return error("externally_managed", "The configured CloakBrowser binary is externally managed and will not be replaced by Harbor.", false, ["open_external_management", "recheck"]);
@@ -307,7 +308,7 @@ export class ManagedProviderLifecycle {
   }
 
   private detectStatus(): ManagedProviderLifecycleStatus {
-    const override = this.env.HARBOR_CLOAKBROWSER_PATH ?? this.env.CLOAKBROWSER_BINARY_PATH;
+    const override = resolveCloakBrowserOverride(this.env);
     const detection: BrowserProviderDetectionInput = {
       env: { ...this.env, HARBOR_CLOAKBROWSER_PATH: override, CLOAKBROWSER_BINARY_PATH: override, CLOAKBROWSER_CACHE_DIR: this.cacheDir },
       platform: this.platform,
@@ -378,11 +379,17 @@ export class ManagedProviderLifecycle {
     this.current.checked_at = this.timestamp();
   }
 
-  private async writeVersionMarker(version: string): Promise<void> {
+  private async writeVersionMarker(version: string, signal: AbortSignal): Promise<void> {
     const marker = join(this.cacheDir, this.markerName());
     const temporary = `${marker}.tmp-${randomUUID()}`;
-    await writeFile(temporary, version, { mode: 0o600 });
-    await rename(temporary, marker);
+    try {
+      await writeFile(temporary, version, { mode: 0o600 });
+      this.assertSignal(signal);
+      await rename(temporary, marker);
+    } catch (cause) {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw cause;
+    }
   }
 
   private markerName(): string {
@@ -408,6 +415,7 @@ export class ManagedProviderLifecycle {
     launchVerified: boolean
   ): void {
     if (!this.isActive(operationId)) return;
+    if (recoveryFailed) this.recoveryBlocked = true;
     const operation = this.current.operation;
     const detected = this.detectStatus();
     this.current = {
@@ -415,16 +423,17 @@ export class ManagedProviderLifecycle {
       state: recoveryFailed ? "repairable" : detected.state,
       result: result("cancelled", operationId, detected.installed_version, integrityVerified, launchVerified, rolledBack),
       operation: operation ? { ...operation, cancellable: false } : null,
-      error: recoveryFailed ? error("recovery_failed", "Cancellation could not fully roll back the provider exchange; the backup was preserved.", true, ["repair", "recheck"]) : null,
-      available_actions: recoveryFailed ? ["repair", "recheck"] : detected.available_actions
+      error: recoveryFailed ? this.recoveryError("Cancellation could not fully roll back the provider exchange; the backup was preserved.") : null,
+      available_actions: recoveryFailed ? ["recheck"] : detected.available_actions
     };
     if (this.current.operation) this.current.operation.progress.phase = this.current.state;
   }
 
   private completeFailure(operationId: string, cause: unknown, rolledBack: boolean, integrityVerified: boolean, launchVerified: boolean, recoveryFailed: boolean): void {
     if (!this.isActive(operationId)) return;
+    if (recoveryFailed) this.recoveryBlocked = true;
     const lifecycleError = recoveryFailed
-      ? error("recovery_failed", "The provider exchange could not be rolled back; the backup was preserved.", true, ["repair", "recheck"])
+      ? this.recoveryError("The provider exchange could not be rolled back; the backup was preserved.")
       : publicError(cause, this.current.state, launchVerified);
     const detected = this.detectStatus();
     this.current = {
@@ -433,7 +442,7 @@ export class ManagedProviderLifecycle {
       operation: this.current.operation ? { ...this.current.operation, cancellable: false } : null,
       result: result("failed", operationId, detected.installed_version, integrityVerified, launchVerified, rolledBack),
       error: lifecycleError,
-      available_actions: recoveryFailed || detected.state !== "ready" ? ["repair", "recheck"] : ["update", "repair", "recheck"]
+      available_actions: recoveryFailed ? ["recheck"] : detected.state !== "ready" ? ["repair", "recheck"] : ["update", "repair", "recheck"]
     };
     if (this.current.operation) this.current.operation.progress.phase = this.current.state;
   }
@@ -441,6 +450,14 @@ export class ManagedProviderLifecycle {
   private assertActive(operationId: string, signal: AbortSignal): void {
     if (signal.aborted || this.cancelRequested(operationId)) throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
     if (!this.isActive(operationId)) throw new Error("Provider operation is no longer active.");
+  }
+
+  private assertSignal(signal: AbortSignal): void {
+    if (signal.aborted) throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
+  }
+
+  private recoveryError(message = "Recover the interrupted provider exchange before starting another operation."): ManagedProviderLifecycleError {
+    return error("recovery_failed", message, true, ["recheck"]);
   }
 
   private isActive(operationId: string): boolean {
@@ -464,10 +481,6 @@ export class ManagedProviderLifecycle {
   private timestamp(): string {
     return this.now().toISOString();
   }
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try { await access(path); return true; } catch { return false; }
 }
 
 function compatibleBrowserVersion(observed: string, target: string): boolean {

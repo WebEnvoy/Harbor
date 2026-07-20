@@ -8,6 +8,14 @@ import { extract as extractTar, Parser } from "tar";
 
 const execFileAsync = promisify(execFile);
 const SAFE_TAR_TYPES = new Set(["File", "OldFile", "ContiguousFile", "Directory", "GNUDumpDir"]);
+const archiveFileOperations = { readdir, rename, rm, stat };
+
+export interface CloakBrowserArchiveFileOperations {
+  readdir: typeof readdir;
+  rename: typeof rename;
+  rm: typeof rm;
+  stat: typeof stat;
+}
 
 export interface CloakBrowserArchiveLimits {
   max_entries: number;
@@ -25,12 +33,13 @@ export interface ExtractCloakBrowserArchiveInput {
 export async function extractCloakBrowserArchive(input: ExtractCloakBrowserArchiveInput): Promise<void> {
   assertNotAborted(input.signal);
   await rm(input.destination_dir, { recursive: true, force: true });
+  assertNotAborted(input.signal);
   await mkdir(input.destination_dir, { recursive: true });
   try {
     if (input.platform === "win32") await extractZip(input);
     else await extractTarArchive(input);
     assertNotAborted(input.signal);
-    await flattenSingleDirectory(input.destination_dir);
+    await flattenSingleDirectory(input.destination_dir, input.signal);
     assertNotAborted(input.signal);
   } catch (error) {
     await rm(input.destination_dir, { recursive: true, force: true });
@@ -178,13 +187,22 @@ function safeArchivePath(entryPath: string): boolean {
     !normalized.split("/").includes("..");
 }
 
-async function flattenSingleDirectory(destination: string): Promise<void> {
-  const entries = await readdir(destination);
+export async function flattenSingleDirectory(
+  destination: string,
+  signal: AbortSignal,
+  operations: CloakBrowserArchiveFileOperations = archiveFileOperations
+): Promise<void> {
+  assertNotAborted(signal);
+  const entries = await operations.readdir(destination);
   if (entries.length !== 1 || entries[0]!.endsWith(".app")) return;
   const child = join(destination, entries[0]!);
-  if (!(await stat(child)).isDirectory()) return;
-  for (const entry of await readdir(child)) await rename(join(child, entry), join(destination, entry));
-  await rm(child, { recursive: true });
+  if (!(await operations.stat(child)).isDirectory()) return;
+  for (const entry of await operations.readdir(child)) {
+    assertNotAborted(signal);
+    await operations.rename(join(child, entry), join(destination, entry));
+  }
+  assertNotAborted(signal);
+  await operations.rm(child, { recursive: true });
 }
 
 function assertNotAborted(signal: AbortSignal): void {

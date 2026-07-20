@@ -165,7 +165,7 @@ interface ProviderPathCandidate {
 
 export function detectBrowserProviders(input: BrowserProviderDetectionInput = {}): BrowserProviderCatalog {
   const ctx = context(input);
-  const cloakExternal = Boolean(ctx.env.HARBOR_CLOAKBROWSER_PATH || ctx.env.CLOAKBROWSER_BINARY_PATH);
+  const cloakExternal = Boolean(resolveCloakBrowserOverride(ctx.env));
   return {
     schema_version: HARBOR_BROWSER_PROVIDER_STATUS_SCHEMA,
     providers: [
@@ -177,6 +177,11 @@ export function detectBrowserProviders(input: BrowserProviderDetectionInput = {}
       { provider: "donut_browser", reason: "Donut Browser 只作为机制参考，不注册为 Harbor provider。" }
     ]
   };
+}
+
+export function resolveCloakBrowserOverride(env: Record<string, string | undefined>): string | undefined {
+  return [env.HARBOR_CLOAKBROWSER_PATH, env.CLOAKBROWSER_BINARY_PATH]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
 }
 
 export function bindIdentityEnvironmentDefaultProvider(input: IdentityEnvironmentProviderBindingInput = {}): IdentityEnvironmentProviderBinding {
@@ -327,10 +332,8 @@ function installFacts(ctx: DetectionContext, candidate: ProviderPathCandidate, e
 }
 
 function cloakCandidates(ctx: DetectionContext): ProviderPathCandidate[] {
-  const envCandidates = [ctx.env.HARBOR_CLOAKBROWSER_PATH, ctx.env.CLOAKBROWSER_BINARY_PATH]
-    .filter((value): value is string => Boolean(value))
-    .map((path) => ({ path, version: cloakVersionFromPath(path), explicit: true }));
-  if (envCandidates.length > 0) return envCandidates;
+  const override = resolveCloakBrowserOverride(ctx.env);
+  if (override) return [{ path: override, version: cloakVersionFromPath(override), explicit: true }];
 
   const tag = cloakBrowserPlatformTag(ctx.platform, ctx.arch);
   const cacheDir = ctx.env.CLOAKBROWSER_CACHE_DIR || join(ctx.home, ".cloakbrowser");

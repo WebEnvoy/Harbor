@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createFixtureLauncher, HarborRuntime } from "./index.js";
 import {
+  ProviderLifecycleIdempotencyCapacityError,
   ProviderLifecycleIdempotencyConflict,
   ProviderLifecycleIdempotencyStore
 } from "./provider-lifecycle-idempotency.js";
@@ -66,10 +67,42 @@ test("provider idempotency receipts have bounded TTL and capacity", async () => 
   assert.equal(await store.execute("key-a", "request-a", operation), 1);
   assert.equal(await store.execute("key-a", "request-a", operation), 1);
   assert.throws(() => store.execute("key-a", "request-b", operation), ProviderLifecycleIdempotencyConflict);
+  assert.throws(() => store.execute("key-b", "request-b", operation), ProviderLifecycleIdempotencyCapacityError);
+  assert.equal(await store.execute("key-a", "request-a", operation), 1);
+  assert.equal(calls, 1);
   now = 101;
   assert.equal(await store.execute("key-a", "request-b", operation), 2);
+  assert.throws(() => store.execute("key-b", "request-b", operation), ProviderLifecycleIdempotencyCapacityError);
+  now = 202;
   assert.equal(await store.execute("key-b", "request-b", operation), 3);
-  assert.equal(await store.execute("key-a", "request-c", operation), 4);
+  assert.throws(() => store.execute("key-a", "request-c", operation), ProviderLifecycleIdempotencyCapacityError);
+});
+
+test("provider idempotency capacity returns bounded 503 while the original key remains replayable", async () => {
+  const cacheDir = await mkdtemp(join(tmpdir(), "harbor-provider-http-capacity-"));
+  const token = Buffer.alloc(32, 5).toString("base64url");
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"), {}, { cache_dir: cacheDir, env: {}, platform: "linux", arch: "x64" });
+  const server = await startHarborRuntimeServer({
+    port: 0,
+    runtime,
+    manual_authentication_supervisor_token: token,
+    provider_lifecycle_idempotency: { capacity: 1, ttl_ms: 1_000 }
+  });
+  const recheck = `${server.url}/runtime/browser-providers/cloakbrowser/lifecycle/recheck`;
+  try {
+    const first = await mutate(recheck, token, "A", "{}", "key-a");
+    const full = await mutate(recheck, token, "B", "{}", "key-b");
+    const replay = await mutate(recheck, token, "A replay", "{}", "key-a");
+    assert.equal(first.status, 200);
+    assert.equal(full.status, 503);
+    assert.equal(full.body.error, "idempotency_capacity_exceeded");
+    assert.equal(full.body.retryable, true);
+    assert.ok(full.body.retry_after_ms >= 1 && full.body.retry_after_ms <= 1_000);
+    assert.deepEqual(replay.body, first.body);
+  } finally {
+    await server.close();
+    await rm(cacheDir, { recursive: true, force: true });
+  }
 });
 
 test("provider cancel and recheck require an Idempotency-Key and JSON object", async () => {

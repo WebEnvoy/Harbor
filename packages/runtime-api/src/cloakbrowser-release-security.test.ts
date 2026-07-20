@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { create as createTar } from "tar";
-import { extractCloakBrowserArchive } from "./cloakbrowser-archive.js";
+import { extractCloakBrowserArchive, flattenSingleDirectory } from "./cloakbrowser-archive.js";
 import { installCloakBrowserRelease } from "./cloakbrowser-release.js";
 
 const version = "146.0.7680.177.5";
@@ -126,6 +126,32 @@ test("tar extraction observes cancellation and removes partial staging", async (
   try {
     await assert.rejects(extraction, /cancelled|aborted/i);
     await assert.rejects((await import("node:fs/promises")).access(destination));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("archive flattening checks cancellation before every move", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harbor-release-flatten-cancel-"));
+  const wrapper = join(root, "wrapper");
+  await mkdir(wrapper);
+  await writeFile(join(wrapper, "one"), "1");
+  await writeFile(join(wrapper, "two"), "2");
+  const controller = new AbortController();
+  let moves = 0;
+  try {
+    await assert.rejects(flattenSingleDirectory(root, controller.signal, {
+      readdir,
+      stat,
+      rm,
+      rename: async (source, destination) => {
+        await rename(source, destination);
+        moves += 1;
+        controller.abort(new DOMException("flatten cancelled", "AbortError"));
+      }
+    }), /flatten cancelled/);
+    assert.equal(moves, 1);
+    assert.equal((await readdir(wrapper)).length, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
