@@ -25,6 +25,7 @@ import {
   type IdentityEnvironmentConfigurationUpdate,
   hasOnlyIdentityEnvironmentBusinessInputKeys,
   type IdentityEnvironmentLocalMaterialRefs,
+  parseLegacyIdentityEnvironmentInitialState,
   type LegacyIdentityEnvironmentInitialState,
   type IdentityEnvironmentMutationConflict,
   type MaterializedIdentityEnvironmentMutationRequest,
@@ -82,7 +83,13 @@ export function executeIdentityEnvironmentMutation(
   conflict: IdentityEnvironmentMutationConflict | null = null,
   legacyInitialState: LegacyIdentityEnvironmentInitialState | null = null
 ): IdentityEnvironmentMutationResult {
-  if (legacyInitialState && request.operation !== "create" && request.operation !== "import") {
+  const validatedLegacyInitialState = legacyInitialState === null
+    ? null
+    : parseLegacyIdentityEnvironmentInitialState(legacyInitialState);
+  if (legacyInitialState !== null && !validatedLegacyInitialState) {
+    return rejected(request.operation, requestRef(request), "invalid_request", false, []);
+  }
+  if (validatedLegacyInitialState && request.operation !== "create" && request.operation !== "import") {
     return rejected(request.operation, requestRef(request), "invalid_request", false, []);
   }
   if ((request.operation === "create" || request.operation === "import") &&
@@ -91,17 +98,14 @@ export function executeIdentityEnvironmentMutation(
   }
   try {
     assertNoSensitiveMaterialInput(request);
-    assertNoSensitiveMaterialInput(legacyInitialState);
+    assertNoSensitiveMaterialInput(validatedLegacyInitialState);
   } catch {
-    return rejected(request.operation, requestRef(request), "invalid_request", false, []);
-  }
-  if (legacyInitialState?.login_state_reason === "user_confirmed_managed_session") {
     return rejected(request.operation, requestRef(request), "invalid_request", false, []);
   }
   if (!request.idempotency_key?.trim() || request.idempotency_key.length > 200) {
     return rejected(request.operation, requestRef(request), "invalid_request", false, []);
   }
-  const hash = requestHash(request, legacyInitialState);
+  const hash = requestHash(request, validatedLegacyInitialState);
   const receipt = store.receipts.get(request.idempotency_key);
   if (receipt) {
     if (receipt.request_hash !== hash) return rejected(request.operation, requestRef(request), "idempotency_conflict", false, []);
@@ -123,7 +127,7 @@ export function executeIdentityEnvironmentMutation(
     switch (materializedRequest.operation) {
       case "create":
       case "import":
-        return createOrImport(materializedRequest, hash, store, options, legacyInitialState);
+        return createOrImport(materializedRequest, hash, store, options, validatedLegacyInitialState);
       case "edit":
         return edit(materializedRequest, hash, store, options);
       case "copy_full":

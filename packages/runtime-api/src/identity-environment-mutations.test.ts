@@ -108,6 +108,20 @@ test("allocates owner refs and rejects provider metadata that conflicts with the
     } as unknown as IdentityEnvironmentMutationRequest);
     assert.equal(detectionBypass.failure?.code, "invalid_request");
 
+    const initialStateBypass = manager.mutate(request, null, {
+      login_state: "logged_in",
+      identity_environment_ref: "caller-identity",
+      execution_identity_ref: "caller-execution",
+      profile_ref: "caller-profile",
+      profile_storage_ref: "caller-storage",
+      credential_ref: "caller-credential",
+      imported_from: "caller-import-source",
+      env: { HARBOR_CHROME_PATH: "/bin/echo" }
+    } as unknown as Parameters<typeof manager.mutate>[2]);
+    assert.equal(initialStateBypass.failure?.code, "invalid_request");
+    assert.equal(initialStateBypass.identity_environment_ref, null);
+    assert.equal(JSON.stringify(initialStateBypass).includes("caller-storage"), false);
+
   const mismatch = manager.mutate({
     operation: "create",
     idempotency_key: "provider-mismatch-create",

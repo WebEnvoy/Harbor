@@ -81,6 +81,51 @@ export type LegacyIdentityEnvironmentInitialState = Pick<
   "login_state" | "login_state_reason" | "storage_state" | "manual_authentication_state"
 >;
 
+export const LEGACY_IDENTITY_ENVIRONMENT_INITIAL_STATE_KEYS = [
+  "login_state",
+  "login_state_reason",
+  "storage_state",
+  "manual_authentication_state"
+] as const;
+
+export function parseLegacyIdentityEnvironmentInitialState(
+  value: unknown
+): LegacyIdentityEnvironmentInitialState | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const input = value as Record<string, unknown>;
+  const keys = Object.keys(input);
+  if (keys.length === 0 || !keys.every((key) => LEGACY_IDENTITY_ENVIRONMENT_INITIAL_STATE_KEYS.includes(key as never))) {
+    return null;
+  }
+  if (input.login_state !== undefined && (
+    typeof input.login_state !== "string" || ![
+      "logged_in", "logged_out", "expired", "unknown", "manual_auth_required"
+    ].includes(input.login_state)
+  )) return null;
+  if (input.login_state_reason !== undefined && (
+    typeof input.login_state_reason !== "string" || input.login_state_reason === "user_confirmed_managed_session"
+  )) return null;
+  if (input.storage_state !== undefined && (
+    typeof input.storage_state !== "string" || ![
+      "present", "missing", "cleared", "unknown"
+    ].includes(input.storage_state)
+  )) return null;
+  if (input.manual_authentication_state !== undefined && (
+    typeof input.manual_authentication_state !== "string" || ![
+      "not_required", "required", "in_progress", "completed", "failed"
+    ].includes(input.manual_authentication_state)
+  )) return null;
+
+  const result: LegacyIdentityEnvironmentInitialState = {};
+  if (input.login_state !== undefined) result.login_state = input.login_state as LegacyIdentityEnvironmentInitialState["login_state"];
+  if (input.login_state_reason !== undefined) result.login_state_reason = input.login_state_reason;
+  if (input.storage_state !== undefined) result.storage_state = input.storage_state as LegacyIdentityEnvironmentInitialState["storage_state"];
+  if (input.manual_authentication_state !== undefined) {
+    result.manual_authentication_state = input.manual_authentication_state as LegacyIdentityEnvironmentInitialState["manual_authentication_state"];
+  }
+  return result;
+}
+
 export function hasOnlyIdentityEnvironmentBusinessInputKeys(value: unknown, operation: "create" | "import"): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const input = value as Record<string, unknown>;
