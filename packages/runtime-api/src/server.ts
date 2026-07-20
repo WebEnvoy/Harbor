@@ -19,6 +19,16 @@ import {
 } from "./identity-environment-mutation-http.js";
 import { ManualAuthenticationAuthorizer } from "./manual-authentication-authorization.js";
 import { isManagedProviderOperationInput } from "./managed-provider-lifecycle.js";
+import {
+  ProviderLifecycleIdempotencyStore,
+  type ProviderLifecycleIdempotencyOptions
+} from "./provider-lifecycle-idempotency.js";
+import {
+  idempotentProviderMutation,
+  ProviderLifecycleHttpError,
+  readProviderMutationJson,
+  requireEmptyProviderJsonObject
+} from "./provider-lifecycle-http.js";
 
 export const HARBOR_RUNTIME_API_READINESS_SCHEMA = "harbor-runtime-api-readiness/v0";
 
@@ -27,6 +37,7 @@ export interface HarborRuntimeServerOptions {
   port?: number;
   runtime?: HarborRuntime;
   manual_authentication_supervisor_token?: string;
+  provider_lifecycle_idempotency?: ProviderLifecycleIdempotencyOptions;
 }
 
 export interface RunningHarborRuntimeServer {
@@ -39,17 +50,20 @@ export interface RunningHarborRuntimeServer {
 
 export function createHarborRuntimeHttpServer(
   runtime = new HarborRuntime(),
-  options: Pick<HarborRuntimeServerOptions, "manual_authentication_supervisor_token"> = {}
+  options: Pick<HarborRuntimeServerOptions, "manual_authentication_supervisor_token" | "provider_lifecycle_idempotency"> = {}
 ): Server {
   const manualAuthenticationAuthorizer = new ManualAuthenticationAuthorizer(options.manual_authentication_supervisor_token);
+  const providerIdempotency = new ProviderLifecycleIdempotencyStore(options.provider_lifecycle_idempotency);
   return createServer(async (request, response) => {
     try {
-      await route(runtime, manualAuthenticationAuthorizer, request, response);
+      await route(runtime, manualAuthenticationAuthorizer, providerIdempotency, request, response);
     } catch (error) {
-      const badRequest = error instanceof BadRequest;
-      writeJson(response, badRequest ? 400 : 500, {
-        error: badRequest ? "bad_request" : "internal_error",
-        message: badRequest && error instanceof Error ? error.message : "Internal Harbor Runtime API error."
+      const requestError = error instanceof ProviderLifecycleHttpError
+        ? error
+        : error instanceof BadRequest ? new ProviderLifecycleHttpError(400, "bad_request", error.message) : null;
+      writeJson(response, requestError?.statusCode ?? 500, {
+        error: requestError?.code ?? "internal_error",
+        message: requestError?.message ?? "Internal Harbor Runtime API error."
       });
     }
   });
@@ -83,6 +97,7 @@ export async function startHarborRuntimeServer(options: HarborRuntimeServerOptio
 async function route(
   runtime: HarborRuntime,
   manualAuthenticationAuthorizer: ManualAuthenticationAuthorizer,
+  providerIdempotency: ProviderLifecycleIdempotencyStore,
   request: IncomingMessage,
   response: ServerResponse
 ): Promise<void> {
@@ -101,7 +116,7 @@ async function route(
   }
 
   if (parts.length <= 5 && parts[0] === "runtime" && parts[1] === "browser-providers" && parts[2] === "cloakbrowser" && parts[3] === "lifecycle") {
-    await routeManagedProviderLifecycle(runtime, manualAuthenticationAuthorizer, parts[4], method, request, response);
+    await routeManagedProviderLifecycle(runtime, manualAuthenticationAuthorizer, providerIdempotency, parts[4], method, request, response);
     return;
   }
 
@@ -212,6 +227,7 @@ function readinessBody(): object {
 async function routeManagedProviderLifecycle(
   runtime: HarborRuntime,
   authorizer: ManualAuthenticationAuthorizer,
+  idempotency: ProviderLifecycleIdempotencyStore,
   action: string | undefined,
   method: string,
   request: IncomingMessage,
@@ -227,21 +243,24 @@ async function routeManagedProviderLifecycle(
   }
   if (!authorizeCoreControl(authorizer, request, response)) return;
   if (action === "operations") {
-    const input = await readJson<unknown>(request);
-    if (!isManagedProviderOperationInput(input)) throw new BadRequest("Invalid managed provider operation request.");
-    const result = runtime.startManagedProviderOperation(input);
+    const input = await readProviderMutationJson(request);
+    if (!isManagedProviderOperationInput(input)) throw new ProviderLifecycleHttpError(400, "bad_request", "Invalid managed provider operation request.");
+    const result = await idempotentProviderMutation(request, idempotency, action, input, () => runtime.startManagedProviderOperation(input));
     writeJson(response, result.accepted ? 202 : 409, result);
     return;
   }
   if (action === "cancel") {
-    await requireEmptyRequestBody(request, "Provider cancellation requires an empty request body.");
-    const result = runtime.cancelManagedProviderOperation();
+    const input = await readProviderMutationJson(request);
+    requireEmptyProviderJsonObject(input, "Provider cancellation requires an empty JSON object.");
+    const result = await idempotentProviderMutation(request, idempotency, action, input, () => runtime.cancelManagedProviderOperation());
     writeJson(response, result.accepted ? 202 : 409, result);
     return;
   }
   if (action === "recheck") {
-    await requireEmptyRequestBody(request, "Provider recheck requires an empty request body.");
-    writeJson(response, 200, await runtime.recheckManagedProviderLifecycle());
+    const input = await readProviderMutationJson(request);
+    requireEmptyProviderJsonObject(input, "Provider recheck requires an empty JSON object.");
+    const result = await idempotentProviderMutation(request, idempotency, action, input, () => runtime.recheckManagedProviderLifecycle());
+    writeJson(response, 200, result);
     return;
   }
   writeJson(response, 404, { error: "not_found", path: "/runtime/browser-providers/cloakbrowser/lifecycle" });

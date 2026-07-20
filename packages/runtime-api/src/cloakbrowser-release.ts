@@ -1,10 +1,8 @@
-import { execFile } from "node:child_process";
 import { createHash, createPublicKey, randomUUID, verify as verifySignature } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { access, chmod, mkdir, open, readdir, rename, rm, stat } from "node:fs/promises";
-import { dirname, isAbsolute, join } from "node:path";
-import { promisify } from "node:util";
-import { extract as extractTar } from "tar";
+import { access, chmod, open, rm, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { extractCloakBrowserArchive, type CloakBrowserArchiveLimits } from "./cloakbrowser-archive.js";
 
 export const CLOAKBROWSER_FREE_VERSIONS: Record<string, string> = {
   "linux-x64": "146.0.7680.177.5",
@@ -19,9 +17,31 @@ const PRIMARY_RELEASE_BASE = "https://cloakbrowser.dev";
 const FALLBACK_RELEASE_BASE = "https://github.com/CloakHQ/cloakbrowser/releases/download";
 const GITHUB_RELEASES_API = "https://api.github.com/repos/CloakHQ/cloakbrowser/releases?per_page=10";
 const VERSION_PATTERN = /^[0-9]+(?:\.[0-9]+){3,4}$/;
-const execFileAsync = promisify(execFile);
+const ALLOWED_HTTPS_RELEASE_HOSTS = new Set([
+  "cloakbrowser.dev",
+  "api.github.com",
+  "github.com",
+  "release-assets.githubusercontent.com",
+  "objects.githubusercontent.com"
+]);
 
-export type CloakBrowserReleasePhase = "downloading" | "verifying";
+export interface CloakBrowserReleaseLimits extends CloakBrowserArchiveLimits {
+  max_archive_bytes: number;
+  max_manifest_bytes: number;
+  max_signature_bytes: number;
+  max_redirects: number;
+}
+
+export const DEFAULT_CLOAKBROWSER_RELEASE_LIMITS: CloakBrowserReleaseLimits = {
+  max_archive_bytes: 768 * 1024 * 1024,
+  max_manifest_bytes: 1024 * 1024,
+  max_signature_bytes: 16 * 1024,
+  max_redirects: 5,
+  max_entries: 20_000,
+  max_expanded_bytes: 3 * 1024 * 1024 * 1024
+};
+
+export type CloakBrowserReleasePhase = "downloading" | "verifying" | "installing";
 
 export interface CloakBrowserReleaseProgress {
   phase: CloakBrowserReleasePhase;
@@ -40,6 +60,8 @@ export interface InstallCloakBrowserReleaseInput {
   primary_release_base?: string;
   fallback_release_base?: string;
   signing_public_keys?: string[];
+  release_limits?: Partial<CloakBrowserReleaseLimits>;
+  allowed_insecure_release_hosts?: string[];
 }
 
 export interface InstalledCloakBrowserRelease {
@@ -95,18 +117,25 @@ export async function installCloakBrowserRelease(input: InstallCloakBrowserRelea
   const releasePath = `chromium-v${input.version}`;
   const archivePath = join(dirname(input.destination_dir), `.harbor-download-${randomUUID()}${input.platform === "win32" ? ".zip" : ".tar.gz"}`);
   const fetchImpl = input.fetch_impl ?? fetch;
+  const trust = releaseTrust(input);
 
   try {
-    await downloadWithFallback(
+    const downloadedFloor = await downloadWithFallback(
       [`${primaryBase}/${releasePath}/${archiveName}`, `${fallbackBase}/${releasePath}/${archiveName}`],
       archivePath,
       fetchImpl,
       input.signal,
-      input.on_progress
+      input.on_progress,
+      trust
     );
-    const manifest = await fetchSignedManifest([`${primaryBase}/${releasePath}`, `${fallbackBase}/${releasePath}`], fetchImpl, input.signal);
+    const manifest = await fetchSignedManifest([`${primaryBase}/${releasePath}`, `${fallbackBase}/${releasePath}`], fetchImpl, input.signal, trust);
     if (!manifest) throw new CloakBrowserReleaseError("integrity_check_failed", "The signed CloakBrowser release manifest is unavailable.");
-    input.on_progress({ phase: "verifying", downloaded_bytes: 0, total_bytes: null });
+    const archiveSize = (await stat(archivePath)).size;
+    input.on_progress({
+      phase: "verifying",
+      downloaded_bytes: Math.max(downloadedFloor, archiveSize),
+      total_bytes: downloadedFloor <= archiveSize ? archiveSize : null
+    });
     await verifyCloakBrowserRelease(
       archivePath,
       archiveName,
@@ -116,10 +145,29 @@ export async function installCloakBrowserRelease(input: InstallCloakBrowserRelea
       input.signing_public_keys ?? CLOAKBROWSER_SIGNING_KEYS,
       input.signal
     );
-    await extractRelease(archivePath, input.destination_dir, input.platform);
+    assertNotAborted(input.signal);
+    input.on_progress({
+      phase: "installing",
+      downloaded_bytes: Math.max(downloadedFloor, archiveSize),
+      total_bytes: downloadedFloor <= archiveSize ? archiveSize : null
+    });
+    try {
+      await extractCloakBrowserArchive({
+        archive_path: archivePath,
+        destination_dir: input.destination_dir,
+        platform: input.platform,
+        signal: input.signal,
+        limits: trust.limits
+      });
+    } catch (error) {
+      if (input.signal.aborted) throw input.signal.reason ?? error;
+      throw new CloakBrowserReleaseError("install_failed", "The verified CloakBrowser archive could not be installed.", { cause: error });
+    }
+    assertNotAborted(input.signal);
     const binaryPath = cloakBrowserBinaryPath(input.platform, dirname(input.destination_dir), input.version)
       .replace(join(dirname(input.destination_dir), `chromium-${input.version}`), input.destination_dir);
     await makeExecutable(binaryPath, input.platform);
+    assertNotAborted(input.signal);
     return { binary_path: binaryPath, integrity: "ed25519_sha256", source: "official_release" };
   } finally {
     await rm(archivePath, { force: true });
@@ -129,20 +177,25 @@ export async function installCloakBrowserRelease(input: InstallCloakBrowserRelea
 export async function latestCloakBrowserVersion(
   platform: NodeJS.Platform,
   arch: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  signal: AbortSignal = AbortSignal.timeout(10_000)
 ): Promise<string | null> {
   const tag = cloakBrowserPlatformTag(platform, arch);
   if (!tag) return null;
   const archiveName = `cloakbrowser-${tag}${platform === "win32" ? ".zip" : ".tar.gz"}`;
   try {
-    const response = await fetchImpl(GITHUB_RELEASES_API, { signal: AbortSignal.timeout(10_000) });
+    const trust: ReleaseTrust = { limits: DEFAULT_CLOAKBROWSER_RELEASE_LIMITS, allowedInsecureHosts: new Set() };
+    const response = await fetchTrusted(GITHUB_RELEASES_API, fetchImpl, signal, trust);
     if (!response.ok) return null;
-    const releases = await response.json() as Array<{ tag_name?: string; draft?: boolean; assets?: Array<{ name?: string }> }>;
+    const releases = JSON.parse(new TextDecoder().decode(await readBoundedBody(response, 2 * 1024 * 1024, signal))) as
+      Array<{ tag_name?: string; draft?: boolean; assets?: Array<{ name?: string }> }>;
     for (const release of releases) {
       const version = release.tag_name?.replace(/^chromium-v/, "") ?? "";
       if (!release.draft && isCloakBrowserVersion(version) && release.assets?.some((asset) => asset.name === archiveName)) return version;
     }
-  } catch {}
+  } catch (error) {
+    if (signal.aborted) throw signal.reason ?? error;
+  }
   return null;
 }
 
@@ -194,13 +247,15 @@ async function downloadWithFallback(
   destination: string,
   fetchImpl: typeof fetch,
   signal: AbortSignal,
-  onProgress: (progress: CloakBrowserReleaseProgress) => void
-): Promise<void> {
+  onProgress: (progress: CloakBrowserReleaseProgress) => void,
+  trust: ReleaseTrust
+): Promise<number> {
   let lastError: unknown;
+  const tracker = { floor: 0 };
   for (const url of urls) {
     try {
-      await downloadFile(url, destination, fetchImpl, signal, onProgress);
-      return;
+      await downloadFile(url, destination, fetchImpl, signal, onProgress, trust, tracker);
+      return tracker.floor;
     } catch (error) {
       if (signal.aborted) throw error;
       lastError = error;
@@ -215,20 +270,25 @@ async function downloadFile(
   destination: string,
   fetchImpl: typeof fetch,
   signal: AbortSignal,
-  onProgress: (progress: CloakBrowserReleaseProgress) => void
+  onProgress: (progress: CloakBrowserReleaseProgress) => void,
+  trust: ReleaseTrust,
+  tracker: { floor: number }
 ): Promise<void> {
-  const response = await fetchImpl(url, { redirect: "follow", signal: AbortSignal.any([signal, AbortSignal.timeout(600_000)]) });
+  const response = await fetchTrusted(url, fetchImpl, AbortSignal.any([signal, AbortSignal.timeout(600_000)]), trust);
   if (!response.ok || !response.body) throw new Error(`Download failed with HTTP ${response.status}.`);
   const total = Number(response.headers.get("content-length")) || null;
+  if (total !== null && total > trust.limits.max_archive_bytes) throw new Error("Release archive exceeds the download byte limit.");
   const file = await open(destination, "w", 0o600);
   let downloaded = 0;
   try {
     for await (const chunk of response.body) {
       assertNotAborted(signal);
       const bytes = Buffer.from(chunk);
-      await file.write(bytes);
       downloaded += bytes.length;
-      onProgress({ phase: "downloading", downloaded_bytes: downloaded, total_bytes: total });
+      if (downloaded > trust.limits.max_archive_bytes) throw new Error("Release archive exceeds the download byte limit.");
+      await file.write(bytes);
+      tracker.floor = Math.max(tracker.floor, downloaded);
+      onProgress({ phase: "downloading", downloaded_bytes: tracker.floor, total_bytes: total && total >= tracker.floor ? total : null });
     }
   } finally {
     await file.close();
@@ -238,19 +298,20 @@ async function downloadFile(
 async function fetchSignedManifest(
   bases: string[],
   fetchImpl: typeof fetch,
-  signal: AbortSignal
+  signal: AbortSignal,
+  trust: ReleaseTrust
 ): Promise<{ manifest: Uint8Array; signature: Uint8Array } | null> {
   for (const base of bases) {
     try {
       const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
       const [manifest, signature] = await Promise.all([
-        fetchImpl(`${base}/SHA256SUMS`, { redirect: "follow", signal: requestSignal }),
-        fetchImpl(`${base}/SHA256SUMS.sig`, { redirect: "follow", signal: requestSignal })
+        fetchTrusted(`${base}/SHA256SUMS`, fetchImpl, requestSignal, trust),
+        fetchTrusted(`${base}/SHA256SUMS.sig`, fetchImpl, requestSignal, trust)
       ]);
       if (manifest.ok && signature.ok) {
         return {
-          manifest: new Uint8Array(await manifest.arrayBuffer()),
-          signature: new Uint8Array(await signature.arrayBuffer())
+          manifest: await readBoundedBody(manifest, trust.limits.max_manifest_bytes, signal),
+          signature: await readBoundedBody(signature, trust.limits.max_signature_bytes, signal)
         };
       }
     } catch (error) {
@@ -269,47 +330,54 @@ async function sha256File(filePath: string, signal: AbortSignal): Promise<string
   return hash.digest("hex");
 }
 
-async function extractRelease(archivePath: string, destination: string, platform: NodeJS.Platform): Promise<void> {
-  await rm(destination, { recursive: true, force: true });
-  await mkdir(destination, { recursive: true });
-  try {
-    if (platform === "win32") await extractZip(archivePath, destination);
-    else await extractTar({
-      file: archivePath,
-      cwd: destination,
-      filter: (entryPath, entry) => safeArchivePath(entryPath) && (!("linkpath" in entry) || !entry.linkpath || safeArchivePath(entry.linkpath))
-    });
-    await flattenSingleDirectory(destination);
-  } catch (error) {
-    throw new CloakBrowserReleaseError("install_failed", "The verified CloakBrowser archive could not be installed.", { cause: error });
+interface ReleaseTrust {
+  limits: CloakBrowserReleaseLimits;
+  allowedInsecureHosts: Set<string>;
+}
+
+function releaseTrust(input: InstallCloakBrowserReleaseInput): ReleaseTrust {
+  const limits = { ...DEFAULT_CLOAKBROWSER_RELEASE_LIMITS, ...input.release_limits };
+  for (const value of Object.values(limits)) {
+    if (!Number.isSafeInteger(value) || value <= 0) throw new CloakBrowserReleaseError("install_failed", "Release limits must be positive integers.");
+  }
+  return { limits, allowedInsecureHosts: new Set(input.allowed_insecure_release_hosts ?? []) };
+}
+
+async function fetchTrusted(url: string, fetchImpl: typeof fetch, signal: AbortSignal, trust: ReleaseTrust): Promise<Response> {
+  let current = new URL(url);
+  for (let redirects = 0; ; redirects += 1) {
+    assertTrustedUrl(current, trust);
+    const response = await fetchImpl(current, { redirect: "manual", signal });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    if (redirects >= trust.limits.max_redirects) throw new Error("Release redirect limit exceeded.");
+    const location = response.headers.get("location");
+    if (!location) throw new Error("Release redirect is missing a location.");
+    await response.body?.cancel();
+    current = new URL(location, current);
   }
 }
 
-async function extractZip(archivePath: string, destination: string): Promise<void> {
-  const script = [
-    "Add-Type -AssemblyName System.IO.Compression.FileSystem",
-    "$root=[IO.Path]::GetFullPath($env:CB_DEST + [IO.Path]::DirectorySeparatorChar)",
-    "$zip=[IO.Compression.ZipFile]::OpenRead($env:CB_ARCHIVE)",
-    "try { foreach($entry in $zip.Entries) { $target=[IO.Path]::GetFullPath([IO.Path]::Combine($root,$entry.FullName)); if(-not $target.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)){throw 'unsafe archive path'} }; [IO.Compression.ZipFile]::ExtractToDirectory($env:CB_ARCHIVE,$env:CB_DEST) } finally { $zip.Dispose() }"
-  ].join("; ");
-  await execFileAsync("powershell", ["-NoProfile", "-Command", script], {
-    timeout: 120_000,
-    env: { ...process.env, CB_ARCHIVE: archivePath, CB_DEST: destination }
-  });
+function assertTrustedUrl(url: URL, trust: ReleaseTrust): void {
+  if (url.username || url.password) throw new Error("Authenticated release URLs are not allowed.");
+  if (url.protocol === "https:" && ALLOWED_HTTPS_RELEASE_HOSTS.has(url.hostname)) return;
+  if (url.protocol === "http:" && trust.allowedInsecureHosts.has(url.hostname)) return;
+  throw new Error("Release URL is outside the approved HTTPS trust boundary.");
 }
 
-function safeArchivePath(entryPath: string): boolean {
-  const normalized = entryPath.replaceAll("\\", "/");
-  return !isAbsolute(normalized) && !normalized.split("/").includes("..");
-}
-
-async function flattenSingleDirectory(destination: string): Promise<void> {
-  const entries = await readdir(destination);
-  if (entries.length !== 1 || entries[0]!.endsWith(".app")) return;
-  const child = join(destination, entries[0]!);
-  if (!(await stat(child)).isDirectory()) return;
-  for (const entry of await readdir(child)) await rename(join(child, entry), join(destination, entry));
-  await rm(child, { recursive: true });
+async function readBoundedBody(response: Response, maxBytes: number, signal: AbortSignal): Promise<Uint8Array> {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) throw new Error("Release metadata exceeds its byte limit.");
+  if (!response.body) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for await (const chunk of response.body) {
+    assertNotAborted(signal);
+    const bytes = new Uint8Array(chunk);
+    size += bytes.byteLength;
+    if (size > maxBytes) throw new Error("Release metadata exceeds its byte limit.");
+    chunks.push(bytes);
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
 }
 
 async function makeExecutable(binaryPath: string, platform: NodeJS.Platform): Promise<void> {

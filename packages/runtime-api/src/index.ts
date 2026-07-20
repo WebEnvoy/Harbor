@@ -419,11 +419,11 @@ export class HarborRuntime {
     return this.providerLifecycle.recheck();
   }
 
-  startManagedProviderOperation(input: ManagedProviderOperationInput): ManagedProviderLifecycleCommandResult {
+  async startManagedProviderOperation(input: ManagedProviderOperationInput): Promise<ManagedProviderLifecycleCommandResult> {
     return this.providerLifecycle.start(input);
   }
 
-  cancelManagedProviderOperation(): ManagedProviderLifecycleCommandResult {
+  async cancelManagedProviderOperation(): Promise<ManagedProviderLifecycleCommandResult> {
     return this.providerLifecycle.cancel();
   }
 

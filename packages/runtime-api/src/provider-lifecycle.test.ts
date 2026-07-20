@@ -13,6 +13,7 @@ import {
 } from "./cloakbrowser-release.js";
 import { createFixtureLauncher, HarborRuntime } from "./index.js";
 import { ManagedProviderLifecycle, type ManagedProviderLifecycleStatus } from "./managed-provider-lifecycle.js";
+import { verifyLocalProviderLaunch } from "./local-provider-launcher.js";
 import { startHarborRuntimeServer } from "./server.js";
 
 const fixtureVersion = "146.0.7680.177.5";
@@ -32,7 +33,8 @@ test("installs a signed local CloakBrowser release through Runtime API and verif
       ...input,
       primary_release_base: fixture.url,
       fallback_release_base: fixture.url,
-      signing_public_keys: [fixture.publicKey]
+      signing_public_keys: [fixture.publicKey],
+      allowed_insecure_release_hosts: ["127.0.0.1"]
     }),
     resolve_latest_version: async () => fixtureVersion
   });
@@ -108,10 +110,10 @@ test("exposes stable cancellable progress and keeps the ready version on cancell
       ]);
       throw new Error("unexpected release");
     },
-    verify_launch: async () => {}
+    verify_launch: async (_path, version) => ({ browser_version: version })
   });
   try {
-    const started = lifecycle.start({ operation: "update" });
+    const started = await lifecycle.start({ operation: "update" });
     assert.equal(started.accepted, true);
     await waitUntil(() => lifecycle.status().state === "downloading");
     const active = lifecycle.status();
@@ -119,7 +121,7 @@ test("exposes stable cancellable progress and keeps the ready version on cancell
     assert.equal(active.operation?.progress.percent, 50);
     assert.equal(active.operation?.cancellable, true);
 
-    assert.equal(lifecycle.cancel().accepted, true);
+    assert.equal((await lifecycle.cancel()).accepted, true);
     const completed = await waitForManager(lifecycle);
     assert.equal(completed.state, "ready");
     assert.equal(completed.installed_version, "146.0.0.0");
@@ -132,7 +134,7 @@ test("exposes stable cancellable progress and keeps the ready version on cancell
   }
 });
 
-test("rolls a repair back when isolated launch verification fails", async () => {
+test("keeps the published provider untouched when staging launch verification fails", async () => {
   const cacheDir = await installedCache("146.0.0.0", "old");
   const lifecycle = new ManagedProviderLifecycle({
     cache_dir: cacheDir,
@@ -143,13 +145,13 @@ test("rolls a repair back when isolated launch verification fails", async () => 
     verify_launch: async () => { throw new Error("CDP readiness failed"); }
   });
   try {
-    assert.equal(lifecycle.start({ operation: "repair" }).accepted, true);
+    assert.equal((await lifecycle.start({ operation: "repair" })).accepted, true);
     const completed = await waitForManager(lifecycle);
     assert.equal(completed.state, "ready");
     assert.equal(completed.result?.status, "failed");
     assert.equal(completed.result?.integrity_verified, true);
     assert.equal(completed.result?.launch_verified, false);
-    assert.equal(completed.result?.rolled_back, true);
+    assert.equal(completed.result?.rolled_back, false);
     assert.equal(completed.error?.code, "launch_verification_failed");
     assert.equal(await readFile(join(cacheDir, "chromium-146.0.0.0", "chrome"), "utf8"), "old");
   } finally {
@@ -184,7 +186,7 @@ test("reports available updates and leaves explicit binary overrides externally 
     platform: "linux",
     arch: "x64",
     resolve_latest_version: async () => "147.0.0.0",
-    verify_launch: async () => {}
+    verify_launch: async (_path, version) => ({ browser_version: version })
   });
   const external = new ManagedProviderLifecycle({
     cache_dir: cacheDir,
@@ -199,7 +201,7 @@ test("reports available updates and leaves explicit binary overrides externally 
     assert.equal(update.available_actions.includes("update"), true);
 
     assert.equal(external.status().ownership, "external_override");
-    const rejected = external.start({ operation: "repair" });
+    const rejected = await external.start({ operation: "repair" });
     assert.equal(rejected.accepted, false);
     if (rejected.accepted) throw new Error("external provider operation should be rejected");
     assert.equal(rejected.error.code, "externally_managed");
@@ -207,6 +209,20 @@ test("reports available updates and leaves explicit binary overrides externally 
     await lifecycle.close();
     await external.close();
     await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("isolated launch verification rejects a real CDP readback with the wrong browser version", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harbor-provider-version-"));
+  const browser = join(root, "chrome");
+  await writeFakeBrowser(browser, "145.0.0.0");
+  try {
+    await assert.rejects(
+      verifyLocalProviderLaunch(browser, { expected_version: fixtureVersion }),
+      /does not match target/
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -249,7 +265,7 @@ async function createSignedReleaseFixture(): Promise<{
   };
 }
 
-async function writeFakeBrowser(path: string): Promise<void> {
+async function writeFakeBrowser(path: string, browserVersion = "146.0.7680.177"): Promise<void> {
   await writeFile(path, `#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -259,7 +275,7 @@ if (!profile) process.exit(2);
 mkdirSync(profile, { recursive: true });
 const server = createServer((request, response) => {
   response.setHeader("content-type", "application/json");
-  if (request.url === "/json/version") return response.end(JSON.stringify({ Browser: "Fixture/1.0", "Protocol-Version": "1.3" }));
+  if (request.url === "/json/version") return response.end(JSON.stringify({ Browser: "Chrome/${browserVersion}", "Protocol-Version": "1.3" }));
   if (request.url === "/json/list") return response.end(JSON.stringify([{ type: "page", url: "about:blank", title: "Fixture" }]));
   response.writeHead(404).end("{}");
 });
@@ -315,14 +331,18 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 async function postJson(url: string, body: unknown, token: string): Promise<{ status: number; body: any }> {
   const response = await fetch(url, {
     method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "idempotency-key": `provider-test-${++requestSequence}` },
     body: JSON.stringify(body)
   });
   return { status: response.status, body: await response.json() };
 }
 
 async function postEmpty(url: string, token: string): Promise<{ status: number; body: any }> {
-  const response = await fetch(url, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "idempotency-key": `provider-test-${++requestSequence}` },
+    body: "{}"
+  });
   return { status: response.status, body: await response.json() };
 }
 
@@ -351,3 +371,5 @@ async function closeServer(server: Server): Promise<void> {
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
+
+let requestSequence = 0;

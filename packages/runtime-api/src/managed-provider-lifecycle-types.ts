@@ -1,4 +1,5 @@
 import { isCloakBrowserVersion, type InstallCloakBrowserReleaseInput, type InstalledCloakBrowserRelease } from "./cloakbrowser-release.js";
+import type { ProviderExchangeFileOperations } from "./managed-provider-exchange.js";
 
 export const HARBOR_MANAGED_PROVIDER_LIFECYCLE_SCHEMA = "harbor-managed-provider-lifecycle/v0";
 
@@ -43,6 +44,7 @@ export interface ManagedProviderLifecycleError {
     | "integrity_check_failed"
     | "install_failed"
     | "launch_verification_failed"
+    | "recovery_failed"
     | "not_cancellable"
     | "unsupported_platform";
   message: string;
@@ -53,7 +55,7 @@ export interface ManagedProviderLifecycleError {
 export interface ManagedProviderLifecycleStatus {
   schema_version: typeof HARBOR_MANAGED_PROVIDER_LIFECYCLE_SCHEMA;
   provider_id: "cloakbrowser";
-  management_mode: "managed";
+  management_mode: "managed" | "external";
   ownership: "harbor" | "external_override";
   state: ManagedProviderLifecycleState;
   installed_version: string | null;
@@ -103,8 +105,9 @@ export interface ManagedProviderLifecycleOptions {
   platform?: NodeJS.Platform;
   arch?: string;
   install_release?: (input: InstallCloakBrowserReleaseInput) => Promise<InstalledCloakBrowserRelease>;
-  resolve_latest_version?: (platform: NodeJS.Platform, arch: string) => Promise<string | null>;
-  verify_launch?: (binaryPath: string) => Promise<void>;
+  resolve_latest_version?: (platform: NodeJS.Platform, arch: string, signal?: AbortSignal) => Promise<string | null>;
+  verify_launch?: (binaryPath: string, expectedVersion: string, signal: AbortSignal) => Promise<{ browser_version: string }>;
+  exchange_file_operations?: ProviderExchangeFileOperations;
   now?: () => Date;
 }
 

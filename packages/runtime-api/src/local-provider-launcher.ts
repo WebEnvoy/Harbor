@@ -112,16 +112,30 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
   }
 }
 
-export async function verifyLocalProviderLaunch(browserPath: string, timeoutMs = 10_000): Promise<void> {
+export interface LocalProviderLaunchVerification {
+  browser_version: string;
+}
+
+export async function verifyLocalProviderLaunch(
+  browserPath: string,
+  options: { expected_version?: string; timeout_ms?: number; signal?: AbortSignal } = {}
+): Promise<LocalProviderLaunchVerification> {
   const profileDir = await mkdtemp(join(tmpdir(), "harbor-provider-verify-"));
   const child = spawn(browserPath, providerLaunchArguments({ headless: true, url: "about:blank" }, profileDir, null), { stdio: "ignore" });
-  const deadline = Date.now() + Math.max(1, timeoutMs);
+  const deadline = Date.now() + Math.max(1, options.timeout_ms ?? 10_000);
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, AbortSignal.timeout(Math.max(1, options.timeout_ms ?? 10_000))])
+    : AbortSignal.timeout(Math.max(1, options.timeout_ms ?? 10_000));
   try {
-    const port = await waitForDevtoolsPort(profileDir, deadline);
-    const signal = AbortSignal.timeout(remainingLaunchTime(deadline));
-    await fetchVersion(port, signal);
+    const port = await waitForDevtoolsPort(profileDir, deadline, signal);
+    const versionFacts = await fetchVersion(port, signal);
+    const browserVersion = observedBrowserVersion(versionFacts);
+    if (options.expected_version && !compatibleBrowserVersion(browserVersion, options.expected_version)) {
+      throw new Error(`Provider version ${browserVersion} does not match target ${options.expected_version}.`);
+    }
     const page = await readPageFacts(port, "about:blank", signal);
     if (page.status !== "ready") throw new Error("Provider launch readback was not ready.");
+    return { browser_version: browserVersion };
   } finally {
     await closeBrowser(child, profileDir, true);
   }
@@ -366,17 +380,33 @@ function viewerEntry(headless: boolean): Exclude<LocalProviderLaunchResult, { st
   };
 }
 
-async function waitForDevtoolsPort(profileDir: string, deadline: number): Promise<string> {
+async function waitForDevtoolsPort(profileDir: string, deadline: number, signal?: AbortSignal): Promise<string> {
   const portFile = join(profileDir, "DevToolsActivePort");
   while (Date.now() < deadline) {
+    if (signal?.aborted) throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
     try {
       const [port] = (await readFile(portFile, "utf8")).trim().split("\n");
       if (port) return port;
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await abortableDelay(25, signal);
     }
   }
   throw new Error("Timed out waiting for local browser CDP readiness.");
+}
+
+async function abortableDelay(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
+  await new Promise<void>((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, milliseconds);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function remainingLaunchTime(deadline: number): number {
@@ -423,6 +453,19 @@ async function fetchVersion(port: string, signal?: AbortSignal): Promise<Record<
   const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal });
   if (!response.ok) throw new Error(`CDP readiness probe failed: ${response.status}`);
   return (await response.json()) as Record<string, string>;
+}
+
+function observedBrowserVersion(facts: Record<string, string>): string {
+  const product = facts.Browser ?? "";
+  const match = product.match(/(?:^|\/)([0-9]+(?:\.[0-9]+){3,4})$/);
+  if (!match) throw new Error("Provider launch did not report a supported browser version.");
+  return match[1]!;
+}
+
+function compatibleBrowserVersion(observed: string, target: string): boolean {
+  const observedParts = observed.split(".");
+  const targetParts = target.split(".");
+  return observed === target || observedParts.slice(0, 4).join(".") === targetParts.slice(0, 4).join(".");
 }
 
 async function openProviderUrl(port: string, url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {

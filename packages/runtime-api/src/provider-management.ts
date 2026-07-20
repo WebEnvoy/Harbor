@@ -62,7 +62,7 @@ export interface BrowserProviderCapabilityFact {
 }
 
 export interface BrowserProviderDownloadGuide {
-  action: "managed_install" | "manual_install";
+  action: "managed_install" | "manual_install" | "external_management";
   primary_url: string;
   fallback_url?: string;
   install_hint: string;
@@ -93,6 +93,7 @@ export interface BrowserProviderStatus {
   role: BrowserProviderRole;
   selectable: true;
   default_for_identity_environment: boolean;
+  management_mode: "managed" | "system" | "external";
   install: BrowserProviderInstallFacts;
   capabilities: BrowserProviderCapabilityFact[];
   limitations: string[];
@@ -164,11 +165,12 @@ interface ProviderPathCandidate {
 
 export function detectBrowserProviders(input: BrowserProviderDetectionInput = {}): BrowserProviderCatalog {
   const ctx = context(input);
+  const cloakExternal = Boolean(ctx.env.HARBOR_CLOAKBROWSER_PATH || ctx.env.CLOAKBROWSER_BINARY_PATH);
   return {
     schema_version: HARBOR_BROWSER_PROVIDER_STATUS_SCHEMA,
     providers: [
-      providerStatus("cloakbrowser", "CloakBrowser", "primary", detectCloakBrowser(ctx)),
-      providerStatus("chrome_official", "Google Chrome", "restricted_fallback", detectChrome(ctx))
+      providerStatus("cloakbrowser", "CloakBrowser", "primary", detectCloakBrowser(ctx), cloakExternal ? "external" : "managed"),
+      providerStatus("chrome_official", "Google Chrome", "restricted_fallback", detectChrome(ctx), "system")
     ],
     excluded_providers: [
       { provider: "chromium", reason: "Chromium 仅保留为开发/测试内部实现，不进入用户可选 provider 管理。" },
@@ -253,7 +255,8 @@ function providerStatus(
   provider_id: BrowserProviderId,
   display_name: string,
   role: BrowserProviderRole,
-  install: BrowserProviderInstallFacts
+  install: BrowserProviderInstallFacts,
+  managementMode: BrowserProviderStatus["management_mode"]
 ): BrowserProviderStatus {
   const defaultForIdentity = role === "primary";
   return {
@@ -262,10 +265,15 @@ function providerStatus(
     role,
     selectable: true,
     default_for_identity_environment: defaultForIdentity,
+    management_mode: managementMode,
     install,
     capabilities: provider_id === "cloakbrowser" ? cloakCapabilities() : chromeCapabilities(),
     limitations: provider_id === "cloakbrowser" ? cloakLimitations() : chromeLimitations(),
-    download_guide: provider_id === "cloakbrowser" ? cloakDownloadGuide() : chromeDownloadGuide(),
+    download_guide: provider_id === "cloakbrowser"
+      ? managementMode === "external"
+        ? { ...cloakDownloadGuide(), action: "external_management", install_hint: "该覆盖路径由外部管理；请在外部更新或移除覆盖后重新检查。" }
+        : cloakDownloadGuide()
+      : chromeDownloadGuide(),
     diagnostics: diagnosticsFor(provider_id, install)
   };
 }
