@@ -6,6 +6,11 @@ import {
 } from "./identity-environment.js";
 import { opaqueRef } from "./refs.js";
 import {
+  acquireProfileStorageOwnership,
+  profileStorageHasExternalLock,
+  type ProfileStorageOwnershipLock
+} from "./profile-storage.js";
+import {
   HARBOR_RUNTIME_FACTS_SCHEMA,
   HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA,
   type CreateRuntimeSessionInput,
@@ -81,6 +86,7 @@ export interface RuntimeSessionRecord {
   read_operation_user_release_pending: boolean;
   read_operation_user_handoff: boolean;
   execution_surface: "local_provider" | "fixture" | "unknown";
+  profile_ownership?: ProfileStorageOwnershipLock;
   openUrl?: (url: string) => Promise<LocalProviderPageFacts>;
   probeReadOperation?: (input: LocalProviderReadProbeInput) => Promise<LocalProviderReadProbeResult>;
   probeSiteResource?: (input: LocalProviderSiteResourceProbeInput) => Promise<LocalProviderSiteResourceProbeResult>;
@@ -97,10 +103,15 @@ const baselineFacts: RuntimeFact[] = [
 
 export class RuntimeSessionStore {
   private readonly records = new Map<string, RuntimeSessionRecord>();
+  private readonly openingIdentityEnvironmentRefs = new Set<string>();
+  private readonly openingProfileStorageRefs = new Set<string>();
+  private readonly mutatingIdentityEnvironmentRefs = new Set<string>();
+  private readonly mutatingProfileStorageRefs = new Set<string>();
 
   constructor(
     private readonly viewerControls: ViewerControlStore,
-    private readonly launcher: LocalProviderLauncher
+    private readonly launcher: LocalProviderLauncher,
+    private readonly launchOptions: { resolve_proxy?: (proxy_ref: string) => string | null } = {}
   ) {}
 
   async createSession(input: CreateRuntimeSessionInput = {}): Promise<RuntimeSessionFacts> {
@@ -110,15 +121,48 @@ export class RuntimeSessionStore {
     const requestedUrl = input.url ?? "about:blank";
     const controlOwner = input.control_owner ?? "system";
     const headless = input.headless ?? controlOwner !== "user";
-    const launch = await this.launcher({
-      browser_path: input.browser_path ?? "",
-      headless,
-      timeout_ms: input.timeout_ms ?? 5000,
-      url: requestedUrl,
-      profile_ref,
-      profile_storage_ref: input.profile_storage_ref,
-      provider_ref
-    });
+    let profileOwnership: ProfileStorageOwnershipLock | null = null;
+    const launch = await (async () => {
+      if (input.identity_environment_ref) this.openingIdentityEnvironmentRefs.add(input.identity_environment_ref);
+      if (input.profile_storage_ref) this.openingProfileStorageRefs.add(input.profile_storage_ref);
+      try {
+        if (input.profile_storage_ref) {
+          try {
+            profileOwnership = acquireProfileStorageOwnership([input.profile_storage_ref]);
+          } catch {
+            return { status: "unavailable" as const, error: error("profile_locked", "Profile storage is owned by another Runtime.", true), facts: [] };
+          }
+          if (profileStorageHasExternalLock(input.profile_storage_ref)) {
+            profileOwnership.release();
+            profileOwnership = null;
+            return { status: "unavailable" as const, error: error("profile_locked", "Profile storage is locked by an external browser.", true), facts: [] };
+          }
+        }
+        const result = await this.launcher({
+          browser_path: input.browser_path ?? "",
+          headless,
+          timeout_ms: input.timeout_ms ?? 5000,
+          url: requestedUrl,
+          profile_ref,
+          profile_storage_ref: input.profile_storage_ref,
+          provider_ref,
+          identity_environment: input.managed_identity_environment,
+          resolve_proxy: this.launchOptions.resolve_proxy
+        });
+        if (result.status !== "ready" || (input.profile_storage_ref && profileStorageHasExternalLock(input.profile_storage_ref))) {
+          profileOwnership?.release();
+          profileOwnership = null;
+        }
+        return result;
+      } catch (cause) {
+        profileOwnership?.release();
+        profileOwnership = null;
+        throw cause;
+      } finally {
+        if (input.identity_environment_ref) this.openingIdentityEnvironmentRefs.delete(input.identity_environment_ref);
+        if (input.profile_storage_ref) this.openingProfileStorageRefs.delete(input.profile_storage_ref);
+      }
+    })();
     const runtime_session_ref = opaqueRef("session");
     const ready = launch.status === "ready";
     const viewer_entry: RuntimeViewerEntry = ready ? launch.viewer_entry : {
@@ -187,6 +231,7 @@ export class RuntimeSessionStore {
       read_operation_user_release_pending: false,
       read_operation_user_handoff: false,
       execution_surface: ready ? launch.execution_surface ?? "unknown" : "unknown",
+      profile_ownership: profileOwnership ?? undefined,
       openUrl: ready ? launch.openUrl : undefined,
       probeReadOperation: ready ? launch.probeReadOperation : undefined,
       probeSiteResource: ready ? launch.probeSiteResource : undefined,
@@ -199,6 +244,50 @@ export class RuntimeSessionStore {
   getSession(runtime_session_ref: string): RuntimeSessionFacts | null {
     const facts = this.records.get(runtime_session_ref)?.facts;
     return facts ? snapshot(facts) : null;
+  }
+
+  getActiveIdentityEnvironmentSession(identity_environment_ref: string): RuntimeSessionFacts | null {
+    for (const record of this.records.values()) {
+      if (record.facts.identity_environment_ref === identity_environment_ref &&
+        !["closed", "failed", "expired"].includes(record.facts.lifecycle_state)) {
+        return snapshot(record.facts);
+      }
+    }
+    return null;
+  }
+
+  isIdentityEnvironmentInUse(identity_environment_ref: string): boolean {
+    return this.openingIdentityEnvironmentRefs.has(identity_environment_ref) || Boolean(this.getActiveIdentityEnvironmentSession(identity_environment_ref));
+  }
+
+  isProfileStorageInUse(profile_storage_ref: string): boolean {
+    if (this.openingProfileStorageRefs.has(profile_storage_ref)) return true;
+    for (const record of this.records.values()) {
+      if (record.identity_binding.profile_storage_ref === profile_storage_ref &&
+        !["closed", "failed", "expired"].includes(record.facts.lifecycle_state)) return true;
+    }
+    return false;
+  }
+
+  reserveIdentityEnvironmentMutation(
+    identityEnvironmentRefs: readonly string[],
+    profileStorageRefs: readonly string[]
+  ): (() => void) | null {
+    const identities = [...new Set(identityEnvironmentRefs)];
+    const profiles = [...new Set(profileStorageRefs)];
+    if (identities.some((ref) => this.openingIdentityEnvironmentRefs.has(ref) || this.mutatingIdentityEnvironmentRefs.has(ref) || this.getActiveIdentityEnvironmentSession(ref)) ||
+      profiles.some((ref) => this.openingProfileStorageRefs.has(ref) || this.mutatingProfileStorageRefs.has(ref) || this.isProfileStorageInUse(ref))) {
+      return null;
+    }
+    identities.forEach((ref) => this.mutatingIdentityEnvironmentRefs.add(ref));
+    profiles.forEach((ref) => this.mutatingProfileStorageRefs.add(ref));
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      identities.forEach((ref) => this.mutatingIdentityEnvironmentRefs.delete(ref));
+      profiles.forEach((ref) => this.mutatingProfileStorageRefs.delete(ref));
+    };
   }
 
   getRecord(runtime_session_ref: string): RuntimeSessionRecord | undefined {
@@ -214,18 +303,20 @@ export class RuntimeSessionStore {
       : createLocalIdentityEnvironmentFacts(input.identity_environment);
     const identityError = identityEnvironmentUnavailable(identityEnvironment);
     if (identityError) return unavailableSession("identity_environment_unavailable", identityError);
+    if (this.mutatingIdentityEnvironmentRefs.has(identityEnvironment.identity_environment_ref) ||
+      this.mutatingProfileStorageRefs.has(identityEnvironment.browser_storage.profile_storage_ref)) {
+      return unavailableSession("session_locked", error("session_locked", "Identity environment is reserved by a local mutation.", true));
+    }
 
     const owner = input.control_owner ?? "agent";
     const holder = input.holder_ref ?? owner;
     const headless = input.headless ?? owner !== "user";
-    const existing = input.reuse_existing === false
-      ? null
-      : this.findIdentitySession(
-        identityEnvironment.profile_ref,
-        identityEnvironment.identity_environment_ref,
-        identityEnvironment.execution_identity_ref
-      );
-    if (existing && (
+    const existing = this.findIdentitySession(
+      identityEnvironment.profile_ref,
+      identityEnvironment.identity_environment_ref,
+      identityEnvironment.execution_identity_ref
+    );
+    if (input.reuse_existing !== false && existing && (
       existing.headless === headless ||
       (owner === "core_task" && !existing.headless &&
         (existing.read_operation_user_release_pending || existing.read_operation_user_confirmed))
@@ -251,13 +342,19 @@ export class RuntimeSessionStore {
       }
     }
 
+    if (this.openingIdentityEnvironmentRefs.has(identityEnvironment.identity_environment_ref)) {
+      return unavailableSession("session_locked", error("session_locked", "Identity environment is already opening.", true));
+    }
+
     return this.createSession({
       ...input,
+      browser_path: undefined,
       url: input.url,
       identity_environment_ref: identityEnvironment.identity_environment_ref,
       execution_identity_ref: identityEnvironment.execution_identity_ref,
       profile_ref: identityEnvironment.profile_ref,
       profile_storage_ref: identityEnvironment.browser_storage.profile_storage_ref,
+      managed_identity_environment: identityEnvironment,
       control_owner: owner,
       holder_ref: holder,
       headless
@@ -319,7 +416,17 @@ export class RuntimeSessionStore {
   async closeSession(runtime_session_ref: string): Promise<RuntimeSessionFacts | null> {
     const record = this.records.get(runtime_session_ref);
     if (!record) return null;
-    await record.close?.();
+    if (record.facts.lifecycle_state === "closed") {
+      record.profile_ownership?.release();
+      delete record.profile_ownership;
+      return snapshot(record.facts);
+    }
+    try {
+      await record.close?.();
+    } finally {
+      record.profile_ownership?.release();
+      delete record.profile_ownership;
+    }
     const now = new Date().toISOString();
     record.facts.lifecycle_state = "closed";
     record.facts.closed_at = now;
@@ -341,6 +448,19 @@ export class RuntimeSessionStore {
     record.facts.current_page = { ...record.facts.current_page, status: "unavailable", observed_at: now };
     this.viewerControls.markClosed(runtime_session_ref, now);
     return snapshot(record.facts);
+  }
+
+  async closeAllSessions(): Promise<void> {
+    const failures: unknown[] = [];
+    for (const runtimeSessionRef of this.records.keys()) {
+      if (this.records.get(runtimeSessionRef)?.facts.lifecycle_state === "closed") continue;
+      try {
+        await this.closeSession(runtimeSessionRef);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length > 0) throw new AggregateError(failures, "Unable to close every Runtime Session.");
   }
 
   markSnapshotCaptured(runtime_session_ref: string, captured_at: string, evidence_refs: readonly string[]): void {

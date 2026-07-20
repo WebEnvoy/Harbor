@@ -1,0 +1,152 @@
+import assert from "node:assert/strict";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
+import {
+  LocalIdentityEnvironmentManager,
+  type IdentityEnvironmentMutationRequest
+} from "./index.js";
+import type { IdentityEnvironmentMutationPersistenceState } from "./identity-environment-mutation-types.js";
+import { copyRequest, copyTarget, createMutationInput, identityInput, mutationTarget, tempDir } from "./identity-environment-mutation-test-helpers.js";
+import { profileStoragePath } from "./profile-storage.js";
+
+test("custom persistence reloads records, receipts, and configuration", () => {
+  let state: IdentityEnvironmentMutationPersistenceState | null = null;
+  const persistence = {
+    load_state: () => state,
+    persist_state: (next: IdentityEnvironmentMutationPersistenceState) => { state = structuredClone(next); }
+  };
+  const createRequest: IdentityEnvironmentMutationRequest = {
+    operation: "create",
+    idempotency_key: "custom-create",
+    identity_environment: {
+      ...createMutationInput(),
+      language: "en-US",
+      timezone: "Europe/London",
+      viewport: "1280x720"
+    }
+  };
+  const first = new LocalIdentityEnvironmentManager(persistence).mutate(createRequest);
+  const identityRef = mutationTarget(createRequest).identity_environment_ref;
+  assert.equal(first.status, "completed");
+
+  const reloaded = new LocalIdentityEnvironmentManager(persistence);
+  assert.deepEqual(reloaded.mutate(createRequest), first);
+  assert.deepEqual(reloaded.get(identityRef)?.environment_summary, first.record?.environment_summary);
+  assert.equal(requiredState(state).mutation_receipts.length, 1);
+  assert.deepEqual(requiredState(state).repairs, []);
+});
+
+test("rolls back clean failures and records durable repair state", () => {
+  let persistenceWrites = 0;
+  let persisted: IdentityEnvironmentMutationPersistenceState | null = null;
+  let rolledBack = false;
+  const persistenceFailure = new LocalIdentityEnvironmentManager({
+    load_state: () => persisted,
+    persist_state: (state) => {
+      persistenceWrites += 1;
+      if (persistenceWrites > 1) throw new Error("persistence unavailable");
+      persisted = structuredClone(state);
+    },
+    stage_profile_copy: () => ({
+      commit: () => undefined,
+      rollback: () => { rolledBack = true; return true; },
+      residual: () => false
+    })
+  });
+  persistenceFailure.create(identityInput("identity-persist-source", "profile-persist-source"));
+  const failedRequest = copyRequest("identity-persist-source", "copy-persist-fail");
+  const failedTarget = copyTarget(failedRequest).identity_environment_ref;
+  const failed = persistenceFailure.mutate(failedRequest);
+  assert.equal(failed.failure?.code, "persistence_failed");
+  assert.equal(rolledBack, true);
+  assert.equal(persistenceFailure.get(failedTarget), null);
+
+  const cleanRollback = new LocalIdentityEnvironmentManager({
+    stage_profile_copy: () => ({ commit: () => { throw new Error("copy failed"); }, rollback: () => true, residual: () => false })
+  });
+  cleanRollback.create(identityInput("identity-clean-source", "profile-clean-source"));
+  const cleanRequest = copyRequest("identity-clean-source", "copy-clean-fail");
+  const cleanTarget = copyTarget(cleanRequest).identity_environment_ref;
+  const cleanFailure = cleanRollback.mutate(cleanRequest);
+  assert.equal(cleanFailure.failure?.code, "mutation_failed");
+  assert.equal(cleanRollback.get(cleanTarget), null);
+
+  const residual = new LocalIdentityEnvironmentManager({
+    stage_profile_copy: () => ({ commit: () => { throw new Error("copy failed"); }, rollback: () => false, residual: () => true })
+  });
+  residual.create(identityInput("identity-residual-source", "profile-residual-source"));
+  const residualRequest = copyRequest("identity-residual-source", "copy-residual");
+  const residualTarget = copyTarget(residualRequest).identity_environment_ref;
+  assert.equal(residual.mutate(residualRequest).status, "repair_required");
+  assert.equal(residual.get(residualTarget)?.status.repair_state, "repair_required");
+  assert.equal(residual.mutate(residualRequest).failure?.code, "mutation_failed");
+  assert.equal(residual.get(residualTarget), null);
+});
+
+test("delete removes all local material and resumes durable repair after restart", async () => {
+  const root = tempDir("durable-delete");
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = root;
+  let state: IdentityEnvironmentMutationPersistenceState | null = null;
+  const persistence = {
+    load_state: () => state,
+    persist_state: (next: IdentityEnvironmentMutationPersistenceState) => { state = structuredClone(next); }
+  };
+  const request: IdentityEnvironmentMutationRequest = {
+    operation: "delete",
+    idempotency_key: "delete-durable",
+    identity_environment_ref: "identity-delete",
+    confirmation: "delete_local_data"
+  };
+  try {
+    const manager = new LocalIdentityEnvironmentManager({ ...persistence, delete_local_material: () => "unknown" });
+    manager.create({
+      ...identityInput("identity-delete", "profile-delete"),
+      cookie_jar_ref: "cookie-owner",
+      browser_storage_ref: "storage-owner",
+      credential_ref: "credential-owner",
+      keychain_ref: "keychain-owner",
+      local_secret_ref: "secret-owner"
+    });
+    const profilePath = profileStoragePath("profile-delete:storage");
+    mkdirSync(profilePath, { recursive: true });
+    writeFileSync(join(profilePath, "Cookies"), "owner-session");
+
+    const interrupted = manager.mutate(request);
+    assert.equal(interrupted.status, "repair_required");
+    assert.equal(interrupted.failure?.code, "local_material_cleanup_unavailable");
+    assert.equal(manager.get("identity-delete"), null);
+    assert.equal(existsSync(profilePath), false);
+    assert.equal(requiredState(state).records.length, 0);
+    assert.equal(requiredState(state).mutation_receipts[0]?.result.status, "repair_required");
+    assert.equal(requiredState(state).repairs.length, 1);
+
+    let deletedRefs: unknown = null;
+    const repairedManager = new LocalIdentityEnvironmentManager({
+      ...persistence,
+      delete_local_material: (refs) => { deletedRefs = refs; return "deleted"; }
+    });
+    const repaired = repairedManager.mutate(request);
+    assert.equal(repaired.status, "completed");
+    assert.deepEqual(deletedRefs, {
+      cookie_jar_ref: "cookie-owner",
+      browser_storage_ref: "storage-owner",
+      credential_ref: "credential-owner",
+      keychain_ref: "keychain-owner",
+      local_secret_ref: "secret-owner"
+    });
+    assert.equal(requiredState(state).repairs.length, 0);
+    assert.deepEqual(new LocalIdentityEnvironmentManager(persistence).mutate(request), repaired);
+    assert.equal(JSON.stringify(repaired).includes("cookie-owner"), false);
+  } finally {
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function requiredState(state: IdentityEnvironmentMutationPersistenceState | null): IdentityEnvironmentMutationPersistenceState {
+  assert.ok(state);
+  return state;
+}

@@ -1,7 +1,10 @@
 import { createFixtureLauncher, DEFAULT_IDENTITY_SITE_URLS, HarborRuntime } from "./index.js";
 
 const useLocalProvider = process.argv.includes("--local");
-const runtime = new HarborRuntime(useLocalProvider ? undefined : createFixtureLauncher("ready"));
+const runtime = new HarborRuntime(
+  useLocalProvider ? undefined : createFixtureLauncher("ready"),
+  useLocalProvider ? {} : { resolve_proxy: () => "http://127.0.0.1:8080" }
+);
 const providerStatus = runtime.getBrowserProviderStatus();
 const providerBinding = runtime.getIdentityEnvironmentProviderBinding();
 const identityEnvironment = runtime.getLocalIdentityEnvironmentFacts({

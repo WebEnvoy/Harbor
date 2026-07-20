@@ -2,14 +2,21 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import {
   HarborRuntime,
   HARBOR_RUNTIME_FACTS_SCHEMA,
-  type LocalIdentityEnvironmentStateUpdate,
-  type ManagedLocalIdentityEnvironmentInput,
   type OpenIdentityEnvironmentSessionInput,
   type RuntimeErrorFact,
   type RuntimeSessionControlInput,
   type SiteResourceFactsInput,
   type WritePrecheckInput
 } from "./index.js";
+import {
+  authorizeIdentityEnvironmentMutationRequest,
+  identityEnvironmentMutationStatusCode,
+  isIdentityEnvironmentConfiguration,
+  isIdentityEnvironmentMutationRequest,
+  legacyIdentityEnvironmentCreateMutation,
+  legacyIdentityEnvironmentDeleteMutation,
+  legacyIdentityEnvironmentIdempotencyKey
+} from "./identity-environment-mutation-http.js";
 import { ManualAuthenticationAuthorizer } from "./manual-authentication-authorization.js";
 
 export const HARBOR_RUNTIME_API_READINESS_SCHEMA = "harbor-runtime-api-readiness/v0";
@@ -49,7 +56,8 @@ export function createHarborRuntimeHttpServer(
 
 export async function startHarborRuntimeServer(options: HarborRuntimeServerOptions = {}): Promise<RunningHarborRuntimeServer> {
   const host = options.host ?? "127.0.0.1";
-  const server = createHarborRuntimeHttpServer(options.runtime, options);
+  const runtime = options.runtime ?? new HarborRuntime();
+  const server = createHarborRuntimeHttpServer(runtime, options);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.port ?? 8788, host, () => {
@@ -64,7 +72,10 @@ export async function startHarborRuntimeServer(options: HarborRuntimeServerOptio
     host,
     port,
     url: `http://${host}:${port}`,
-    close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    close: async () => {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await runtime.close();
+    }
   };
 }
 
@@ -96,15 +107,26 @@ async function route(
     return;
   }
 
+  if (method === "POST" && url.pathname === "/runtime/identity-environment-mutations") {
+    if (!authorizeIdentityEnvironmentMutationRequest(manualAuthenticationAuthorizer, request, response)) return;
+    const body = await readJson<unknown>(request);
+    if (!isIdentityEnvironmentMutationRequest(body)) throw new BadRequest("Invalid identity environment mutation request.");
+    const result = runtime.mutateLocalIdentityEnvironment(body);
+    writeJson(response, identityEnvironmentMutationStatusCode(result), result);
+    return;
+  }
+
   if (method === "POST" && url.pathname === "/runtime/identity-environments") {
-    const body = await readJson<ManagedLocalIdentityEnvironmentInput & { operation?: "create" | "import" }>(request);
-    const operation = body.operation ?? "create";
-    writeJson(response, 201, operation === "import" ? runtime.importLocalIdentityEnvironment(body) : runtime.createLocalIdentityEnvironment(body));
+    if (!authorizeIdentityEnvironmentMutationRequest(manualAuthenticationAuthorizer, request, response)) return;
+    const mutation = legacyIdentityEnvironmentCreateMutation(await readJson<unknown>(request), request);
+    if (!mutation) throw new BadRequest("Invalid identity environment create/import request.");
+    const result = runtime.mutateLocalIdentityEnvironment(mutation);
+    writeJson(response, identityEnvironmentMutationStatusCode(result), result);
     return;
   }
 
   if (parts[0] === "runtime" && parts[1] === "identity-environments" && parts[2] && parts.length === 3) {
-    await routeIdentityEnvironment(runtime, parts[2], method, request, response);
+    await routeIdentityEnvironment(runtime, manualAuthenticationAuthorizer, parts[2], method, request, response);
     return;
   }
 
@@ -153,6 +175,7 @@ function readinessBody(): object {
       "/runtime/health",
       "/runtime/browser-providers",
       "/runtime/identity-environments",
+      "/runtime/identity-environment-mutations",
       "/runtime/identity-environments/{identity_environment_ref}",
       "/runtime/identity-environment-sessions",
       "/runtime/sessions/{runtime_session_ref}",
@@ -178,6 +201,7 @@ function readinessBody(): object {
 
 async function routeIdentityEnvironment(
   runtime: HarborRuntime,
+  manualAuthenticationAuthorizer: ManualAuthenticationAuthorizer,
   identityEnvironmentRef: string,
   method: string,
   request: IncomingMessage,
@@ -189,14 +213,27 @@ async function routeIdentityEnvironment(
     return;
   }
   if (method === "PATCH") {
-    const body = await readJson<LocalIdentityEnvironmentStateUpdate>(request);
-    const record = runtime.updateLocalIdentityEnvironment(identityEnvironmentRef, body);
-    writeJson(response, record ? 200 : 404, record ?? identityEnvironmentMissing(identityEnvironmentRef));
+    if (!authorizeIdentityEnvironmentMutationRequest(manualAuthenticationAuthorizer, request, response)) return;
+    const configuration = await readJson<unknown>(request);
+    if (!isIdentityEnvironmentConfiguration(configuration)) throw new BadRequest("Invalid identity environment edit request.");
+    const idempotencyKey = legacyIdentityEnvironmentIdempotencyKey(request);
+    if (!idempotencyKey) throw new BadRequest("Idempotency-Key is required.");
+    const result = runtime.mutateLocalIdentityEnvironment({
+      operation: "edit",
+      idempotency_key: idempotencyKey,
+      identity_environment_ref: identityEnvironmentRef,
+      configuration
+    });
+    writeJson(response, identityEnvironmentMutationStatusCode(result), result);
     return;
   }
   if (method === "DELETE") {
-    const record = runtime.deleteLocalIdentityEnvironment(identityEnvironmentRef);
-    writeJson(response, record ? 200 : 404, record ?? identityEnvironmentMissing(identityEnvironmentRef));
+    if (!authorizeIdentityEnvironmentMutationRequest(manualAuthenticationAuthorizer, request, response)) return;
+    const body = await readJson<unknown>(request);
+    const mutation = legacyIdentityEnvironmentDeleteMutation(identityEnvironmentRef, body, request);
+    if (!mutation) throw new BadRequest("Invalid identity environment remove/delete request.");
+    const result = runtime.mutateLocalIdentityEnvironment(mutation);
+    writeJson(response, identityEnvironmentMutationStatusCode(result), result);
     return;
   }
   writeJson(response, 405, { error: "method_not_allowed", method });

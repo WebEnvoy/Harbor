@@ -131,6 +131,7 @@ export interface CreateRuntimeSessionInput {
   provider_ref?: string;
   control_owner?: ControlOwner;
   holder_ref?: string;
+  managed_identity_environment?: LocalIdentityEnvironmentFacts;
 }
 
 export interface OpenIdentityEnvironmentSessionInput extends CreateRuntimeSessionInput {
@@ -152,6 +153,8 @@ export interface LocalProviderLaunchInput {
   profile_ref: string;
   profile_storage_ref?: string;
   provider_ref: string;
+  identity_environment?: LocalIdentityEnvironmentFacts;
+  resolve_proxy?: (proxy_ref: string) => string | null;
 }
 
 export interface LocalProviderPageFacts {

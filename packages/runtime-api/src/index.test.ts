@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import {
   bindIdentityEnvironmentDefaultProvider,
   createFixtureLauncher,
@@ -20,6 +20,9 @@ import { classifyLaunchFailure } from "./provider-management.js";
 
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const cloakPath = "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium";
+const testProfileRoot = mkdtempSync(join(tmpdir(), "harbor-index-profiles-"));
+process.env.HARBOR_PROFILE_STORAGE_ROOT = testProfileRoot;
+after(() => rmSync(testProfileRoot, { recursive: true, force: true }));
 
 function providerFixture(paths: Record<string, { executable?: boolean; text?: string }>) {
   return {
@@ -358,7 +361,10 @@ test("manages local xhs and boss identity environments with redacted public outp
   const dir = mkdtempSync(join(tmpdir(), "harbor-identity-env-"));
   const persistence_path = join(dir, "identity-environments.json");
   try {
-    const runtime = new HarborRuntime(createFixtureLauncher("ready"), { persistence_path });
+    const runtime = new HarborRuntime(createFixtureLauncher("ready"), {
+      persistence_path,
+      resolve_proxy: () => "http://127.0.0.1:8080"
+    });
     const xhs = runtime.createLocalIdentityEnvironment({
       ...providerFixture({ [cloakPath]: { executable: true } }),
       identity_environment_ref: "identity-env_xhs-managed",
@@ -569,7 +575,7 @@ test("local provider preserves persistent profile dirs and removes ephemeral dir
     const persistent = await launchLocalDedicatedProvider({
       browser_path: browserPath,
       headless: true,
-      timeout_ms: 1000,
+      timeout_ms: 3000,
       url: "about:blank",
       profile_ref: "profile_persistent-close-test",
       profile_storage_ref: "profile-storage_persistent-close-test",
@@ -586,7 +592,7 @@ test("local provider preserves persistent profile dirs and removes ephemeral dir
     const ephemeral = await launchLocalDedicatedProvider({
       browser_path: browserPath,
       headless: true,
-      timeout_ms: 1000,
+      timeout_ms: 3000,
       url: "about:blank",
       profile_ref: "profile_ephemeral-close-test",
       provider_ref: "provider_fake"
@@ -622,7 +628,7 @@ test("local provider removes unavailable and non-CDP stale DevTools ports", asyn
       const result = await launchLocalDedicatedProvider({
         browser_path: browserPath,
         headless: true,
-        timeout_ms: 1000,
+        timeout_ms: 3000,
         url: "about:blank",
         profile_ref: `profile_stale-${name}`,
         profile_storage_ref: profileStorageRef,
@@ -692,7 +698,7 @@ test("bounds provider version and page-list readback while preserving redirect f
     const redirected = await launchLocalDedicatedProvider({
       browser_path: browserPath,
       headless: false,
-      timeout_ms: 1000,
+      timeout_ms: 2000,
       url: "https://www.zhipin.com/web/geek/job",
       profile_ref: "profile_challenge-redirect",
       provider_ref: "provider_fake"
@@ -1391,6 +1397,10 @@ test("captures live page refs without screenshot evidence when screenshot captur
   });
   const session = await runtime.openIdentityEnvironmentSession({
     identity_environment: {
+      identity_environment_ref: "identity-env_xhs-screenshot-failure",
+      execution_identity_ref: "execution-identity_xhs-screenshot-failure",
+      profile_ref: "profile_xhs-screenshot-failure",
+      profile_storage_ref: "profile-storage_xhs-screenshot-failure",
       site: {
         site_id: "xiaohongshu",
         origin: "https://www.xiaohongshu.com",

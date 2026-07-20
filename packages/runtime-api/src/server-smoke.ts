@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Readable } from "node:stream";
 import { validateReadOperationProbe } from "./local-provider-launcher.js";
 
@@ -13,6 +16,7 @@ interface StartupLine {
 const endpointsChecked: string[] = [];
 const supervisorToken = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const xhsNoteUrl = "https://www.xiaohongshu.com/explore/0123456789abcdef01234567";
+const smokeRoot = mkdtempSync(join(tmpdir(), "harbor-runtime-api-smoke-"));
 const xhsProbe = validateReadOperationProbe({
   site_id: "xiaohongshu",
   operation_id: "xhs_search_notes",
@@ -44,6 +48,8 @@ const child = spawn("pnpm", ["start:runtime"], {
     ...process.env,
     HARBOR_RUNTIME_PORT: "0",
     HARBOR_RUNTIME_PROVIDER: "fixture",
+    HARBOR_IDENTITY_ENVIRONMENTS_PATH: join(smokeRoot, "identity-environments.json"),
+    HARBOR_PROFILE_STORAGE_ROOT: join(smokeRoot, "profiles"),
     HARBOR_MANUAL_AUTH_SUPERVISOR_TOKEN: supervisorToken
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -68,10 +74,6 @@ try {
   assert.deepEqual(emptyEnvironments.identity_environments, []);
 
   const identityEnvironment = await postJson(startup.url, "/runtime/identity-environments", {
-    identity_environment_ref: "identity-env_api-smoke",
-    execution_identity_ref: "execution-identity_api-smoke",
-    profile_ref: "profile_api-smoke",
-    profile_storage_ref: "profile-storage_api-smoke",
     site: {
       site_id: "xiaohongshu",
       origin: "https://www.xiaohongshu.com",
@@ -84,14 +86,32 @@ try {
     timezone: "Asia/Shanghai",
     fingerprint_summary: "fixture-provider-claim"
   });
-  assert.equal(identityEnvironment.identity_environment_ref, "identity-env_api-smoke");
+  assert.match(identityEnvironment.identity_environment_ref, /^identity-env_[a-f0-9]{24}$/);
   assert.equal(identityEnvironment.public_boundary.raw_material, "not_exposed");
+
+  const mutationCreate = await postJson(startup.url, "/runtime/identity-environment-mutations", {
+    operation: "create",
+    idempotency_key: "api-smoke-create",
+    identity_environment: {
+      site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com" }
+    }
+  });
+  assert.equal(mutationCreate.schema_version, "harbor-identity-environment-mutation/v1");
+  assert.equal(mutationCreate.status, "completed");
+  assert.match(mutationCreate.identity_environment_ref, /^identity-env_[a-f0-9]{24}$/);
+
+  const mutationRemove = await postJson(startup.url, "/runtime/identity-environment-mutations", {
+    operation: "remove",
+    idempotency_key: "api-smoke-remove",
+    identity_environment_ref: mutationCreate.identity_environment_ref
+  });
+  assert.equal(mutationRemove.effects.local_data, "preserved");
 
   const environments = await getJson(startup.url, "/runtime/identity-environments");
   assert.equal(environments.identity_environments.length, 1);
 
   const session = await postJson(startup.url, "/runtime/identity-environment-sessions", {
-    identity_environment_ref: "identity-env_api-smoke",
+    identity_environment_ref: identityEnvironment.identity_environment_ref,
     url: "https://example.test/runtime-api-smoke",
     control_owner: "agent",
     holder_ref: "api-smoke"
@@ -142,6 +162,7 @@ try {
   }, null, 2));
 } finally {
   await stop(child);
+  rmSync(smokeRoot, { recursive: true, force: true });
 }
 
 async function getJson(baseUrl: string, path: string): Promise<any> {
@@ -151,12 +172,13 @@ async function getJson(baseUrl: string, path: string): Promise<any> {
   return response.json();
 }
 
-async function postJson(baseUrl: string, path: string, body: unknown, authorized = false): Promise<any> {
+async function postJson(baseUrl: string, path: string, body: unknown, authorized = true): Promise<any> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     body: JSON.stringify(body),
     headers: {
       "content-type": "application/json",
+      "idempotency-key": `smoke-${endpointsChecked.length}`,
       ...(authorized ? { authorization: `Bearer ${supervisorToken}` } : {})
     }
   });

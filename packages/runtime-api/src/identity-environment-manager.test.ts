@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalIdentityEnvironmentManager } from "./identity-environment-manager.js";
+import { resolveIdentityEnvironmentStorePath } from "./identity-environment-store.js";
+import type { IdentityEnvironmentMutationPersistenceState } from "./identity-environment-mutation-types.js";
+
+test("resolves a persistent identity environment store for the production runtime by default", () => {
+  assert.equal(
+    resolveIdentityEnvironmentStorePath(undefined, "/home/test"),
+    "/home/test/.webenvoy/harbor/identity-environments.json"
+  );
+  assert.equal(resolveIdentityEnvironmentStorePath("/configured/identities.json", "/home/test"), "/configured/identities.json");
+});
 
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
@@ -47,9 +57,12 @@ test("user confirmation clears only the authentication gate for a restricted Chr
 
 test("rebinds only valid user-confirmed authentication and rolls back on persistence failure", () => {
   let failPersistence = false;
+  let state: IdentityEnvironmentMutationPersistenceState | null = null;
   const manager = new LocalIdentityEnvironmentManager({
-    persist_records: () => {
+    load_state: () => state,
+    persist_state: (next) => {
       if (failPersistence) throw new Error("persistence unavailable");
+      state = structuredClone(next);
     }
   });
   const created = manager.create({

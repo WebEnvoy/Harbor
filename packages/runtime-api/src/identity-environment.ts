@@ -35,11 +35,17 @@ export interface LocalIdentityEnvironmentInput extends BrowserProviderDetectionI
   proxy_ref?: string;
   proxy_label?: string;
   region?: string;
+  geoip_mode?: "proxy" | "system" | "disabled";
   language?: string;
   timezone?: string;
   browser_family?: string;
   user_agent_summary?: string;
   viewport?: string;
+  hardware_concurrency?: number;
+  device_memory_gb?: number;
+  gpu_profile?: string;
+  interaction_preset?: "default" | "humanized";
+  fingerprint_strategy?: "provider_default" | "stable";
   fingerprint_summary?: string;
   credential_ref?: string;
   keychain_ref?: string;
@@ -96,11 +102,17 @@ export interface LocalIdentityEnvironmentFacts {
   environment: {
     proxy: { state: "configured" | "missing" | "unknown"; proxy_ref: string | null; label: string | null };
     region: string | null;
+    geoip_mode: "proxy" | "system" | "disabled" | null;
     language: string | null;
     timezone: string | null;
     browser_family: string;
     user_agent_summary: string | null;
     viewport: string | null;
+    hardware_concurrency: number | null;
+    device_memory_gb: number | null;
+    gpu_profile: string | null;
+    interaction_preset: "default" | "humanized" | null;
+    fingerprint_strategy: "provider_default" | "stable" | null;
     fingerprint_summary: string;
   };
   provider_binding: IdentityEnvironmentProviderBinding;
@@ -211,11 +223,17 @@ export function createLocalIdentityEnvironmentFacts(input: LocalIdentityEnvironm
         label: input.proxy_label ?? null
       },
       region: input.region ?? null,
+      geoip_mode: input.geoip_mode ?? null,
       language: input.language ?? null,
       timezone: input.timezone ?? null,
-      browser_family: input.browser_family ?? providerBinding.selected_provider_id ?? "unknown",
+      browser_family: providerBinding.selected_provider_id ?? "unknown",
       user_agent_summary: input.user_agent_summary ?? null,
       viewport: input.viewport ?? null,
+      hardware_concurrency: input.hardware_concurrency ?? null,
+      device_memory_gb: input.device_memory_gb ?? null,
+      gpu_profile: input.gpu_profile ?? null,
+      interaction_preset: input.interaction_preset ?? null,
+      fingerprint_strategy: input.fingerprint_strategy ?? null,
       fingerprint_summary: input.fingerprint_summary ?? "not_configured"
     },
     provider_binding: providerBinding,

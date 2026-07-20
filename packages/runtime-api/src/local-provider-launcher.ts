@@ -1,7 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   bindIdentityEnvironmentDefaultProvider,
@@ -10,6 +9,11 @@ import {
   type IdentityEnvironmentProviderBinding
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
+import {
+  resolveIdentityEnvironmentLaunchConfiguration,
+  type ResolvedIdentityEnvironmentLaunchConfiguration
+} from "./identity-environment-configuration.js";
+import { prepareProfileStorage } from "./profile-storage.js";
 import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe } from "./read-operation-probe-trust.js";
 import type {
   BossJobDetailPublicSummary,
@@ -35,21 +39,25 @@ type ObservedDetailPublicSummary = Omit<XiaohongshuNoteDetailPublicSummary, "sou
 
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
-  const providerBinding = explicitBrowserPath ? null : bindIdentityEnvironmentDefaultProvider();
+  const providerBinding = explicitBrowserPath
+    ? null
+    : input.identity_environment?.provider_binding ?? bindIdentityEnvironmentDefaultProvider();
   const browserPath = explicitBrowserPath || providerBinding?.selected_provider?.install.path || "";
   if (!browserPath) {
     const diagnostic = providerBinding?.diagnostics[0] ?? diagnoseBrowserProviderFailure({ provider_id: "cloakbrowser", failure_class: "not_installed" });
     return unavailable("provider_unavailable", diagnostic.app_summary, providerBindingFacts(providerBinding));
   }
   const profileStorage = await prepareProfileStorage(input.profile_storage_ref);
-  const args = [
-    "--remote-debugging-port=0",
-    `--user-data-dir=${profileStorage.profileDir}`,
-    "--no-default-browser-check",
-    "--no-first-run",
-    ...(input.headless ? ["--headless=new"] : []),
-    input.url
-  ];
+  const providerConfiguration = input.identity_environment
+    ? resolveIdentityEnvironmentLaunchConfiguration(input.identity_environment, input.resolve_proxy)
+    : null;
+  if (input.identity_environment && !providerConfiguration) {
+    return unavailable("unsupported", "Identity environment configuration cannot be resolved by the selected local provider.", [
+      ...providerBindingFacts(providerBinding),
+      ...profileStorage.facts
+    ]);
+  }
+  const args = providerLaunchArguments(input, profileStorage.profileDir, providerConfiguration);
   await removeStaleDevtoolsPort(profileStorage.profileDir);
   const child = spawn(browserPath, args, { stdio: "ignore" });
   const launchDeadline = Date.now() + Math.max(1, input.timeout_ms);
@@ -57,6 +65,9 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     const port = await waitForDevtoolsPort(profileStorage.profileDir, launchDeadline);
     const readbackSignal = AbortSignal.timeout(remainingLaunchTime(launchDeadline));
     const version = await fetchVersion(port, readbackSignal);
+    const configurationFacts = providerConfiguration
+      ? await applyAndReadbackProviderConfiguration(port, input.url, providerConfiguration, readbackSignal)
+      : [];
     const page = await readPageFacts(port, input.url, readbackSignal);
     let currentUrl = page.current_url ?? input.url;
     const evidence_ref = opaqueRef("validation");
@@ -68,6 +79,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
       page,
       facts: [
         ...providerBindingFacts(providerBinding),
+        ...configurationFacts,
         ...profileStorage.facts,
         { key: "browser.launch", source: "observed", value: "ready", evidence_ref },
         { key: "cdp.version", source: "validation_evidence", value: `${version.Browser} ${version["Protocol-Version"]}`, evidence_ref },
@@ -90,13 +102,31 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
   } catch (error) {
     await closeBrowser(child, profileStorage.profileDir, !profileStorage.persistent);
     const diagnostic = diagnoseBrowserProviderFailure({
-      provider_id: providerBinding?.selected_provider_id ?? "cloakbrowser",
+      provider_id: providerBinding?.selected_provider_id ?? providerConfiguration?.provider_id ?? "cloakbrowser",
       failure_class: classifyLaunchFailure(error),
       path: browserPath,
       message: error instanceof Error ? error.message : "Browser launch failed."
     });
     return unavailable("launch_failed", diagnostic.app_summary, [...providerBindingFacts(providerBinding), ...profileStorage.facts]);
   }
+}
+
+export function providerLaunchArguments(
+  input: Pick<LocalProviderLaunchInput, "headless" | "url">,
+  profileDir: string,
+  configuration: ResolvedIdentityEnvironmentLaunchConfiguration | null
+): string[] {
+  return [
+    "--remote-debugging-port=0",
+    `--user-data-dir=${profileDir}`,
+    "--no-default-browser-check",
+    "--no-first-run",
+    ...(input.headless ? ["--headless=new"] : []),
+    ...(configuration?.proxy_server ? [`--proxy-server=${configuration.proxy_server}`] : []),
+    ...(configuration?.language ? [`--lang=${configuration.language}`] : []),
+    ...(configuration?.viewport ? [`--window-size=${configuration.viewport.width},${configuration.viewport.height}`] : []),
+    configuration ? "about:blank" : input.url
+  ];
 }
 
 const BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS = 3000;
@@ -157,6 +187,10 @@ export function createFixtureLauncher(status: "ready" | "unavailable" | "profile
     if (status === "unavailable") return unavailable("provider_unavailable", "Fixture provider unavailable.");
     if (status === "profile_locked") return unavailable("profile_locked", "Fixture profile is locked by another local browser process.");
     if (status === "session_lost") return unavailable("session_lost", "Fixture Runtime Session was lost before validation could complete.");
+    const configuration = input.identity_environment
+      ? resolveIdentityEnvironmentLaunchConfiguration(input.identity_environment, input.resolve_proxy)
+      : null;
+    if (input.identity_environment && !configuration) return unavailable("unsupported", "Fixture provider could not resolve identity environment configuration.");
     const evidence_ref = opaqueRef("validation");
     const page = readyPage(input.url, `Fixture page for ${input.url}`);
     return {
@@ -166,6 +200,7 @@ export function createFixtureLauncher(status: "ready" | "unavailable" | "profile
       viewer_entry: viewerEntry(input.headless),
       page,
       facts: [
+        ...fixtureIdentityEnvironmentConfigurationFacts(configuration, evidence_ref),
         { key: "browser.launch", source: "observed", value: "ready", evidence_ref },
         { key: "cdp.version", source: "validation_evidence", value: "FixtureBrowser 1.0", evidence_ref },
         ...page.facts
@@ -224,6 +259,82 @@ function providerBindingFacts(binding: IdentityEnvironmentProviderBinding | null
   return facts;
 }
 
+function fixtureIdentityEnvironmentConfigurationFacts(
+  configuration: ResolvedIdentityEnvironmentLaunchConfiguration | null,
+  evidence_ref: string
+): RuntimeFact[] {
+  if (!configuration) return [];
+  const facts: RuntimeFact[] = [
+    { key: "identity_environment.provider_id", source: "validation_evidence", value: configuration.provider_id, evidence_ref }
+  ];
+  if (configuration.proxy_server) facts.push({ key: "identity_environment.proxy", source: "configured", value: "provider_argument_applied" });
+  if (configuration.language) facts.push({ key: "identity_environment.language", source: "observed", value: configuration.language, evidence_ref });
+  if (configuration.timezone) facts.push({ key: "identity_environment.timezone", source: "observed", value: configuration.timezone, evidence_ref });
+  if (configuration.viewport) facts.push({ key: "identity_environment.viewport", source: "observed", value: `${configuration.viewport.width}x${configuration.viewport.height}`, evidence_ref });
+  return facts;
+}
+
+async function applyAndReadbackProviderConfiguration(
+  port: string,
+  requestedUrl: string,
+  configuration: ResolvedIdentityEnvironmentLaunchConfiguration,
+  signal: AbortSignal
+): Promise<RuntimeFact[]> {
+  const evidence_ref = opaqueRef("validation");
+  const facts: RuntimeFact[] = [
+    { key: "identity_environment.provider_id", source: "validation_evidence", value: configuration.provider_id, evidence_ref }
+  ];
+  if (configuration.proxy_server) {
+    facts.push({ key: "identity_environment.proxy", source: "configured", value: "provider_argument_applied" });
+  }
+
+  const page = await activePage(port, requestedUrl, signal);
+  if (!page.webSocketDebuggerUrl) throw new Error("Identity environment configuration has no controlled CDP page target.");
+  const observed = await withCdp(page.webSocketDebuggerUrl, async (client) => {
+    if (configuration.language) await client.send("Emulation.setLocaleOverride", { locale: configuration.language });
+    if (configuration.timezone) await client.send("Emulation.setTimezoneOverride", { timezoneId: configuration.timezone });
+    if (configuration.viewport) {
+      await client.send("Emulation.setDeviceMetricsOverride", {
+        width: configuration.viewport.width,
+        height: configuration.viewport.height,
+        deviceScaleFactor: 1,
+        mobile: false
+      });
+    }
+    const result = await client.send("Runtime.evaluate", {
+      expression: `(() => ({ language: navigator.language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, width: window.innerWidth, height: window.innerHeight }))()`,
+      returnByValue: true
+    });
+    const value = (result.result as { value?: { language?: unknown; timezone?: unknown; width?: unknown; height?: unknown } } | undefined)?.value;
+    if (requestedUrl !== "about:blank") {
+      const navigation = await client.send("Page.navigate", { url: requestedUrl });
+      if (navigation.errorText) throw new Error("Provider could not navigate after applying identity environment configuration.");
+    }
+    return value;
+  }, signal);
+  if (!observed) throw new Error("Provider environment readback returned no observation.");
+  if (configuration.language) {
+    if (observed.language !== configuration.language) throw new Error("Provider locale readback did not match configured language.");
+    facts.push({ key: "identity_environment.language", source: "observed", value: configuration.language, evidence_ref });
+  }
+  if (configuration.timezone) {
+    if (observed.timezone !== configuration.timezone) throw new Error("Provider timezone readback did not match configured timezone.");
+    facts.push({ key: "identity_environment.timezone", source: "observed", value: configuration.timezone, evidence_ref });
+  }
+  if (configuration.viewport) {
+    if (observed.width !== configuration.viewport.width || observed.height !== configuration.viewport.height) {
+      throw new Error("Provider viewport readback did not match configured dimensions.");
+    }
+    facts.push({
+      key: "identity_environment.viewport",
+      source: "observed",
+      value: `${configuration.viewport.width}x${configuration.viewport.height}`,
+      evidence_ref
+    });
+  }
+  return facts;
+}
+
 function viewerEntry(headless: boolean): Exclude<LocalProviderLaunchResult, { status: "unavailable" }>["viewer_entry"] {
   return headless ? {
     availability: "unsupported",
@@ -239,34 +350,6 @@ function viewerEntry(headless: boolean): Exclude<LocalProviderLaunchResult, { st
   };
 }
 
-async function prepareProfileStorage(profileStorageRef: string | undefined): Promise<{
-  profileDir: string;
-  persistent: boolean;
-  facts: RuntimeFact[];
-}> {
-  if (!profileStorageRef) {
-    return {
-      profileDir: await mkdtemp(join(tmpdir(), "harbor-profile-")),
-      persistent: false,
-      facts: [{ key: "profile.storage_scope", source: "configured", value: "ephemeral" }]
-    };
-  }
-
-  const storageRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT || join(homedir(), ".webenvoy", "harbor", "profiles");
-  const storageId = createHash("sha256").update(profileStorageRef).digest("hex").slice(0, 32);
-  const profileDir = join(storageRoot, storageId);
-  await mkdir(profileDir, { recursive: true, mode: 0o700 });
-  await chmod(profileDir, 0o700);
-  return {
-    profileDir,
-    persistent: true,
-    facts: [
-      { key: "profile.storage_scope", source: "configured", value: "persistent_ref" },
-      { key: "profile.storage_ref.bound", source: "configured", value: "redacted_ref" }
-    ]
-  };
-}
-
 async function waitForDevtoolsPort(profileDir: string, deadline: number): Promise<string> {
   const portFile = join(profileDir, "DevToolsActivePort");
   while (Date.now() < deadline) {
@@ -274,7 +357,7 @@ async function waitForDevtoolsPort(profileDir: string, deadline: number): Promis
       const [port] = (await readFile(portFile, "utf8")).trim().split("\n");
       if (port) return port;
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
   throw new Error("Timed out waiting for local browser CDP readiness.");
