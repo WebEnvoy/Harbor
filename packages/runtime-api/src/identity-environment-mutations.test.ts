@@ -22,9 +22,33 @@ import {
 } from "./identity-environment-mutation-test-helpers.js";
 import { profileStoragePath } from "./profile-storage.js";
 import { startHarborRuntimeServer } from "./server.js";
-import type { IdentityEnvironmentMutationPersistenceState } from "./identity-environment-mutation-types.js";
+import {
+  parseLegacyIdentityEnvironmentInitialState,
+  type IdentityEnvironmentMutationPersistenceState
+} from "./identity-environment-mutation-types.js";
 
 after(isolateProfileStorage("identity-mutations"));
+
+test("snapshots legacy initial state properties before validating them", () => {
+  const cases = [
+    ["login_state", "logged_in", "forged_state"],
+    ["login_state_reason", "initial_login_required", 42],
+    ["storage_state", "present", "forged_state"],
+    ["manual_authentication_state", "completed", "forged_state"]
+  ] as const;
+
+  for (const [key, validValue, forgedValue] of cases) {
+    let reads = 0;
+    const input = {} as Record<string, unknown>;
+    Object.defineProperty(input, key, {
+      enumerable: true,
+      get: () => (++reads === 1 ? validValue : forgedValue)
+    });
+
+    assert.deepEqual(parseLegacyIdentityEnvironmentInitialState(input), { [key]: validValue });
+    assert.equal(reads, 1);
+  }
+});
 
 test("persists idempotent receipts and rejects sensitive or conflicting payloads", () => {
   const dir = tempDir("receipts");
