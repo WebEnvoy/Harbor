@@ -1,14 +1,24 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import {
   LocalIdentityEnvironmentManager,
   type IdentityEnvironmentMutationRequest
 } from "./index.js";
 import type { IdentityEnvironmentMutationPersistenceState } from "./identity-environment-mutation-types.js";
-import { copyRequest, copyTarget, createMutationInput, identityInput, mutationTarget, tempDir } from "./identity-environment-mutation-test-helpers.js";
+import {
+  copyRequest,
+  copyTarget,
+  createMutationInput,
+  identityInput,
+  isolateProfileStorage,
+  mutationTarget,
+  tempDir
+} from "./identity-environment-mutation-test-helpers.js";
 import { profileStoragePath } from "./profile-storage.js";
+
+after(isolateProfileStorage("identity-mutation-recovery"));
 
 test("custom persistence reloads records, receipts, and configuration", () => {
   let state: IdentityEnvironmentMutationPersistenceState | null = null;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import {
   createFixtureLauncher,
   HarborRuntime,
@@ -14,6 +14,7 @@ import {
   createMutationInput,
   identityInput,
   importMutationInput,
+  isolateProfileStorage,
   mutationTarget,
   mutationHeaders,
   tempDir
@@ -21,6 +22,8 @@ import {
 import { profileStoragePath } from "./profile-storage.js";
 import { startHarborRuntimeServer } from "./server.js";
 import type { IdentityEnvironmentMutationPersistenceState } from "./identity-environment-mutation-types.js";
+
+after(isolateProfileStorage("identity-mutations"));
 
 test("persists idempotent receipts and rejects sensitive or conflicting payloads", () => {
   const dir = tempDir("receipts");

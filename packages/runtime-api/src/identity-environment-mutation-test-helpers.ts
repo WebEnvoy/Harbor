@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -86,6 +87,17 @@ export function mutationTarget(request: IdentityEnvironmentMutationRequest): {
 
 export function tempDir(label: string): string {
   return join(tmpdir(), `harbor-${label}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+}
+
+export function isolateProfileStorage(label: string): () => void {
+  const root = tempDir(label);
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = root;
+  return () => {
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    rmSync(root, { recursive: true, force: true });
+  };
 }
 
 export function mutationHeaders(token: string): Record<string, string> {
