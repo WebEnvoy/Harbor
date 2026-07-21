@@ -49,7 +49,7 @@ export function chromeCapabilities(): BrowserProviderCapabilityFact[] {
 export function cloakLimitations(): string[] {
   return [
     "provider claim 必须有 Harbor 验证证据后，Core 才能当作 observed fact 使用。",
-    "Harbor 不重新分发、也不自动下载 CloakBrowser 二进制。",
+    "Harbor 只在已授权的 managed lifecycle 操作中从官方签名来源下载，不重新分发 CloakBrowser 二进制。",
     "不暴露目标站点通过率或反检测成功保证。"
   ];
 }
@@ -64,10 +64,10 @@ export function chromeLimitations(): string[] {
 
 export function cloakDownloadGuide(): BrowserProviderDownloadGuide {
   return {
-    action: "manual_install",
+    action: "managed_install",
     primary_url: "https://cloakbrowser.dev",
-    fallback_url: "https://github.com/CloakHQ/CloakBrowser/releases",
-    install_hint: "请从 CloakHQ 官方渠道安装 CloakBrowser，或设置 CLOAKBROWSER_BINARY_PATH/HARBOR_CLOAKBROWSER_PATH 指向已验证的本机二进制。",
+    fallback_url: "https://github.com/CloakHQ/cloakbrowser/releases",
+    install_hint: "请通过 Harbor managed lifecycle 安装官方签名版本；显式本机二进制覆盖继续由外部管理。",
     missing_impacts: [
       "CloakBrowser 不能作为主力 provider 被选择。",
       "原生指纹和反检测 provider claim 不可用。",

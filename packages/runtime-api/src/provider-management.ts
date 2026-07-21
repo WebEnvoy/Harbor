@@ -2,6 +2,11 @@ import { constants, existsSync, readFileSync, readdirSync, statSync, accessSync 
 import { arch as hostArch, homedir, platform as hostPlatform } from "node:os";
 import { join } from "node:path";
 import {
+  CLOAKBROWSER_FREE_VERSIONS,
+  cloakBrowserBinaryPath,
+  cloakBrowserPlatformTag
+} from "./cloakbrowser-release.js";
+import {
   chromeCapabilities,
   chromeDownloadGuide,
   chromeLimitations,
@@ -57,7 +62,7 @@ export interface BrowserProviderCapabilityFact {
 }
 
 export interface BrowserProviderDownloadGuide {
-  action: "manual_install";
+  action: "managed_install" | "manual_install" | "external_management";
   primary_url: string;
   fallback_url?: string;
   install_hint: string;
@@ -88,6 +93,7 @@ export interface BrowserProviderStatus {
   role: BrowserProviderRole;
   selectable: true;
   default_for_identity_environment: boolean;
+  management_mode: "managed" | "system" | "external";
   install: BrowserProviderInstallFacts;
   capabilities: BrowserProviderCapabilityFact[];
   limitations: string[];
@@ -157,27 +163,25 @@ interface ProviderPathCandidate {
   explicit: boolean;
 }
 
-const CLOAK_DEFAULT_VERSION: Record<string, string> = {
-  "linux-x64": "146.0.7680.177.5",
-  "linux-arm64": "146.0.7680.177.3",
-  "darwin-arm64": "145.0.7632.109.2",
-  "darwin-x64": "145.0.7632.109.2",
-  "windows-x64": "146.0.7680.177.5"
-};
-
 export function detectBrowserProviders(input: BrowserProviderDetectionInput = {}): BrowserProviderCatalog {
   const ctx = context(input);
+  const cloakExternal = Boolean(resolveCloakBrowserOverride(ctx.env));
   return {
     schema_version: HARBOR_BROWSER_PROVIDER_STATUS_SCHEMA,
     providers: [
-      providerStatus("cloakbrowser", "CloakBrowser", "primary", detectCloakBrowser(ctx)),
-      providerStatus("chrome_official", "Google Chrome", "restricted_fallback", detectChrome(ctx))
+      providerStatus("cloakbrowser", "CloakBrowser", "primary", detectCloakBrowser(ctx), cloakExternal ? "external" : "managed"),
+      providerStatus("chrome_official", "Google Chrome", "restricted_fallback", detectChrome(ctx), "system")
     ],
     excluded_providers: [
       { provider: "chromium", reason: "Chromium 仅保留为开发/测试内部实现，不进入用户可选 provider 管理。" },
       { provider: "donut_browser", reason: "Donut Browser 只作为机制参考，不注册为 Harbor provider。" }
     ]
   };
+}
+
+export function resolveCloakBrowserOverride(env: Record<string, string | undefined>): string | undefined {
+  return [env.HARBOR_CLOAKBROWSER_PATH, env.CLOAKBROWSER_BINARY_PATH]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
 }
 
 export function bindIdentityEnvironmentDefaultProvider(input: IdentityEnvironmentProviderBindingInput = {}): IdentityEnvironmentProviderBinding {
@@ -256,7 +260,8 @@ function providerStatus(
   provider_id: BrowserProviderId,
   display_name: string,
   role: BrowserProviderRole,
-  install: BrowserProviderInstallFacts
+  install: BrowserProviderInstallFacts,
+  managementMode: BrowserProviderStatus["management_mode"]
 ): BrowserProviderStatus {
   const defaultForIdentity = role === "primary";
   return {
@@ -265,10 +270,15 @@ function providerStatus(
     role,
     selectable: true,
     default_for_identity_environment: defaultForIdentity,
+    management_mode: managementMode,
     install,
     capabilities: provider_id === "cloakbrowser" ? cloakCapabilities() : chromeCapabilities(),
     limitations: provider_id === "cloakbrowser" ? cloakLimitations() : chromeLimitations(),
-    download_guide: provider_id === "cloakbrowser" ? cloakDownloadGuide() : chromeDownloadGuide(),
+    download_guide: provider_id === "cloakbrowser"
+      ? managementMode === "external"
+        ? { ...cloakDownloadGuide(), action: "external_management", install_hint: "该覆盖路径由外部管理；请在外部更新或移除覆盖后重新检查。" }
+        : cloakDownloadGuide()
+      : chromeDownloadGuide(),
     diagnostics: diagnosticsFor(provider_id, install)
   };
 }
@@ -322,18 +332,16 @@ function installFacts(ctx: DetectionContext, candidate: ProviderPathCandidate, e
 }
 
 function cloakCandidates(ctx: DetectionContext): ProviderPathCandidate[] {
-  const envCandidates = [ctx.env.HARBOR_CLOAKBROWSER_PATH, ctx.env.CLOAKBROWSER_BINARY_PATH]
-    .filter((value): value is string => Boolean(value))
-    .map((path) => ({ path, version: cloakVersionFromPath(path), explicit: true }));
-  if (envCandidates.length > 0) return envCandidates;
+  const override = resolveCloakBrowserOverride(ctx.env);
+  if (override) return [{ path: override, version: cloakVersionFromPath(override), explicit: true }];
 
-  const tag = platformTag(ctx.platform, ctx.arch);
+  const tag = cloakBrowserPlatformTag(ctx.platform, ctx.arch);
   const cacheDir = ctx.env.CLOAKBROWSER_CACHE_DIR || join(ctx.home, ".cloakbrowser");
   const markerVersions = tag ? [`latest_version_${tag}`, "latest_version"].flatMap((name) => readVersionMarker(ctx, join(cacheDir, name))) : [];
-  const defaultVersion = tag ? CLOAK_DEFAULT_VERSION[tag] : null;
+  const defaultVersion = tag ? CLOAKBROWSER_FREE_VERSIONS[tag] : null;
   const versions = [...new Set([...markerVersions, defaultVersion].filter((value): value is string => Boolean(value)))];
   return versions.map((version) => ({
-    path: cloakBinaryPath(ctx.platform, cacheDir, version),
+    path: cloakBrowserBinaryPath(ctx.platform, cacheDir, version),
     version,
     explicit: false
   }));
@@ -356,13 +364,6 @@ function chromeCandidates(ctx: DetectionContext): ProviderPathCandidate[] {
     { path: "/usr/bin/google-chrome", version: null, explicit: false },
     { path: "/usr/bin/google-chrome-stable", version: null, explicit: false }
   ];
-}
-
-function cloakBinaryPath(platform: NodeJS.Platform, cacheDir: string, version: string): string {
-  const dir = join(cacheDir, `chromium-${version}`);
-  if (platform === "darwin") return join(dir, "Chromium.app", "Contents", "MacOS", "Chromium");
-  if (platform === "win32") return join(dir, "chrome.exe");
-  return join(dir, "chrome");
 }
 
 function diagnosticsFor(provider_id: BrowserProviderId, install: BrowserProviderInstallFacts): BrowserProviderDiagnostic[] {
@@ -458,13 +459,4 @@ function readChromeBundleVersion(ctx: DetectionContext, executablePath: string):
   const plistPath = `${executablePath.slice(0, markerAt)}.app/Contents/Info.plist`;
   const plist = ctx.readText(plistPath);
   return plist?.match(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/)?.[1] ?? null;
-}
-
-function platformTag(platform: NodeJS.Platform, arch: string): string | null {
-  if (platform === "linux" && arch === "x64") return "linux-x64";
-  if (platform === "linux" && arch === "arm64") return "linux-arm64";
-  if (platform === "darwin" && arch === "arm64") return "darwin-arm64";
-  if (platform === "darwin" && arch === "x64") return "darwin-x64";
-  if (platform === "win32" && arch === "x64") return "windows-x64";
-  return null;
 }

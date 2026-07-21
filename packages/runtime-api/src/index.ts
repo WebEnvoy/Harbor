@@ -100,6 +100,13 @@ import {
   type ViewerControlUnavailable
 } from "./viewer-control.js";
 import { DetailReadTargetStore } from "./detail-read-target.js";
+import {
+  ManagedProviderLifecycle,
+  type ManagedProviderLifecycleCommandResult,
+  type ManagedProviderLifecycleOptions,
+  type ManagedProviderLifecycleStatus,
+  type ManagedProviderOperationInput
+} from "./managed-provider-lifecycle.js";
 
 export const DEFAULT_IDENTITY_SITE_URLS = {
   xiaohongshu: "https://www.xiaohongshu.com/explore",
@@ -111,6 +118,7 @@ export { createIdentityConsistencyFacts, HARBOR_IDENTITY_CONSISTENCY_FACTS_SCHEM
 export { createLocalIdentityEnvironmentFacts, HARBOR_LOCAL_IDENTITY_ENVIRONMENT_SCHEMA } from "./identity-environment.js";
 export { HARBOR_LOCAL_IDENTITY_ENVIRONMENT_STORE_SCHEMA, LocalIdentityEnvironmentManager } from "./identity-environment-manager.js";
 export { HARBOR_IDENTITY_ENVIRONMENT_MUTATION_SCHEMA } from "./identity-environment-mutation-types.js";
+export { HARBOR_MANAGED_PROVIDER_LIFECYCLE_SCHEMA, ManagedProviderLifecycle } from "./managed-provider-lifecycle.js";
 export {
   bindIdentityEnvironmentDefaultProvider,
   detectBrowserProviders,
@@ -243,6 +251,16 @@ export type {
   IdentityEnvironmentProviderBindingInput
 } from "./provider-management.js";
 export type {
+  ManagedProviderLifecycleCommandResult,
+  ManagedProviderLifecycleError,
+  ManagedProviderLifecycleOptions,
+  ManagedProviderLifecycleProgress,
+  ManagedProviderLifecycleState,
+  ManagedProviderLifecycleStatus,
+  ManagedProviderOperationInput,
+  ManagedProviderOperationKind
+} from "./managed-provider-lifecycle.js";
+export type {
   AvailabilityState,
   CreateRuntimeSessionInput,
   FactSource,
@@ -298,13 +316,19 @@ export class HarborRuntime {
   private readonly viewerControls = new ViewerControlStore();
   private readonly identityEnvironments: LocalIdentityEnvironmentManager;
   private readonly runtimeSessions: RuntimeSessionStore;
+  private readonly providerLifecycle: ManagedProviderLifecycle;
 
-  constructor(launcher: LocalProviderLauncher = launchLocalDedicatedProvider, identityEnvironmentOptions: LocalIdentityEnvironmentManagerOptions = {}) {
+  constructor(
+    launcher: LocalProviderLauncher = launchLocalDedicatedProvider,
+    identityEnvironmentOptions: LocalIdentityEnvironmentManagerOptions = {},
+    providerLifecycleOptions: ManagedProviderLifecycleOptions = {}
+  ) {
     const ownerOptions = withProfileBackedLocalMaterial(identityEnvironmentOptions);
     this.identityEnvironments = new LocalIdentityEnvironmentManager(ownerOptions);
     this.runtimeSessions = new RuntimeSessionStore(this.viewerControls, launcher, {
       resolve_proxy: ownerOptions.resolve_proxy
     });
+    this.providerLifecycle = new ManagedProviderLifecycle(providerLifecycleOptions);
   }
 
   async createSession(input: CreateRuntimeSessionInput = {}): Promise<RuntimeSessionFacts> {
@@ -380,10 +404,27 @@ export class HarborRuntime {
 
   async close(): Promise<void> {
     await this.runtimeSessions.closeAllSessions();
+    await this.providerLifecycle.close();
   }
 
   getBrowserProviderStatus(input: BrowserProviderDetectionInput = {}): BrowserProviderCatalog {
     return detectBrowserProviders(input);
+  }
+
+  getManagedProviderLifecycle(): ManagedProviderLifecycleStatus {
+    return this.providerLifecycle.status();
+  }
+
+  async recheckManagedProviderLifecycle(): Promise<ManagedProviderLifecycleStatus> {
+    return this.providerLifecycle.recheck();
+  }
+
+  async startManagedProviderOperation(input: ManagedProviderOperationInput): Promise<ManagedProviderLifecycleCommandResult> {
+    return this.providerLifecycle.start(input);
+  }
+
+  async cancelManagedProviderOperation(): Promise<ManagedProviderLifecycleCommandResult> {
+    return this.providerLifecycle.cancel();
   }
 
   getIdentityEnvironmentProviderBinding(input: IdentityEnvironmentProviderBindingInput = {}): IdentityEnvironmentProviderBinding {
