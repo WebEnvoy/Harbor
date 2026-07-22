@@ -11,6 +11,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -76,7 +77,9 @@ export function profileStoragePath(profileStorageRef: string): string {
 
 export function profileStorageHasExternalLock(profileStorageRef: string): boolean {
   const path = profileStoragePath(profileStorageRef);
-  return entryExists(join(path, "SingletonLock")) || entryExists(join(path, ".harbor-profile-lock"));
+  const browserLock = join(path, "SingletonLock");
+  if (entryExists(browserLock) && !removeDemonstrablyStaleBrowserResidue(path, browserLock)) return true;
+  return entryExists(join(path, ".harbor-profile-lock"));
 }
 
 export function acquireProfileStorageOwnership(profileStorageRefs: readonly string[]): ProfileStorageOwnershipLock {
@@ -211,6 +214,26 @@ export function stageProfileStorageDelete(profileStorageRef: string): StagedProf
 function clearRuntimeResidue(path: string): void {
   for (const name of ["DevToolsActivePort", "SingletonLock", "SingletonCookie", "SingletonSocket", ".harbor-profile-lock"]) {
     rmSync(join(path, name), { recursive: true, force: true });
+  }
+}
+
+function removeDemonstrablyStaleBrowserResidue(profilePath: string, lockPath: string): boolean {
+  try {
+    const entry = lstatSync(lockPath);
+    if (!entry.isSymbolicLink()) return false;
+    const original = readlinkSync(lockPath);
+    const match = original.match(/-(\d+)$/);
+    if (!match || processIsAlive(Number(match[1]))) return false;
+    const current = lstatSync(lockPath);
+    const unchanged = current.dev === entry.dev && current.ino === entry.ino && current.mtimeMs === entry.mtimeMs &&
+      current.isSymbolicLink() && readlinkSync(lockPath) === original;
+    if (!unchanged) return false;
+    for (const name of ["DevToolsActivePort", "SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+      rmSync(join(profilePath, name), { recursive: true, force: true });
+    }
+    return !entryExists(lockPath);
+  } catch {
+    return false;
   }
 }
 

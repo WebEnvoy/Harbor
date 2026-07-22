@@ -17,6 +17,7 @@ import {
   type LocalProviderLaunchInput
 } from "./index.js";
 import { classifyLaunchFailure } from "./provider-management.js";
+import { resolveRuntimeProviderBinding } from "./local-provider-launcher.js";
 
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const cloakPath = "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium";
@@ -283,6 +284,31 @@ test("explains provider install and launch failure diagnostics", () => {
   assert.equal(args.suggested_action.includes("启动参数"), true);
 
   assert.equal(classifyLaunchFailure(new Error("fetch failed")), "cdp_unavailable");
+});
+
+test("refreshes a persisted provider binding against the current installation", () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const facts = runtime.getLocalIdentityEnvironmentFacts({
+    ...providerFixture({ [chromePath]: { executable: true } }),
+    requested_provider_id: "chrome_official",
+    identity_environment_ref: "identity-env_stale-provider-binding",
+    execution_identity_ref: "execution-identity_stale-provider-binding",
+    profile_ref: "profile_stale-provider-binding",
+    site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com", display_name: "小红书" },
+    login_state: "logged_in",
+    storage_state: "present"
+  });
+  facts.provider_binding.selected_provider!.install.path = "/stale/Google Chrome";
+
+  const currentPath = "/Applications/Google Chrome Current.app/Contents/MacOS/Google Chrome";
+  const currentDetection = providerFixture({ [currentPath]: { executable: true } });
+  currentDetection.env = { HARBOR_CHROME_PATH: currentPath };
+  const rebound = resolveRuntimeProviderBinding(facts, currentDetection);
+  assert.equal(rebound.selected_provider_id, "chrome_official");
+  assert.equal(rebound.selected_provider?.install.path, currentPath);
+  assert.equal(rebound.selection_reason, "requested_provider_available");
+  assert.equal(rebound.execution_identity_ref, facts.execution_identity_ref);
+  assert.equal(rebound.profile_ref, facts.profile_ref);
 });
 
 test("returns local identity environment facts without protected material", () => {

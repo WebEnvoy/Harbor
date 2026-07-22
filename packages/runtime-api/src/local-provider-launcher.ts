@@ -7,6 +7,7 @@ import {
   bindIdentityEnvironmentDefaultProvider,
   classifyLaunchFailure,
   diagnoseBrowserProviderFailure,
+  type BrowserProviderDetectionInput,
   type IdentityEnvironmentProviderBinding
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
@@ -42,7 +43,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
   const providerBinding = explicitBrowserPath
     ? null
-    : input.identity_environment?.provider_binding ?? bindIdentityEnvironmentDefaultProvider();
+    : resolveRuntimeProviderBinding(input.identity_environment);
   const browserPath = explicitBrowserPath || providerBinding?.selected_provider?.install.path || "";
   if (!browserPath) {
     const diagnostic = providerBinding?.diagnostics[0] ?? diagnoseBrowserProviderFailure({ provider_id: "cloakbrowser", failure_class: "not_installed" });
@@ -110,6 +111,19 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     });
     return unavailable("launch_failed", diagnostic.app_summary, [...providerBindingFacts(providerBinding), ...profileStorage.facts]);
   }
+}
+
+export function resolveRuntimeProviderBinding(
+  identityEnvironment: LocalProviderLaunchInput["identity_environment"],
+  detection: BrowserProviderDetectionInput = {}
+): IdentityEnvironmentProviderBinding {
+  const persisted = identityEnvironment?.provider_binding;
+  return bindIdentityEnvironmentDefaultProvider({
+    ...detection,
+    ...(persisted?.selected_provider_id ? { requested_provider_id: persisted.selected_provider_id } : {}),
+    execution_identity_ref: identityEnvironment?.execution_identity_ref,
+    profile_ref: identityEnvironment?.profile_ref
+  });
 }
 
 export interface LocalProviderLaunchVerification {
