@@ -103,7 +103,8 @@ test("reports Chrome fallback, drift, login loss, and site risk without bypass p
   assert.equal(facts.provider.selected_provider_id, "chrome_official");
   assert.equal(facts.provider.selected_role, "restricted_fallback");
   assert.equal(facts.provider.requires_user_notice, true);
-  assert.equal(facts.resources.find((resource) => resource.key === "provider")?.state, "conflict");
+  assert.equal(facts.resources.find((resource) => resource.key === "provider")?.state, "satisfied");
+  assert.equal(facts.resources.find((resource) => resource.key === "fingerprint")?.state, "missing");
   assert.equal(facts.resources.find((resource) => resource.key === "proxy")?.state, "drift");
   assert.equal(facts.resources.find((resource) => resource.key === "login_state")?.state, "missing");
   assert.equal(facts.login.missing, true);

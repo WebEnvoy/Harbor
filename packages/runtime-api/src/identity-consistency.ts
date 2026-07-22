@@ -210,11 +210,11 @@ function providerResource(binding: IdentityEnvironmentProviderBinding): Identity
   const chromeFallback = binding.selected_provider.provider_id === "chrome_official";
   return {
     key: "provider",
-    state: chromeFallback ? "conflict" : "satisfied",
+    state: "satisfied",
     configured: binding.selected_provider.provider_id,
     observed: binding.selected_provider.provider_id,
     source: "derived",
-    note: chromeFallback ? "官方 Chrome 是受限后备，只适合 fallback/dev/manual 使用。" : "CloakBrowser 是默认主力 provider。"
+    note: chromeFallback ? "官方 Chrome 是可用的受限后备；能力限制由 provider facts 单独表达。" : "CloakBrowser 是默认主力 provider。"
   };
 }
 
@@ -224,11 +224,13 @@ function fingerprintResource(identityEnvironment: LocalIdentityEnvironmentFacts)
   const chromeFallback = provider?.provider_id === "chrome_official";
   return {
     key: "fingerprint",
-    state: chromeFallback ? "conflict" : valuePresent(fingerprint) ? "satisfied" : "missing",
+    state: valuePresent(fingerprint) ? "satisfied" : "missing",
     configured: fingerprint,
     observed: null,
     source: fingerprint.startsWith("provider_claim") ? "provider_claim" : "configured",
-    note: chromeFallback ? "官方 Chrome 缺少 provider 原生指纹控制。" : "指纹摘要是公开摘要，不包含 provider 私有检测策略。"
+    note: chromeFallback
+      ? "官方 Chrome 缺少 provider 原生指纹控制；该限制不等于当前配置冲突。"
+      : "指纹摘要是公开摘要，不包含 provider 私有检测策略。"
   };
 }
 
