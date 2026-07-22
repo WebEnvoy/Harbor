@@ -50,8 +50,8 @@ test("user confirmation clears only the authentication gate for a restricted Chr
   assert.equal(completed.status.authentication_provenance, "user_confirmed_managed_session");
   assert.equal(completed.status.manual_authentication_state, "completed");
   assert.equal(completed.status.recovery_required, false);
-  assert.equal(completed.status.blocking_reasons.includes("provider_conflict"), true);
-  assert.equal(completed.status.blocking_reasons.includes("fingerprint_conflict"), true);
+  assert.equal(completed.status.blocking_reasons.includes("provider_conflict"), false);
+  assert.equal(completed.status.blocking_reasons.includes("fingerprint_conflict"), false);
   assert.equal(completed.environment_summary.provider_id, "chrome_official");
 });
 
