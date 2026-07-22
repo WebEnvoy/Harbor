@@ -1054,12 +1054,10 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const candidates = boundedFeeds.map(noteCandidate);
     const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note').map((candidate) => candidate.id);
     const feedIds = allFeedIds.slice(0, 15);
-    const malformedFeed = candidates.some((candidate) => candidate.kind === 'malformed');
     const duplicateFeed = new Set(allFeedIds).size !== allFeedIds.length;
     const anchors = typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href*="/explore/"]')).slice(0, 60) : [];
     const pageTargets = new Map();
     let invalidPageTarget = false;
-    let duplicatePageTarget = false;
     for (const anchor of anchors) {
       try {
         const url = new URL(anchor.getAttribute?.('href') || anchor.href || '', location.origin);
@@ -1069,12 +1067,16 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
           continue;
         }
         const id = match[1].toLowerCase();
-        if (pageTargets.has(id)) duplicatePageTarget = true;
         pageTargets.set(id, location.origin + '/explore/' + id);
       } catch { invalidPageTarget = true; }
     }
     const detailUrls = feedIds.flatMap((id) => pageTargets.has(id) ? [pageTargets.get(id)] : []);
-    const structuralDrift = malformedFeed || duplicateFeed || invalidPageTarget || duplicatePageTarget;
+    // A note card commonly exposes the same canonical target through both its
+    // card wrapper and title link. Duplicate anchors are presentation detail,
+    // not evidence that the feed contract changed.
+    // The feed can include promoted or non-note entries alongside valid note
+    // cards. Only the canonical ids and targets consumed below are trusted.
+    const structuralDrift = duplicateFeed || invalidPageTarget;
     const listFailure = structuralDrift ? 'site_changed' : feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";
