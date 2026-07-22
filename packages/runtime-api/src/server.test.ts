@@ -1225,6 +1225,51 @@ test("blocks an allowlisted read operation before provider execution when the ma
   }
 });
 
+test("validates a persisted login through the real read probe without requiring a current session provenance", async () => {
+  for (const probeResult of [
+    { kind: "completed" as const },
+    { kind: "blocked" as const, failure_class: "not_logged_in" as const }
+  ]) {
+    let probeCalls = 0;
+    const probe = trustLocalProviderReadProbe(async (input) => {
+      probeCalls += 1;
+      return probeResult.kind === "completed"
+        ? completedBossReadProbe(input)
+        : { status: "unavailable", failure_class: probeResult.failure_class, message: "login is not valid on the live page", retryable: true };
+    });
+    const runtime = new HarborRuntime(createBossReadLauncher(probe));
+    runtime.createLocalIdentityEnvironment({
+      identity_environment_ref: `identity-env_persisted-${probeResult.kind}`,
+      execution_identity_ref: `execution-identity_persisted-${probeResult.kind}`,
+      profile_ref: `profile_persisted-${probeResult.kind}`,
+      profile_storage_ref: `profile-storage_persisted-${probeResult.kind}`,
+      site: { site_id: "boss", origin: "https://www.zhipin.com", display_name: "BOSS" },
+      login_state: "logged_in",
+      manual_authentication_state: "completed",
+      storage_state: "present"
+    });
+    const running = await startHarborRuntimeServer({ port: 0, runtime });
+    try {
+      const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+        identity_environment_ref: `identity-env_persisted-${probeResult.kind}`,
+        url: "https://www.zhipin.com/web/geek/job",
+        control_owner: "core_task"
+      });
+      const response = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+        site_id: "boss",
+        operation_id: "boss_job_search",
+        query: "AI tools",
+        city_code: "101010100"
+      });
+      assert.equal(probeCalls, 1);
+      assert.equal(response.status, probeResult.kind === "completed" ? 201 : 409);
+      if (probeResult.kind === "blocked") assert.equal(response.body.failure_class, "not_logged_in");
+    } finally {
+      await running.close();
+    }
+  }
+});
+
 test("rejects an injected local-provider probe rather than minting a completed read operation", async () => {
   const runtime = new HarborRuntime(successfulBossReadLauncher);
   const running = await startHarborRuntimeServer({ port: 0, runtime });

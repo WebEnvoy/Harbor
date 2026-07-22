@@ -88,3 +88,45 @@ test("rebinds only valid user-confirmed authentication and rolls back on persist
   assert.equal(manager.hasUserConfirmedManagedSession(created.identity_environment_ref, "session_rebound"), true);
   assert.equal(manager.hasUserConfirmedManagedSession(created.identity_environment_ref, "session_not_persisted"), false);
 });
+
+test("recomputes stale provider and fingerprint conflicts when loading a clean legacy record", () => {
+  let state: IdentityEnvironmentMutationPersistenceState | null = null;
+  const first = new LocalIdentityEnvironmentManager({
+    load_state: () => state,
+    persist_state: (next) => { state = structuredClone(next); }
+  });
+  const created = first.create({
+    platform: "darwin",
+    arch: "arm64",
+    home_dir: "/Users/test",
+    env: {},
+    path_exists: (path) => path === chromePath,
+    is_executable: (path) => path === chromePath,
+    read_text: () => null,
+    identity_environment_ref: "identity-env_legacy-chrome",
+    execution_identity_ref: "execution-identity_legacy-chrome",
+    profile_ref: "profile_legacy-chrome",
+    site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com", display_name: "小红书" },
+    login_state: "logged_in",
+    manual_authentication_state: "completed",
+    storage_state: "present",
+    fingerprint_summary: "chrome_official_restricted_fallback"
+  });
+  const persisted = state as IdentityEnvironmentMutationPersistenceState | null;
+  assert.ok(persisted);
+  const record = persisted.records[0]!;
+  record.consistency.readiness = {
+    state: "blocked",
+    blocking_reasons: ["provider_conflict", "fingerprint_conflict"]
+  };
+
+  const reloaded = new LocalIdentityEnvironmentManager({
+    load_state: () => state,
+    persist_state: (next) => { state = structuredClone(next); }
+  });
+  const migrated = reloaded.get(created.identity_environment_ref);
+  assert.ok(migrated);
+  assert.equal(migrated.status.repair_state, "clean");
+  assert.equal(migrated.status.blocking_reasons.includes("provider_conflict"), false);
+  assert.equal(migrated.status.blocking_reasons.includes("fingerprint_conflict"), false);
+});

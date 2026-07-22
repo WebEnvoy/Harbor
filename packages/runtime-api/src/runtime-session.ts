@@ -520,6 +520,15 @@ export class RuntimeSessionStore {
     record.read_operation_user_handoff = false;
   }
 
+  markPersistedReadOperationEligible(runtime_session_ref: string): void {
+    const record = this.records.get(runtime_session_ref);
+    if (!record || record.execution_surface !== "local_provider" || record.facts.control_owner !== "core_task" ||
+      record.facts.control_lock.owner !== "core_task" || record.facts.control_lock.state !== "held") return;
+    record.read_operation_user_confirmed = true;
+    record.read_operation_user_release_pending = false;
+    record.read_operation_user_handoff = true;
+  }
+
   getValidationRuntimeFacts(runtime_session_ref: string): ValidationRuntimeFacts | null {
     const record = this.records.get(runtime_session_ref);
     if (!record) return null;
