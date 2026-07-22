@@ -15,6 +15,8 @@ export interface ResolvedIdentityEnvironmentLaunchConfiguration {
   viewport: { width: number; height: number } | null;
 }
 
+const LEGACY_SYSTEM_DEFAULT_VIEWPORT = "系统默认";
+
 export function applyIdentityEnvironmentConfiguration(
   facts: LocalIdentityEnvironmentFacts,
   update: IdentityEnvironmentConfigurationUpdate
@@ -109,8 +111,11 @@ export function resolveIdentityEnvironmentLaunchConfiguration(
   const proxyRef = facts.environment.proxy.proxy_ref;
   const proxyServer = proxyRef ? resolveProxyServer(proxyRef, resolveProxy) : null;
   if (proxyRef && !proxyServer) return null;
-  const viewport = facts.environment.viewport ? parseViewport(facts.environment.viewport) : null;
-  if (facts.environment.viewport && !viewport) return null;
+  const viewportValue = facts.environment.viewport;
+  const viewport = viewportValue === null || viewportValue === LEGACY_SYSTEM_DEFAULT_VIEWPORT
+    ? null
+    : parseViewport(viewportValue);
+  if (viewportValue !== null && viewportValue !== LEGACY_SYSTEM_DEFAULT_VIEWPORT && !viewport) return null;
   return {
     provider_id: providerId,
     proxy_server: proxyServer,
