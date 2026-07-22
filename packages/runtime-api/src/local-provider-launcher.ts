@@ -332,6 +332,8 @@ async function applyAndReadbackProviderConfiguration(
     facts.push({ key: "identity_environment.proxy", source: "configured", value: "provider_argument_applied" });
   }
 
+  const opened = await openProviderUrl(port, requestedUrl, signal);
+  if (opened.status !== "ready") throw new Error("Identity environment configuration could not open the requested page.");
   const page = await activePage(port, requestedUrl, signal);
   if (!page.webSocketDebuggerUrl) throw new Error("Identity environment configuration has no controlled CDP page target.");
   const observed = await withCdp(page.webSocketDebuggerUrl, async (client) => {
@@ -350,10 +352,6 @@ async function applyAndReadbackProviderConfiguration(
       returnByValue: true
     });
     const value = (result.result as { value?: { language?: unknown; timezone?: unknown; width?: unknown; height?: unknown } } | undefined)?.value;
-    if (requestedUrl !== "about:blank") {
-      const navigation = await client.send("Page.navigate", { url: requestedUrl });
-      if (navigation.errorText) throw new Error("Provider could not navigate after applying identity environment configuration.");
-    }
     return value;
   }, signal);
   if (!observed) throw new Error("Provider environment readback returned no observation.");
