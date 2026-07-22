@@ -334,8 +334,13 @@ export class LocalIdentityEnvironmentManager {
     const repairs = new Map<string, StoredIdentityEnvironmentRepair>();
     for (const record of parsed.records ?? []) {
       if (record.schema_version === HARBOR_LOCAL_IDENTITY_ENVIRONMENT_STORE_SCHEMA && record.identity_environment.schema_version === HARBOR_LOCAL_IDENTITY_ENVIRONMENT_SCHEMA) {
+        const consistency = createIdentityConsistencyFacts({
+          identity_environment: record.identity_environment,
+          risk_events: record.identity_environment.login_state.recovery_required ? ["login_missing"] : []
+        });
         records.set(record.identity_environment.identity_environment_ref, {
           ...record,
+          consistency,
           user_confirmed_session_ref: record.user_confirmed_session_ref ?? null,
           repair_state: record.repair_state ?? "clean",
           repair_reasons: record.repair_reasons ?? []

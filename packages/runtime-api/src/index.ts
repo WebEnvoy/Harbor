@@ -560,6 +560,7 @@ export class HarborRuntime {
     }
     const session = await this.runtimeSessions.openIdentityEnvironmentSession({ ...input, identity_environment });
     this.bindPersistedAuthenticationToHeadedUserSession(identity_environment, session, input);
+    this.bindPersistedAuthenticationToCoreReadSession(identity_environment, session, input);
     return session;
   }
 
@@ -584,7 +585,21 @@ export class HarborRuntime {
       url: defaultIdentitySiteUrl(identity_environment.site_binding.site_id, identity_environment.site_binding.origin)
     });
     this.bindPersistedAuthenticationToHeadedUserSession(identity_environment, session, input);
+    this.bindPersistedAuthenticationToCoreReadSession(identity_environment, session, input);
     return session;
+  }
+
+  private bindPersistedAuthenticationToCoreReadSession(
+    identity_environment: LocalIdentityEnvironmentFacts,
+    session: RuntimeSessionFacts | RuntimeSessionUnavailable,
+    input: Pick<OpenIdentityEnvironmentSessionInput, "control_owner">
+  ): void {
+    if (input.control_owner !== "core_task" || "status" in session ||
+      identity_environment.login_state.state !== "logged_in" ||
+      (identity_environment.login_state.manual_authentication_state !== "completed" &&
+        identity_environment.login_state.manual_authentication_state !== "not_required") ||
+      identity_environment.login_state.recovery_required || identity_environment.browser_storage.state !== "present") return;
+    this.runtimeSessions.markPersistedReadOperationEligible(session.runtime_session_ref);
   }
 
   private bindPersistedAuthenticationToHeadedUserSession(
@@ -726,10 +741,9 @@ export class HarborRuntime {
       session.facts.current_error
     ) return "session_not_ready";
     if (
-      !this.identityEnvironments.hasUserConfirmedManagedSession(managedIdentity.identity_environment_ref, runtime_session_ref) ||
       managedIdentity.login_state.state !== "logged_in" ||
-      managedIdentity.login_state.reason !== "user_confirmed_managed_session" ||
-      managedIdentity.login_state.manual_authentication_state !== "completed" ||
+      (managedIdentity.login_state.manual_authentication_state !== "completed" &&
+        managedIdentity.login_state.manual_authentication_state !== "not_required") ||
       managedIdentity.login_state.recovery_required
     ) return "not_logged_in";
     if (!hasStableReadOperationController(session)) return "session_user_controlled";
