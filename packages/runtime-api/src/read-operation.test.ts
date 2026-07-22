@@ -216,20 +216,33 @@ test("correlates the official Vue Pinia search store without exposing store cont
   assert.equal(reordered.list_valid, true);
   assert.deepEqual(reordered.detail_urls, noteIds.slice().reverse().map((id) => `https://www.xiaohongshu.com/explore/${id}`));
 
-  const driftCases = [
-    [[{ noteCard: { id: noteIds[0] } }, { noteCard: { id: noteIds[0] } }], [anchors[0]]],
-    [[{ noteCard: { id: "not-a-note" } }], [anchors[0]]],
-    [[{ noteCard: { id: noteIds[0] } }], [anchors[0], anchors[0]]],
-    [[{ noteCard: { id: noteIds[0] } }], [{ getAttribute: () => `https://evil.example/explore/${noteIds[0]}` }]]
-  ] as const;
-  for (const [feeds, targetAnchors] of driftCases) {
-    const drift = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds }]]) } }, {
-      ...document,
-      querySelector: () => null,
-      querySelectorAll: () => targetAnchors
-    }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
-    assert.equal(drift.list_failure, "site_changed");
-  }
+  const duplicateFeed = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: noteIds[0] } }, { noteCard: { id: noteIds[0] } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => [anchors[0]]
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(duplicateFeed.list_failure, "site_changed");
+
+  const unsupportedFeed = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ kind: "promoted-banner" }, { noteCard: { id: "not-a-note" } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => [anchors[0]]
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(unsupportedFeed.list_failure, "empty_result");
+
+  const duplicateAnchor = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: noteIds[0] } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => [anchors[0], anchors[0]]
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(duplicateAnchor.list_valid, true);
+
+  const invalidAnchor = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: noteIds[0] } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => [{ getAttribute: () => `https://evil.example/explore/${noteIds[0]}` }]
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(invalidAnchor.list_failure, "site_changed");
 });
 
 test("observes BOSS SPA, login wall, and challenge state without returning page text", () => {

@@ -95,6 +95,21 @@ test("fails closed for active sessions and external profile locks", async () => 
     assert.equal(danglingLock.failure?.code, "profile_locked");
     rmSync(join(profilePath, "SingletonLock"));
 
+    symlinkSync("test-host-99999999", join(profilePath, "SingletonLock"));
+    symlinkSync("stale-cookie", join(profilePath, "SingletonCookie"));
+    symlinkSync("/tmp/stale-browser-socket", join(profilePath, "SingletonSocket"));
+    writeFileSync(join(profilePath, "DevToolsActivePort"), "65535\n/devtools/browser/stale\n");
+    const recoveredStaleBrowser = runtime.mutateLocalIdentityEnvironment({
+      operation: "edit",
+      idempotency_key: "stale-browser-lock-edit-1",
+      identity_environment_ref: "identity-locked",
+      configuration: { language: "zh-CN" }
+    });
+    assert.equal(recoveredStaleBrowser.status, "completed");
+    for (const name of ["DevToolsActivePort", "SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+      assert.equal(existsSync(join(profilePath, name)), false);
+    }
+
     const session = await runtime.openManagedIdentityEnvironmentSession({
       identity_environment_ref: "identity-locked",
       url: "https://www.xiaohongshu.com/explore",

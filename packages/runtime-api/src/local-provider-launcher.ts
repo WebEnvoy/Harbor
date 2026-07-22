@@ -7,6 +7,7 @@ import {
   bindIdentityEnvironmentDefaultProvider,
   classifyLaunchFailure,
   diagnoseBrowserProviderFailure,
+  type BrowserProviderDetectionInput,
   type IdentityEnvironmentProviderBinding
 } from "./provider-management.js";
 import { opaqueRef } from "./refs.js";
@@ -42,7 +43,7 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
   const providerBinding = explicitBrowserPath
     ? null
-    : input.identity_environment?.provider_binding ?? bindIdentityEnvironmentDefaultProvider();
+    : resolveRuntimeProviderBinding(input.identity_environment);
   const browserPath = explicitBrowserPath || providerBinding?.selected_provider?.install.path || "";
   if (!browserPath) {
     const diagnostic = providerBinding?.diagnostics[0] ?? diagnoseBrowserProviderFailure({ provider_id: "cloakbrowser", failure_class: "not_installed" });
@@ -110,6 +111,19 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     });
     return unavailable("launch_failed", diagnostic.app_summary, [...providerBindingFacts(providerBinding), ...profileStorage.facts]);
   }
+}
+
+export function resolveRuntimeProviderBinding(
+  identityEnvironment: LocalProviderLaunchInput["identity_environment"],
+  detection: BrowserProviderDetectionInput = {}
+): IdentityEnvironmentProviderBinding {
+  const persisted = identityEnvironment?.provider_binding;
+  return bindIdentityEnvironmentDefaultProvider({
+    ...detection,
+    ...(persisted?.selected_provider_id ? { requested_provider_id: persisted.selected_provider_id } : {}),
+    execution_identity_ref: identityEnvironment?.execution_identity_ref,
+    profile_ref: identityEnvironment?.profile_ref
+  });
 }
 
 export interface LocalProviderLaunchVerification {
@@ -318,6 +332,8 @@ async function applyAndReadbackProviderConfiguration(
     facts.push({ key: "identity_environment.proxy", source: "configured", value: "provider_argument_applied" });
   }
 
+  const opened = await openProviderUrl(port, requestedUrl, signal);
+  if (opened.status !== "ready") throw new Error("Identity environment configuration could not open the requested page.");
   const page = await activePage(port, requestedUrl, signal);
   if (!page.webSocketDebuggerUrl) throw new Error("Identity environment configuration has no controlled CDP page target.");
   const observed = await withCdp(page.webSocketDebuggerUrl, async (client) => {
@@ -336,10 +352,6 @@ async function applyAndReadbackProviderConfiguration(
       returnByValue: true
     });
     const value = (result.result as { value?: { language?: unknown; timezone?: unknown; width?: unknown; height?: unknown } } | undefined)?.value;
-    if (requestedUrl !== "about:blank") {
-      const navigation = await client.send("Page.navigate", { url: requestedUrl });
-      if (navigation.errorText) throw new Error("Provider could not navigate after applying identity environment configuration.");
-    }
     return value;
   }, signal);
   if (!observed) throw new Error("Provider environment readback returned no observation.");
@@ -1042,12 +1054,10 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const candidates = boundedFeeds.map(noteCandidate);
     const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note').map((candidate) => candidate.id);
     const feedIds = allFeedIds.slice(0, 15);
-    const malformedFeed = candidates.some((candidate) => candidate.kind === 'malformed');
     const duplicateFeed = new Set(allFeedIds).size !== allFeedIds.length;
     const anchors = typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href*="/explore/"]')).slice(0, 60) : [];
     const pageTargets = new Map();
     let invalidPageTarget = false;
-    let duplicatePageTarget = false;
     for (const anchor of anchors) {
       try {
         const url = new URL(anchor.getAttribute?.('href') || anchor.href || '', location.origin);
@@ -1057,12 +1067,16 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
           continue;
         }
         const id = match[1].toLowerCase();
-        if (pageTargets.has(id)) duplicatePageTarget = true;
         pageTargets.set(id, location.origin + '/explore/' + id);
       } catch { invalidPageTarget = true; }
     }
     const detailUrls = feedIds.flatMap((id) => pageTargets.has(id) ? [pageTargets.get(id)] : []);
-    const structuralDrift = malformedFeed || duplicateFeed || invalidPageTarget || duplicatePageTarget;
+    // A note card commonly exposes the same canonical target through both its
+    // card wrapper and title link. Duplicate anchors are presentation detail,
+    // not evidence that the feed contract changed.
+    // The feed can include promoted or non-note entries alongside valid note
+    // cards. Only the canonical ids and targets consumed below are trusted.
+    const structuralDrift = duplicateFeed || invalidPageTarget;
     const listFailure = structuralDrift ? 'site_changed' : feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";
