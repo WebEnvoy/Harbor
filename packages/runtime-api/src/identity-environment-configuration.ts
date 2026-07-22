@@ -112,10 +112,10 @@ export function resolveIdentityEnvironmentLaunchConfiguration(
   const proxyServer = proxyRef ? resolveProxyServer(proxyRef, resolveProxy) : null;
   if (proxyRef && !proxyServer) return null;
   const viewportValue = facts.environment.viewport;
-  const viewport = viewportValue && viewportValue !== LEGACY_SYSTEM_DEFAULT_VIEWPORT
-    ? parseViewport(viewportValue)
-    : null;
-  if (viewportValue && viewportValue !== LEGACY_SYSTEM_DEFAULT_VIEWPORT && !viewport) return null;
+  const viewport = viewportValue === null || viewportValue === LEGACY_SYSTEM_DEFAULT_VIEWPORT
+    ? null
+    : parseViewport(viewportValue);
+  if (viewportValue !== null && viewportValue !== LEGACY_SYSTEM_DEFAULT_VIEWPORT && !viewport) return null;
   return {
     provider_id: providerId,
     proxy_server: proxyServer,

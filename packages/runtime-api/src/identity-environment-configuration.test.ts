@@ -32,8 +32,20 @@ test("keeps explicit viewport launch validation strict", () => {
     resolveIdentityEnvironmentLaunchConfiguration(identityWithViewport("1440x900"), undefined)?.viewport,
     { width: 1440, height: 900 }
   );
-  assert.equal(
-    resolveIdentityEnvironmentLaunchConfiguration(identityWithViewport("automatic"), undefined),
-    null
-  );
+  for (const viewport of [
+    "",
+    " ",
+    "automatic",
+    "系统默认 ",
+    "199x900",
+    "16385x900",
+    "900x199",
+    "900x16385"
+  ]) {
+    assert.equal(
+      resolveIdentityEnvironmentLaunchConfiguration(identityWithViewport(viewport), undefined),
+      null,
+      `expected ${JSON.stringify(viewport)} to remain unsupported`
+    );
+  }
 });
