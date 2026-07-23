@@ -198,19 +198,20 @@ export async function probeProviderSiteResource(
     if (!page.webSocketDebuggerUrl) {
       return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The site page has no controlled CDP target.");
     }
-    const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
+    return await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Runtime.enable");
-      const evaluated = await client.send("Runtime.evaluate", {
-        expression: input.site_id === "boss"
-          ? readProbeExpression("boss", "")
-          : xiaohongshuSiteResourceProbeExpression(),
-        returnByValue: true
-      });
-      return (evaluated.result as { value?: ReadProbeObservation } | undefined)?.value;
+      const observe = async () => {
+        const evaluated = await client.send("Runtime.evaluate", {
+          expression: input.site_id === "boss"
+            ? readProbeExpression("boss", "")
+            : xiaohongshuSiteResourceProbeExpression(),
+          returnByValue: true
+        });
+        return (evaluated.result as { value?: ReadProbeObservation } | undefined)?.value;
+      };
+      if (input.site_id === "boss") return validateBossSpaResourceProbe(await observe());
+      return waitForXiaohongshuSiteResourceReadiness(observe, signal);
     }, signal);
-    return input.site_id === "boss"
-      ? validateBossSpaResourceProbe(observation)
-      : validateXiaohongshuSiteResourceProbe(observation);
   } catch {
     return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The site readiness surface could not be verified through the controlled CDP probe.");
   }
@@ -260,6 +261,30 @@ export function validateXiaohongshuSiteResourceProbe(observation: ReadProbeObser
     evidence_ref: opaqueRef("validation"),
     verified_fact_keys: verifiedFactKeys
   };
+}
+
+export async function waitForXiaohongshuSiteResourceReadiness(
+  observe: () => Promise<ReadProbeObservation | undefined>,
+  signal: AbortSignal,
+  retryDelayMs = 100
+): Promise<LocalProviderSiteResourceProbeResult> {
+  while (true) {
+    signal.throwIfAborted();
+    const observation = await observe();
+    const result = validateXiaohongshuSiteResourceProbe(observation);
+    if (!isPendingXiaohongshuInitialization(observation)) return result;
+    await abortableDelay(retryDelayMs, signal);
+  }
+}
+
+function isPendingXiaohongshuInitialization(observation: ReadProbeObservation | undefined): boolean {
+  return observation?.origin === "https://www.xiaohongshu.com" &&
+    observation.ready === true &&
+    observation.login_like === false &&
+    observation.challenge_like === false &&
+    typeof observation.vue_ready === "boolean" &&
+    typeof observation.pinia_ready === "boolean" &&
+    (!observation.vue_ready || !observation.pinia_ready);
 }
 
 export function xiaohongshuSiteResourceProbeExpression(): string {
