@@ -204,7 +204,8 @@ test("serves a trusted refs-only BOSS SPA fact while deferring exact WAPI eviden
   const siteProbe = trustLocalProviderSiteResourceProbe(async () => ({
     status: "available",
     observed_at: "2026-07-12T00:00:00.000Z",
-    evidence_ref: "validation_boss-spa-test"
+    evidence_ref: "validation_boss-spa-test",
+    verified_fact_keys: ["page.boss_spa.ready"]
   }));
   const readProbe = trustLocalProviderReadProbe(async (probe) => completedBossReadProbe(probe));
   const runtime = new HarborRuntime(createBossReadLauncher(readProbe, siteProbe));
@@ -236,10 +237,111 @@ test("serves a trusted refs-only BOSS SPA fact while deferring exact WAPI eviden
   }
 });
 
+test("serves trusted XHS Vue and Pinia readiness for a non-fixture detail session", async () => {
+  let probeCalls = 0;
+  const siteProbe = trustLocalProviderSiteResourceProbe(async () => {
+    probeCalls += 1;
+    return {
+      status: "available",
+      observed_at: "2026-07-23T00:00:00.000Z",
+      evidence_ref: "validation_xhs-readiness-test",
+      verified_fact_keys: ["page.vue_app.ready", "page.pinia_store.ready"]
+    };
+  });
+  const readProbe = trustLocalProviderReadProbe(async (probe) => completedBossReadProbe(probe));
+  const runtime = new HarborRuntime(createBossReadLauncher(readProbe, siteProbe));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    const session = await runtime.createSession({
+      url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+      control_owner: "agent",
+      holder_ref: "xhs-site-resource-test"
+    });
+    const facts = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=xiaohongshu&task_kind=read_note_detail`);
+    const vue = facts.resource_facts.find((fact: { key: string }) => fact.key === "page.vue_app.ready");
+    const pinia = facts.resource_facts.find((fact: { key: string }) => fact.key === "page.pinia_store.ready");
+    assert.equal(probeCalls, 1);
+    assert.deepEqual({ state: vue.state, source: vue.source, evidence_ref: vue.evidence_ref }, {
+      state: "available",
+      source: "validation_evidence",
+      evidence_ref: "validation_xhs-readiness-test"
+    });
+    assert.deepEqual({ state: pinia.state, source: pinia.source, evidence_ref: pinia.evidence_ref }, {
+      state: "available",
+      source: "validation_evidence",
+      evidence_ref: "validation_xhs-readiness-test"
+    });
+    const publicJson = JSON.stringify(facts).toLowerCase();
+    for (const forbidden of ["<html", "response_body", "cookie_value", "access_token", "profile_path", "websocketdebuggerurl"]) {
+      assert.equal(publicJson.includes(forbidden), false);
+    }
+    assert.equal(facts.public_boundary.raw_dom, "not_exposed");
+    assert.equal(facts.public_boundary.raw_network_bodies, "not_exposed");
+  } finally {
+    await running.close();
+  }
+});
+
+test("does not promote unverified XHS readiness facts", async () => {
+  const siteProbe = trustLocalProviderSiteResourceProbe(async () => ({
+    status: "unavailable",
+    failure_class: "page_not_ready",
+    message: "The Xiaohongshu Pinia store is not ready.",
+    verified_fact_keys: ["page.vue_app.ready"],
+    evidence_ref: "validation_xhs-partial-readiness-test"
+  }));
+  const readProbe = trustLocalProviderReadProbe(async (probe) => completedBossReadProbe(probe));
+  const runtime = new HarborRuntime(createBossReadLauncher(readProbe, siteProbe));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    const session = await runtime.createSession({ url: "https://www.xiaohongshu.com/explore" });
+    const facts = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=xiaohongshu&task_kind=read_note_detail`);
+    const vue = facts.resource_facts.find((fact: { key: string }) => fact.key === "page.vue_app.ready");
+    const pinia = facts.resource_facts.find((fact: { key: string }) => fact.key === "page.pinia_store.ready");
+    assert.deepEqual({ state: vue.state, source: vue.source, evidence_ref: vue.evidence_ref }, {
+      state: "available",
+      source: "validation_evidence",
+      evidence_ref: "validation_xhs-partial-readiness-test"
+    });
+    assert.equal(pinia.state, "unavailable");
+    assert.equal(pinia.severity, "blocking");
+  } finally {
+    await running.close();
+  }
+});
+
+test("maps trusted XHS login and challenge probes to blocking admission facts", async () => {
+  for (const probeResult of [
+    { status: "blocked" as const, failure_class: "not_logged_in" as const, message: "manual login required", verified_fact_keys: [] },
+    { status: "blocked" as const, failure_class: "safety_challenge" as const, message: "challenge present", verified_fact_keys: [] }
+  ]) {
+    const siteProbe = trustLocalProviderSiteResourceProbe(async () => probeResult);
+    const readProbe = trustLocalProviderReadProbe(async (probe) => completedBossReadProbe(probe));
+    const runtime = new HarborRuntime(createBossReadLauncher(readProbe, siteProbe));
+    const running = await startHarborRuntimeServer({ port: 0, runtime });
+    try {
+      const session = await runtime.createSession({ url: "https://www.xiaohongshu.com/explore" });
+      const facts = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=xiaohongshu&task_kind=read_note_detail`);
+      const key = probeResult.failure_class === "not_logged_in" ? "identity.user_logged_in.confirmed" : "safety.challenge.absent";
+      const fact = facts.resource_facts.find((candidate: { key: string }) => candidate.key === key);
+      assert.equal(fact.state, "blocked");
+      assert.equal(fact.severity, "blocking");
+      assert.equal(fact.message, probeResult.message);
+      const readinessFacts = facts.resource_facts.filter((candidate: { key: string }) =>
+        candidate.key === "page.vue_app.ready" || candidate.key === "page.pinia_store.ready"
+      );
+      assert.equal(readinessFacts.length, 2);
+      assert.equal(readinessFacts.every((candidate: { state: string }) => candidate.state === "blocked"), true);
+    } finally {
+      await running.close();
+    }
+  }
+});
+
 test("maps trusted BOSS login and challenge probes to blocking admission facts", async () => {
   for (const probeResult of [
-    { status: "blocked" as const, failure_class: "not_logged_in" as const, message: "manual login required" },
-    { status: "blocked" as const, failure_class: "safety_challenge" as const, message: "challenge present" }
+    { status: "blocked" as const, failure_class: "not_logged_in" as const, message: "manual login required", verified_fact_keys: [] },
+    { status: "blocked" as const, failure_class: "safety_challenge" as const, message: "challenge present", verified_fact_keys: [] }
   ]) {
     const siteProbe = trustLocalProviderSiteResourceProbe(async () => probeResult);
     const readProbe = trustLocalProviderReadProbe(async (probe) => completedBossReadProbe(probe));
@@ -269,12 +371,12 @@ test("aborts the BOSS site-resource probe when the HTTP client disconnects", asy
     markStarted();
     const timer = setTimeout(() => {
       backgroundCompleted = true;
-      resolve({ status: "unknown", failure_class: "provider_probe_unavailable", message: "unexpected background completion" });
+      resolve({ status: "unknown", failure_class: "provider_probe_unavailable", message: "unexpected background completion", verified_fact_keys: [] });
     }, 500);
     input.signal?.addEventListener("abort", () => {
       clearTimeout(timer);
       markAborted();
-      resolve({ status: "unknown", failure_class: "provider_probe_unavailable", message: "client disconnected" });
+      resolve({ status: "unknown", failure_class: "provider_probe_unavailable", message: "client disconnected", verified_fact_keys: [] });
     }, { once: true });
   }));
   const readProbe = trustLocalProviderReadProbe(async (probe) => completedBossReadProbe(probe));

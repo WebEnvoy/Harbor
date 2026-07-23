@@ -58,6 +58,7 @@ export type {
   LocalProviderReadProbeResult,
   LocalProviderScreenshotFacts,
   LocalProviderSiteResourceProbeInput,
+  LocalProviderSiteResourceReadinessFactKey,
   LocalProviderSiteResourceProbeResult,
   OpenIdentityEnvironmentSessionInput,
   ProviderMode,
@@ -595,7 +596,8 @@ export class RuntimeSessionStore {
       return {
         status: "unknown",
         failure_class: "provider_probe_unavailable",
-        message: "The managed local provider does not expose a trusted site-resource probe."
+        message: "The managed local provider does not expose a trusted site-resource probe.",
+        verified_fact_keys: []
       };
     }
     return probe(input);

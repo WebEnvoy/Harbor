@@ -173,35 +173,46 @@ export function providerLaunchArguments(
   ];
 }
 
-const BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS = 3000;
+const SITE_RESOURCE_PROBE_DEADLINE_MS = 3000;
 
 export async function probeProviderSiteResource(
   port: string,
   requestedUrl: string,
   input: LocalProviderSiteResourceProbeInput,
-  deadlineMs = BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS
+  deadlineMs = SITE_RESOURCE_PROBE_DEADLINE_MS
 ): Promise<LocalProviderSiteResourceProbeResult> {
-  if (input.site_id !== "boss" || (input.task_kind !== "job_search" && input.task_kind !== "boss_job_search")) {
+  if (
+    (input.site_id === "boss" && input.task_kind !== "job_search" && input.task_kind !== "boss_job_search") ||
+    (input.site_id === "xiaohongshu" &&
+      input.task_kind !== "search_notes" &&
+      input.task_kind !== "xhs_search_notes" &&
+      input.task_kind !== "read_note_detail" &&
+      input.task_kind !== "xhs_read_note_detail")
+  ) {
     return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The local provider has no safe probe for this site resource.");
   }
-  const deadline = AbortSignal.timeout(Math.max(1, Math.min(deadlineMs, BOSS_SITE_RESOURCE_PROBE_DEADLINE_MS)));
+  const deadline = AbortSignal.timeout(Math.max(1, Math.min(deadlineMs, SITE_RESOURCE_PROBE_DEADLINE_MS)));
   const signal = input.signal ? AbortSignal.any([input.signal, deadline]) : deadline;
   try {
     const page = await activePage(port, requestedUrl, signal);
     if (!page.webSocketDebuggerUrl) {
-      return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The BOSS page has no controlled CDP target.");
+      return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The site page has no controlled CDP target.");
     }
     const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Runtime.enable");
       const evaluated = await client.send("Runtime.evaluate", {
-        expression: readProbeExpression("boss", ""),
+        expression: input.site_id === "boss"
+          ? readProbeExpression("boss", "")
+          : xiaohongshuSiteResourceProbeExpression(),
         returnByValue: true
       });
       return (evaluated.result as { value?: ReadProbeObservation } | undefined)?.value;
     }, signal);
-    return validateBossSpaResourceProbe(observation);
+    return input.site_id === "boss"
+      ? validateBossSpaResourceProbe(observation)
+      : validateXiaohongshuSiteResourceProbe(observation);
   } catch {
-    return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The BOSS SPA could not be verified through the controlled CDP probe.");
+    return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The site readiness surface could not be verified through the controlled CDP probe.");
   }
 }
 
@@ -215,15 +226,82 @@ export function validateBossSpaResourceProbe(observation: ReadProbeObservation |
   if (!observation.ready || !observation.vue_owned || !observation.rendered_surface || !observation.job_cards_valid || !observation.job_card_count) {
     return siteResourceProbeUnavailable("unavailable", "page_not_ready", "The canonical BOSS page has no verified SPA job-search surface.");
   }
-  return { status: "available", observed_at: new Date().toISOString(), evidence_ref: opaqueRef("validation") };
+  return {
+    status: "available",
+    observed_at: new Date().toISOString(),
+    evidence_ref: opaqueRef("validation"),
+    verified_fact_keys: ["page.boss_spa.ready"]
+  };
+}
+
+export function validateXiaohongshuSiteResourceProbe(observation: ReadProbeObservation | undefined): LocalProviderSiteResourceProbeResult {
+  if (!observation) {
+    return siteResourceProbeUnavailable("unknown", "provider_probe_unavailable", "The Xiaohongshu readiness probe returned no public observation.");
+  }
+  if (observation.origin !== "https://www.xiaohongshu.com") {
+    return siteResourceProbeUnavailable("unavailable", "page_not_ready", "The active page is not on the canonical Xiaohongshu origin.");
+  }
+  if (observation.challenge_like) {
+    return siteResourceProbeUnavailable("blocked", "safety_challenge", "The Xiaohongshu page shows a verification or safety challenge.");
+  }
+  if (observation.login_like) {
+    return siteResourceProbeUnavailable("blocked", "not_logged_in", "The Xiaohongshu page requires manual login.");
+  }
+  const verifiedFactKeys = [
+    ...(observation.vue_ready ? ["page.vue_app.ready" as const] : []),
+    ...(observation.pinia_ready ? ["page.pinia_store.ready" as const] : [])
+  ];
+  if (!observation.ready || !observation.vue_ready || !observation.pinia_ready) {
+    return siteResourceProbeUnavailable("unavailable", "page_not_ready", "The Xiaohongshu Vue app or Pinia store is not ready.", verifiedFactKeys);
+  }
+  return {
+    status: "available",
+    observed_at: new Date().toISOString(),
+    evidence_ref: opaqueRef("validation"),
+    verified_fact_keys: verifiedFactKeys
+  };
+}
+
+export function xiaohongshuSiteResourceProbeExpression(): string {
+  return `(() => {
+    const text = document.body?.innerText || "";
+    const challengeSurface = typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]')).some((element) => {
+      const view = document.defaultView;
+      if (!view) return false;
+      const style = view.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 &&
+        rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < view.innerHeight && rect.left < view.innerWidth;
+    });
+    const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge|security check|verification required|complete verification/i.test(text) || challengeSurface;
+    const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/login') || Boolean(document.querySelector('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
+    const app = document.querySelector('#app');
+    const vue = app?.__vue_app__;
+    const pinia = window.__PINIA__ || window.__pinia || vue?.config?.globalProperties?.$pinia;
+    return {
+      origin: location.origin,
+      ready: document.readyState !== 'loading',
+      login_like: login,
+      challenge_like: challenge,
+      vue_ready: Boolean(vue),
+      pinia_ready: pinia?._s instanceof Map
+    };
+  })()`;
 }
 
 function siteResourceProbeUnavailable(
   status: "blocked" | "unavailable" | "unknown",
   failure_class: Extract<LocalProviderSiteResourceProbeResult, { status: "blocked" | "unavailable" | "unknown" }>["failure_class"],
-  message: string
+  message: string,
+  verified_fact_keys: Extract<LocalProviderSiteResourceProbeResult, { status: "blocked" | "unavailable" | "unknown" }>["verified_fact_keys"] = []
 ): LocalProviderSiteResourceProbeResult {
-  return { status, failure_class, message };
+  return {
+    status,
+    failure_class,
+    message,
+    verified_fact_keys,
+    ...(verified_fact_keys.length > 0 ? { evidence_ref: opaqueRef("validation") } : {})
+  };
 }
 
 export function createFixtureLauncher(status: "ready" | "unavailable" | "profile_locked" | "session_lost" = "ready"): LocalProviderLauncher {
