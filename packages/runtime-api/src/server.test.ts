@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test, { after } from "node:test";
 import { createFixtureLauncher, HarborRuntime, type LocalProviderLauncher, type LocalProviderLaunchInput } from "./index.js";
 import type { IdentityEnvironmentMutationPersistenceState } from "./identity-environment-mutation-types.js";
+import { waitForXiaohongshuSiteResourceReadiness } from "./local-provider-launcher.js";
 import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe, type ReadOperationProbe, type SiteResourceProbe } from "./read-operation-probe-trust.js";
 import { opaqueRef } from "./refs.js";
 import { startHarborRuntimeServer as startUnconfiguredHarborRuntimeServer } from "./server.js";
@@ -239,14 +240,20 @@ test("serves a trusted refs-only BOSS SPA fact while deferring exact WAPI eviden
 
 test("serves trusted XHS Vue and Pinia readiness for a non-fixture detail session", async () => {
   let probeCalls = 0;
+  let observations = 0;
   const siteProbe = trustLocalProviderSiteResourceProbe(async () => {
     probeCalls += 1;
-    return {
-      status: "available",
-      observed_at: "2026-07-23T00:00:00.000Z",
-      evidence_ref: "validation_xhs-readiness-test",
-      verified_fact_keys: ["page.vue_app.ready", "page.pinia_store.ready"]
-    };
+    return waitForXiaohongshuSiteResourceReadiness(async () => {
+      observations += 1;
+      return {
+        origin: "https://www.xiaohongshu.com",
+        ready: true,
+        login_like: false,
+        challenge_like: false,
+        vue_ready: observations > 1,
+        pinia_ready: observations > 1
+      };
+    }, new AbortController().signal, 0);
   });
   const readProbe = trustLocalProviderReadProbe(async (probe) => completedBossReadProbe(probe));
   const runtime = new HarborRuntime(createBossReadLauncher(readProbe, siteProbe));
@@ -261,16 +268,17 @@ test("serves trusted XHS Vue and Pinia readiness for a non-fixture detail sessio
     const vue = facts.resource_facts.find((fact: { key: string }) => fact.key === "page.vue_app.ready");
     const pinia = facts.resource_facts.find((fact: { key: string }) => fact.key === "page.pinia_store.ready");
     assert.equal(probeCalls, 1);
-    assert.deepEqual({ state: vue.state, source: vue.source, evidence_ref: vue.evidence_ref }, {
+    assert.equal(observations, 2);
+    assert.deepEqual({ state: vue.state, source: vue.source }, {
       state: "available",
-      source: "validation_evidence",
-      evidence_ref: "validation_xhs-readiness-test"
+      source: "validation_evidence"
     });
-    assert.deepEqual({ state: pinia.state, source: pinia.source, evidence_ref: pinia.evidence_ref }, {
+    assert.deepEqual({ state: pinia.state, source: pinia.source }, {
       state: "available",
-      source: "validation_evidence",
-      evidence_ref: "validation_xhs-readiness-test"
+      source: "validation_evidence"
     });
+    assert.equal(typeof vue.evidence_ref, "string");
+    assert.equal(vue.evidence_ref, pinia.evidence_ref);
     const publicJson = JSON.stringify(facts).toLowerCase();
     for (const forbidden of ["<html", "response_body", "cookie_value", "access_token", "profile_path", "websocketdebuggerurl"]) {
       assert.equal(publicJson.includes(forbidden), false);

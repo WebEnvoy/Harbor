@@ -11,7 +11,7 @@ import {
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
-import { probeProviderSiteResource, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobDetailResponse, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe, validateXiaohongshuSiteResourceProbe, xiaohongshuSiteResourceProbeExpression } from "./local-provider-launcher.js";
+import { probeProviderSiteResource, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobDetailResponse, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe, validateXiaohongshuSiteResourceProbe, waitForXiaohongshuSiteResourceReadiness, xiaohongshuSiteResourceProbeExpression } from "./local-provider-launcher.js";
 
 test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
@@ -193,6 +193,83 @@ test("maps only verified XHS readiness and keeps unsafe surfaces fail-closed", (
     assert.equal("failure_class" in result ? result.failure_class : null, failureClass);
     assert.deepEqual(result.verified_fact_keys, []);
   }
+});
+
+test("waits within the bounded probe for a canonical XHS page to finish initializing", async () => {
+  let observations = 0;
+  const signal = new AbortController().signal;
+  const result = await waitForXiaohongshuSiteResourceReadiness(async () => {
+    observations += 1;
+    return {
+      origin: "https://www.xiaohongshu.com",
+      ready: true,
+      login_like: false,
+      challenge_like: false,
+      vue_ready: observations > 1,
+      pinia_ready: observations > 2
+    };
+  }, signal, 0);
+
+  assert.equal(observations, 3);
+  assert.equal(result.status, "available");
+  assert.deepEqual(result.verified_fact_keys, ["page.vue_app.ready", "page.pinia_store.ready"]);
+});
+
+test("does not retry XHS readiness when the observation is not a safe initialization wait", async () => {
+  for (const observation of [
+    undefined,
+    { origin: "https://attacker.example", ready: true, login_like: false, challenge_like: false, vue_ready: false, pinia_ready: false },
+    { origin: "https://www.xiaohongshu.com", ready: false, login_like: false, challenge_like: false, vue_ready: false, pinia_ready: false },
+    { origin: "https://www.xiaohongshu.com", ready: true, login_like: true, challenge_like: false, vue_ready: false, pinia_ready: false },
+    { origin: "https://www.xiaohongshu.com", ready: true, login_like: false, challenge_like: true, vue_ready: false, pinia_ready: false }
+  ] as const) {
+    let observations = 0;
+    const signal = new AbortController().signal;
+    await waitForXiaohongshuSiteResourceReadiness(async () => {
+      observations += 1;
+      return observation;
+    }, signal, 0);
+    assert.equal(observations, 1);
+  }
+});
+
+test("stops XHS readiness evaluation on observer failure, abort, or timeout", async () => {
+  let observerFailures = 0;
+  await assert.rejects(waitForXiaohongshuSiteResourceReadiness(async () => {
+    observerFailures += 1;
+    throw new Error("controlled CDP observation failed");
+  }, new AbortController().signal, 0), /controlled CDP observation failed/);
+  assert.equal(observerFailures, 1);
+
+  for (const reason of [
+    new DOMException("cancelled", "AbortError"),
+    new DOMException("timed out", "TimeoutError")
+  ]) {
+    const controller = new AbortController();
+    let observations = 0;
+    await assert.rejects(waitForXiaohongshuSiteResourceReadiness(async () => {
+      observations += 1;
+      controller.abort(reason);
+      return {
+        origin: "https://www.xiaohongshu.com",
+        ready: true,
+        login_like: false,
+        challenge_like: false,
+        vue_ready: false,
+        pinia_ready: false
+      };
+    }, controller.signal, 0), (error: unknown) => error === reason);
+    assert.equal(observations, 1);
+  }
+
+  const preAborted = new AbortController();
+  preAborted.abort(new DOMException("cancelled", "AbortError"));
+  let preAbortedObservations = 0;
+  await assert.rejects(waitForXiaohongshuSiteResourceReadiness(async () => {
+    preAbortedObservations += 1;
+    return undefined;
+  }, preAborted.signal, 0), { name: "AbortError" });
+  assert.equal(preAbortedObservations, 0);
 });
 
 test("correlates the official Vue Pinia search store without exposing store contents", () => {
