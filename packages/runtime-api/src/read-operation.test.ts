@@ -11,7 +11,7 @@ import {
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
-import { probeProviderSiteResource, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobDetailResponse, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe } from "./local-provider-launcher.js";
+import { probeProviderSiteResource, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobDetailResponse, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe, validateXiaohongshuSiteResourceProbe, xiaohongshuSiteResourceProbeExpression } from "./local-provider-launcher.js";
 
 test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
@@ -130,6 +130,68 @@ test("accepts only a rendered canonical BOSS SPA surface for pre-admission", () 
     const result = validateBossSpaResourceProbe(observation);
     assert.equal(result.status, status);
     assert.equal("failure_class" in result ? result.failure_class : null, failureClass);
+  }
+});
+
+test("observes only bounded XHS app readiness for site-resource admission", () => {
+  const privateStore = { _s: new Map([["search", { private: "must-not-return" }]]) };
+  const app = { __vue_app__: { config: { globalProperties: { $pinia: privateStore } } } };
+  const document = {
+    readyState: "complete",
+    body: { innerText: "公开页面" },
+    querySelector: (selector: string) => selector === "#app" ? app : null,
+    querySelectorAll: () => []
+  };
+  const evaluate = new Function("window", "document", "location", `return ${xiaohongshuSiteResourceProbeExpression()}`);
+  const observation = evaluate({}, document, {
+    origin: "https://www.xiaohongshu.com",
+    pathname: "/explore/0123456789abcdef01234567"
+  });
+  assert.deepEqual(observation, {
+    origin: "https://www.xiaohongshu.com",
+    ready: true,
+    login_like: false,
+    challenge_like: false,
+    vue_ready: true,
+    pinia_ready: true
+  });
+  assert.equal(JSON.stringify(observation).includes("must-not-return"), false);
+});
+
+test("maps only verified XHS readiness and keeps unsafe surfaces fail-closed", () => {
+  const ready = validateXiaohongshuSiteResourceProbe({
+    origin: "https://www.xiaohongshu.com",
+    ready: true,
+    login_like: false,
+    challenge_like: false,
+    vue_ready: true,
+    pinia_ready: true
+  });
+  assert.equal(ready.status, "available");
+  assert.deepEqual(ready.verified_fact_keys, ["page.vue_app.ready", "page.pinia_store.ready"]);
+
+  const partial = validateXiaohongshuSiteResourceProbe({
+    origin: "https://www.xiaohongshu.com",
+    ready: true,
+    login_like: false,
+    challenge_like: false,
+    vue_ready: true,
+    pinia_ready: false
+  });
+  assert.equal(partial.status, "unavailable");
+  assert.deepEqual(partial.verified_fact_keys, ["page.vue_app.ready"]);
+  assert.equal("evidence_ref" in partial, true);
+
+  for (const [observation, status, failureClass] of [
+    [{ origin: "https://www.xiaohongshu.com", ready: true, vue_ready: true, pinia_ready: true, login_like: true }, "blocked", "not_logged_in"],
+    [{ origin: "https://www.xiaohongshu.com", ready: true, vue_ready: true, pinia_ready: true, challenge_like: true }, "blocked", "safety_challenge"],
+    [{ origin: "https://attacker.example", ready: true, vue_ready: true, pinia_ready: true }, "unavailable", "page_not_ready"],
+    [undefined, "unknown", "provider_probe_unavailable"]
+  ] as const) {
+    const result = validateXiaohongshuSiteResourceProbe(observation);
+    assert.equal(result.status, status);
+    assert.equal("failure_class" in result ? result.failure_class : null, failureClass);
+    assert.deepEqual(result.verified_fact_keys, []);
   }
 });
 

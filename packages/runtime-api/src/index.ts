@@ -274,6 +274,7 @@ export type {
   LocalProviderReadProbeResult,
   LocalProviderScreenshotFacts,
   LocalProviderSiteResourceProbeInput,
+  LocalProviderSiteResourceReadinessFactKey,
   LocalProviderSiteResourceProbeResult,
   OpenIdentityEnvironmentSessionInput,
   ProviderMode,
@@ -997,9 +998,16 @@ export class HarborRuntime {
       elements: siteResourceElements(input)
     });
     const taskKind = input.task_kind?.trim().toLowerCase().replace(/-/g, "_") ?? (input.site_id === "boss" ? "job_search" : undefined);
-    const siteProbe = input.site_id === "boss" && (taskKind === "job_search" || taskKind === "boss_job_search")
+    const siteProbe = record.execution_surface === "local_provider" && input.site_id === "boss" && (taskKind === "job_search" || taskKind === "boss_job_search")
       ? await this.runtimeSessions.probeSiteResource(runtime_session_ref, { site_id: "boss", task_kind: taskKind, signal })
-      : undefined;
+      : record.execution_surface === "local_provider" && input.site_id === "xiaohongshu" && (
+        taskKind === "search_notes" ||
+        taskKind === "xhs_search_notes" ||
+        taskKind === "read_note_detail" ||
+        taskKind === "xhs_read_note_detail"
+      )
+        ? await this.runtimeSessions.probeSiteResource(runtime_session_ref, { site_id: "xiaohongshu", task_kind: taskKind, signal })
+        : undefined;
     return createSiteResourceFacts(record.facts, input, capture, siteProbe);
   }
 

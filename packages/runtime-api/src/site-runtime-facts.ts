@@ -326,7 +326,7 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
       : available(key, "No login, CAPTCHA, verification, or safety challenge is visible from public page facts.", "derived", context.evidence_ref);
   }
   if (key === "identity.user_logged_in.confirmed" || key === "identity.boss_geek_logged_in.confirmed" || key === "runtime.site_identity.logged_in") {
-    if (key === "identity.boss_geek_logged_in.confirmed" && context.siteProbe && "failure_class" in context.siteProbe && context.siteProbe.failure_class === "not_logged_in") {
+    if (context.siteProbe && "failure_class" in context.siteProbe && context.siteProbe.failure_class === "not_logged_in") {
       return blocked(key, context.siteProbe.message);
     }
     if (isFixtureRuntime(context.session)) {
@@ -339,12 +339,21 @@ function factForKey(key: string, profile: SiteResourceProfile, context: {
         "Harbor has no safe site-specific login probe in this endpoint; Core must treat this as admission-unknown until live profile facts confirm it."
       );
   }
-  if (key === "page.boss_spa.ready" && context.siteProbe) {
-    if (context.siteProbe.status === "available") {
-      return available(key, "Controlled CDP probe verified the canonical rendered BOSS SPA job-search surface.", "validation_evidence", context.siteProbe.evidence_ref);
-    }
+  if ((key === "page.vue_app.ready" || key === "page.pinia_store.ready" || key === "page.boss_spa.ready") && context.siteProbe) {
+    const evidenceRef = "evidence_ref" in context.siteProbe ? context.siteProbe.evidence_ref : undefined;
     if (context.siteProbe.status === "blocked") return blocked(key, context.siteProbe.message);
+    if (context.siteProbe.verified_fact_keys.some((candidate) => candidate === key)) {
+      const message = key === "page.boss_spa.ready"
+        ? "Controlled CDP probe verified the canonical rendered BOSS SPA job-search surface."
+        : key === "page.vue_app.ready"
+          ? "Controlled CDP probe verified the Xiaohongshu Vue app readiness signal."
+          : "Controlled CDP probe verified the Xiaohongshu Pinia store readiness signal.";
+      return available(key, message, "validation_evidence", evidenceRef);
+    }
     if (context.siteProbe.status === "unavailable") return blocking(key, context.siteProbe.message);
+    if (context.siteProbe.status === "available") {
+      return unknown(key, "The controlled site-resource probe did not verify this readiness signal.");
+    }
     return unknown(key, context.siteProbe.message);
   }
   if (key === "network.wapi_zpgeek.available") {

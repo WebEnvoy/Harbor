@@ -178,22 +178,36 @@ export interface LocalProviderReadProbeInput {
   expected_origin: string;
 }
 
-export interface LocalProviderSiteResourceProbeInput {
-  site_id: "boss";
-  task_kind: "job_search" | "boss_job_search";
-  signal?: AbortSignal;
-}
+export type LocalProviderSiteResourceReadinessFactKey =
+  | "page.vue_app.ready"
+  | "page.pinia_store.ready"
+  | "page.boss_spa.ready";
+
+export type LocalProviderSiteResourceProbeInput =
+  | {
+      site_id: "boss";
+      task_kind: "job_search" | "boss_job_search";
+      signal?: AbortSignal;
+    }
+  | {
+      site_id: "xiaohongshu";
+      task_kind: "search_notes" | "xhs_search_notes" | "read_note_detail" | "xhs_read_note_detail";
+      signal?: AbortSignal;
+    };
 
 export type LocalProviderSiteResourceProbeResult =
   | {
       status: "available";
       observed_at: string;
       evidence_ref: string;
+      verified_fact_keys: readonly LocalProviderSiteResourceReadinessFactKey[];
     }
   | {
       status: "blocked" | "unavailable" | "unknown";
       failure_class: "not_logged_in" | "safety_challenge" | "page_not_ready" | "provider_probe_unavailable";
       message: string;
+      verified_fact_keys: readonly LocalProviderSiteResourceReadinessFactKey[];
+      evidence_ref?: string;
     };
 
 export interface LocalProviderReadProbePublicSummary {
