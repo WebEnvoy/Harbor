@@ -58,3 +58,48 @@ test("readTargetPageFacts fails closed when the requested target is unavailable"
   assert.equal(page.current_url, null);
   assert.equal(page.error?.code, "url_unreachable");
 });
+
+test("reads binary CDP messages without waiting for the command timeout", async () => {
+  class BinaryCdpWebSocket extends EventTarget {
+    readyState = 0;
+    binaryType: BinaryType = "blob";
+
+    constructor(_url: string | URL) {
+      super();
+      queueMicrotask(() => {
+        this.readyState = 1;
+        this.dispatchEvent(new Event("open"));
+      });
+    }
+
+    send(payload: string): void {
+      const message = JSON.parse(payload) as { id: number; method: string };
+      const result = message.method === "Runtime.evaluate"
+        ? { result: { value: { title: "Binary page", url: "https://www.xiaohongshu.com/explore", readyState: "complete" } } }
+        : {};
+      const bytes = new TextEncoder().encode(JSON.stringify({ id: message.id, result }));
+      const data = this.binaryType === "arraybuffer" ? bytes.buffer : new Blob([bytes]);
+      queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", { data })));
+    }
+
+    close(): void {
+      this.readyState = 3;
+      this.dispatchEvent(new Event("close"));
+    }
+  }
+
+  const originalWebSocket = globalThis.WebSocket;
+  globalThis.WebSocket = BinaryCdpWebSocket as unknown as typeof WebSocket;
+  try {
+    const page = await readTargetPageFacts({
+      id: "binary",
+      type: "page",
+      url: "https://www.xiaohongshu.com/explore",
+      title: "Fallback page",
+      webSocketDebuggerUrl: "ws://127.0.0.1/binary"
+    }, "https://www.xiaohongshu.com/explore", AbortSignal.timeout(100));
+    assert.equal(page.title, "Binary page");
+  } finally {
+    globalThis.WebSocket = originalWebSocket;
+  }
+});

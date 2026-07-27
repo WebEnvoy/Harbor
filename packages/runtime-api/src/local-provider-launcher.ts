@@ -1489,6 +1489,7 @@ async function readPageTitle(webSocketUrl: string, requested_url: string, signal
 
 async function withCdp<T>(webSocketUrl: string, callback: (client: CdpClient) => Promise<T>, signal?: AbortSignal): Promise<T> {
   const ws = new WebSocket(webSocketUrl);
+  ws.binaryType = "arraybuffer";
   await new Promise<void>((resolve, reject) => {
     let settled = false;
     const cleanup = () => {
