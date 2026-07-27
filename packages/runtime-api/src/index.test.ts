@@ -117,6 +117,7 @@ const server = createServer((request, response) => {
   }
   if (url.pathname === "/json/new") {
     response.end(JSON.stringify({
+      id: "fake-page",
       type: "page",
       url: decodeURIComponent(url.search.slice(1)),
       title: "Fake page",
@@ -124,6 +125,10 @@ const server = createServer((request, response) => {
         ? { webSocketDebuggerUrl: process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL }
         : {})
     }));
+    return;
+  }
+  if (url.pathname === "/json/close/fake-page") {
+    response.end(JSON.stringify({ closed: true }));
     return;
   }
   response.statusCode = 404;
@@ -825,6 +830,130 @@ function installFakeCdpWebSocket(ignoredMethod: string): void {
   }
   globalThis.WebSocket = FakeCdpWebSocket as unknown as typeof WebSocket;
 }
+
+class DelayedNavigationAckCdpWebSocket extends EventTarget {
+  readyState = 0;
+
+  constructor(_url: string | URL) {
+    super();
+    queueMicrotask(() => {
+      this.readyState = 1;
+      this.dispatchEvent(new Event("open"));
+    });
+  }
+
+  send(payload: string): void {
+    const message = JSON.parse(payload) as { id: number; method: string; params?: { requestId?: string; expression?: string } };
+    if (message.method === "Page.navigate") {
+      queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
+        data: JSON.stringify({
+          method: "Fetch.requestPaused",
+          params: {
+            requestId: "navigation",
+            resourceType: "Document",
+            request: { url: "https://www.xiaohongshu.com/search_result?keyword=AI" }
+          }
+        })
+      })));
+      setTimeout(() => this.respond(message.id, {}), 750);
+      return;
+    }
+    if (message.method === "Fetch.continueRequest" && message.params?.requestId === "navigation") {
+      queueMicrotask(() => {
+        this.respond(message.id, {});
+        this.dispatchEvent(new MessageEvent("message", {
+          data: JSON.stringify({
+            method: "Network.responseReceived",
+            params: {
+              requestId: "search-response",
+              response: { status: 200, url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes" }
+            }
+          })
+        }));
+      });
+      return;
+    }
+    if (message.method === "Runtime.evaluate") {
+      if (message.params?.expression?.includes("document.title")) {
+        this.respond(message.id, { result: { value: { title: "Fake page", url: "about:blank", readyState: "complete" } } });
+        return;
+      }
+      this.respond(message.id, {
+        result: {
+          value: {
+            origin: "https://www.xiaohongshu.com",
+            pathname: "/search_result",
+            search: "?keyword=AI",
+            ready: true,
+            pinia_ready: true,
+            list_valid: true,
+            note_count: 1,
+            detail_urls: ["https://www.xiaohongshu.com/explore/0123456789abcdef01234567"]
+          }
+        }
+      });
+      return;
+    }
+    if (message.method === "Page.captureScreenshot") {
+      this.respond(message.id, { data: Buffer.from("fake screenshot").toString("base64") });
+      return;
+    }
+    this.respond(message.id, {});
+  }
+
+  close(): void {
+    this.readyState = 3;
+    this.dispatchEvent(new Event("close"));
+  }
+
+  private respond(id: number, result: Record<string, unknown>): void {
+    queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
+      data: JSON.stringify({ id, result })
+    })));
+  }
+}
+
+test("does not wait for the official Chrome Page.navigate acknowledgement when the read already proceeds", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "harbor-read-navigation-ack-"));
+  const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  const previousWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
+  const originalWebSocket = globalThis.WebSocket;
+  process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
+  process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = "ws://127.0.0.1/fake-page";
+  globalThis.WebSocket = DelayedNavigationAckCdpWebSocket as unknown as typeof WebSocket;
+  try {
+    const provider = await launchLocalDedicatedProvider({
+      browser_path: writeFakeBrowserExecutable(dir),
+      headless: true,
+      timeout_ms: 5000,
+      url: "about:blank",
+      profile_ref: "profile_delayed-navigation-ack",
+      provider_ref: "provider_fake"
+    });
+    assert.equal(provider.status, "ready", JSON.stringify(provider));
+    if (provider.status !== "ready") throw new Error("fake provider should be ready");
+    assert.ok(provider.probeReadOperation);
+    const startedAt = Date.now();
+    const result = await provider.probeReadOperation({
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      query: "AI",
+      target_url: "https://www.xiaohongshu.com/search_result?keyword=AI",
+      expected_origin: "https://www.xiaohongshu.com"
+    });
+    const elapsed = Date.now() - startedAt;
+    await provider.close();
+    assert.ok(elapsed < 500, "read operation must not wait for the delayed navigation acknowledgement");
+    assert.equal(result.status, "completed");
+  } finally {
+    globalThis.WebSocket = originalWebSocket;
+    if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
+    else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    if (previousWebSocketUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
+    else process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = previousWebSocketUrl;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("opens an identity environment session with page and controller facts", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
