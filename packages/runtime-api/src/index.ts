@@ -99,7 +99,7 @@ import {
   type ViewerControlFacts,
   type ViewerControlUnavailable
 } from "./viewer-control.js";
-import { DetailReadTargetStore } from "./detail-read-target.js";
+import { DetailReadTargetStore, type DetailReadTargetRecord } from "./detail-read-target.js";
 import {
   ManagedProviderLifecycle,
   type ManagedProviderLifecycleCommandResult,
@@ -666,7 +666,9 @@ export class HarborRuntime {
 
     const preflightFailure = this.readOperationSessionFailure(runtime_session_ref, admission);
     if (preflightFailure) return readOperationUnavailable(runtime_session_ref, preflightFailure, requestIdentity(admission.request));
+    const controlGeneration = this.runtimeSessions.getRecord(runtime_session_ref)!.control_generation;
 
+    let consumedDetailTarget: DetailReadTargetRecord | null = null;
     if (admission.request.detail_ref) {
       const target = this.detailReadTargets.consume({
         detail_ref: admission.request.detail_ref,
@@ -675,6 +677,7 @@ export class HarborRuntime {
         operation_id: admission.entry.operation_id
       });
       if (typeof target === "string") return readOperationUnavailable(runtime_session_ref, target, requestIdentity(admission.request));
+      consumedDetailTarget = target;
       admission.target_url = target.canonical_url;
     }
 
@@ -688,6 +691,12 @@ export class HarborRuntime {
       detail_ref: admission.request.detail_ref
     });
     if (probe.status === "unavailable") {
+      if (
+        probe.retryable &&
+        consumedDetailTarget &&
+        this.runtimeSessions.getRecord(runtime_session_ref)?.control_generation === controlGeneration &&
+        !this.readOperationSessionFailure(runtime_session_ref, admission)
+      ) this.detailReadTargets.restoreAfterRetryableFailure(consumedDetailTarget);
       return readOperationUnavailable(runtime_session_ref, probe.failure_class, {
         ...requestIdentity(admission.request),
         retryable: probe.retryable
