@@ -1529,18 +1529,28 @@ test("fails closed before probing when PATCH login state or release lacks a conf
 
 test("consumes a BOSS detail ref only once from the same real-search session", async () => {
   let failDetailProbe = false;
+  let detailProbeRetryable = true;
+  let detailProbeBarrier: Promise<void> | null = null;
+  let markDetailProbeStarted: (() => void) | null = null;
+  let providerCloseBarrier: Promise<void> | null = null;
+  let markProviderCloseStarted: (() => void) | null = null;
+  let providerCloseCalls = 0;
   const probe = trustLocalProviderReadProbe(async (input) => {
     if (input.operation_id === "boss_job_search") return {
       ...completedBossReadProbe(input),
       detail_targets: [{ canonical_url: "https://www.zhipin.com/job_detail/AbC_123.html" }]
     };
     if (input.operation_id === "boss_read_job_detail") {
-      if (failDetailProbe) return {
-        status: "unavailable",
-        failure_class: "network_resource_unavailable",
-        message: "Directed detail probe failure.",
-        retryable: true
-      };
+      if (failDetailProbe) {
+        markDetailProbeStarted?.();
+        if (detailProbeBarrier) await detailProbeBarrier;
+        return {
+          status: "unavailable",
+          failure_class: "page_not_ready",
+          message: "Directed detail probe failure.",
+          retryable: detailProbeRetryable
+        };
+      }
       const sources = ["wapi_job_detail_summary", "dom_snapshot_summary"].map((kind) => ({ kind, ref: opaqueRef("source") }));
       return {
         status: "completed",
@@ -1580,10 +1590,14 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
     }
     throw new Error("Unexpected operation.");
   });
-  const runtime = new HarborRuntime(createBossReadLauncher(probe));
+  const runtime = new HarborRuntime(createBossReadLauncher(probe, undefined, async () => {
+    providerCloseCalls += 1;
+    markProviderCloseStarted?.();
+    if (providerCloseBarrier) await providerCloseBarrier;
+  }));
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
-    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
+    const identityEnvironment = await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
       identity_environment_ref: "identity-env_boss-detail",
       execution_identity_ref: "execution-identity_boss-detail",
       profile_ref: "profile_boss-detail",
@@ -1658,13 +1672,118 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
       site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: failureRef
     });
     assert.equal(failed.status, 409);
-    assert.equal(failed.body.failure_class, "network_resource_unavailable");
+    assert.equal(failed.body.failure_class, "page_not_ready");
     assert.equal(JSON.stringify(failed.body).includes("AbC_123"), false);
+    failDetailProbe = false;
     const replayAfterFailure = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: failureRef
     });
-    assert.equal(replayAfterFailure.status, 409);
-    assert.equal(replayAfterFailure.body.failure_class, "detail_ref_consumed");
+    assert.equal(replayAfterFailure.status, 201);
+    const replayAfterSuccess = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: failureRef
+    });
+    assert.equal(replayAfterSuccess.status, 409);
+    assert.equal(replayAfterSuccess.body.failure_class, "detail_ref_consumed");
+
+    const generationSearch = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_job_search", query: "AI", city_code: "101010100"
+    });
+    const [generationRef] = generationSearch.body.public_summary.detail_refs;
+    let releaseProbe!: () => void;
+    detailProbeBarrier = new Promise<void>((resolve) => { releaseProbe = resolve; });
+    let probeStarted!: () => void;
+    const probeStartedPromise = new Promise<void>((resolve) => { probeStarted = resolve; });
+    markDetailProbeStarted = probeStarted;
+    failDetailProbe = true;
+    const inFlightFailure = postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: generationRef
+    });
+    await probeStartedPromise;
+    await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "core_task" });
+    const reacquired = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_boss-detail",
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "core_task"
+    });
+    assert.equal(reacquired.runtime_session_ref, session.runtime_session_ref);
+    releaseProbe();
+    assert.equal((await inFlightFailure).body.failure_class, "page_not_ready");
+    detailProbeBarrier = null;
+    markDetailProbeStarted = null;
+    failDetailProbe = false;
+    const replayAfterControlChange = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: generationRef
+    });
+    assert.equal(replayAfterControlChange.body.failure_class, "detail_ref_consumed");
+
+    const nonRetryableSearch = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_job_search", query: "AI", city_code: "101010100"
+    });
+    const [nonRetryableRef] = nonRetryableSearch.body.public_summary.detail_refs;
+    failDetailProbe = true;
+    detailProbeRetryable = false;
+    const nonRetryableFailure = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: nonRetryableRef
+    });
+    assert.equal(nonRetryableFailure.body.failure_class, "page_not_ready");
+    failDetailProbe = false;
+    const replayAfterNonRetryableFailure = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: nonRetryableRef
+    });
+    assert.equal(replayAfterNonRetryableFailure.body.failure_class, "detail_ref_consumed");
+
+    const closeSearch = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_job_search", query: "AI", city_code: "101010100"
+    });
+    const [closeRef] = closeSearch.body.public_summary.detail_refs;
+    let releaseCloseProbe!: () => void;
+    detailProbeBarrier = new Promise<void>((resolve) => { releaseCloseProbe = resolve; });
+    let closeProbeStarted!: () => void;
+    const closeProbeStartedPromise = new Promise<void>((resolve) => { closeProbeStarted = resolve; });
+    markDetailProbeStarted = closeProbeStarted;
+    let releaseProviderClose!: () => void;
+    providerCloseBarrier = new Promise<void>((resolve) => { releaseProviderClose = resolve; });
+    let providerCloseStarted!: () => void;
+    const providerCloseStartedPromise = new Promise<void>((resolve) => { providerCloseStarted = resolve; });
+    markProviderCloseStarted = providerCloseStarted;
+    failDetailProbe = true;
+    detailProbeRetryable = true;
+    const inFlightCloseFailure = postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: closeRef
+    });
+    await closeProbeStartedPromise;
+    const stopping = postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/stop`, { control_owner: "core_task" });
+    await providerCloseStartedPromise;
+    assert.equal(runtime.getSession(session.runtime_session_ref)?.lifecycle_state, "disconnected");
+    assert.ok("status" in runtime.releaseSession(session.runtime_session_ref, { control_owner: "core_task" }));
+    const concurrentStopping = runtime.stopSession(session.runtime_session_ref, { control_owner: "core_task" });
+    const reopenWhileClosing = await runtime.openManagedIdentityEnvironmentSession({
+      identity_environment_ref: identityEnvironment.identity_environment_ref,
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "core_task",
+      headless: false
+    });
+    releaseCloseProbe();
+    releaseProviderClose();
+    const inFlightCloseResult = await inFlightCloseFailure;
+    await stopping;
+    await concurrentStopping;
+    assert.equal(providerCloseCalls, 1);
+    assert.ok("status" in runtime.releaseSession(session.runtime_session_ref, { control_owner: "core_task" }));
+    assert.ok("status" in reopenWhileClosing);
+    assert.equal(reopenWhileClosing.status, "unavailable");
+    assert.equal(inFlightCloseResult.body.failure_class, "page_not_ready");
+    const detailTargets = (runtime as unknown as {
+      detailReadTargets: {
+        consume: (input: { detail_ref: string; runtime_session_ref: string; site_id: "boss"; operation_id: "boss_read_job_detail" }) => unknown;
+      };
+    }).detailReadTargets;
+    assert.equal(detailTargets.consume({
+      detail_ref: closeRef,
+      runtime_session_ref: session.runtime_session_ref,
+      site_id: "boss",
+      operation_id: "boss_read_job_detail"
+    }), "detail_ref_consumed");
   } finally {
     await running.close();
   }
@@ -1698,7 +1817,11 @@ const successfulBossReadLauncher = createBossReadLauncher(async (probe) => {
   };
 });
 
-function createBossReadLauncher(probeReadOperation: ReadOperationProbe, probeSiteResource?: SiteResourceProbe): LocalProviderLauncher {
+function createBossReadLauncher(
+  probeReadOperation: ReadOperationProbe,
+  probeSiteResource?: SiteResourceProbe,
+  close: () => Promise<void> = async () => {}
+): LocalProviderLauncher {
   return async (input) => ({
   status: "ready",
   execution_surface: "local_provider",
@@ -1722,7 +1845,7 @@ function createBossReadLauncher(probeReadOperation: ReadOperationProbe, probeSit
     captured_at: "2026-07-11T00:00:00.000Z",
     facts: []
   }),
-  close: async () => {}
+  close
   });
 }
 

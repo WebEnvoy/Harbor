@@ -1352,8 +1352,25 @@ test("does not launch a replacement when incompatible session cleanup fails", as
   if (!("status" in replacement)) throw new Error("cleanup failure must block replacement launch");
   assert.equal(replacement.failure_class, "session_cleanup_failed");
   assert.equal(launches.length, 1);
-  assert.equal(runtime.getSession(core.runtime_session_ref)?.lifecycle_state, "idle");
+  assert.equal(runtime.getSession(core.runtime_session_ref)?.lifecycle_state, "failed");
   assert.equal(runtime.getSession(core.runtime_session_ref)?.control_lock.state, "released");
+  const repeated = await runtime.openIdentityEnvironmentSession({
+    identity_environment,
+    url: "https://www.zhipin.com/web/geek/job",
+    control_owner: "user"
+  });
+  assert.equal("status" in repeated, true);
+  assert.equal(launches.length, 1);
+  const runtimeSessions = (runtime as unknown as {
+    runtimeSessions: {
+      isIdentityEnvironmentInUse: (identityEnvironmentRef: string) => boolean;
+      isProfileStorageInUse: (profileStorageRef: string) => boolean;
+    };
+  }).runtimeSessions;
+  assert.equal(runtimeSessions.isIdentityEnvironmentInUse(identity_environment.identity_environment_ref), true);
+  assert.equal(runtimeSessions.isProfileStorageInUse(identity_environment.browser_storage.profile_storage_ref), true);
+  assert.ok("status" in runtime.releaseSession(core.runtime_session_ref, { control_owner: "core_task" }));
+  assert.equal(runtime.getSession(core.runtime_session_ref)?.lifecycle_state, "failed");
 });
 
 test("returns structured failure for invalid target URLs", async () => {

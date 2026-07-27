@@ -78,6 +78,8 @@ export type {
 
 export interface RuntimeSessionRecord {
   facts: RuntimeSessionFacts;
+  control_generation: number;
+  closing?: Promise<RuntimeSessionFacts>;
   headless: boolean;
   identity_binding: {
     profile_storage_ref: string | null;
@@ -225,6 +227,7 @@ export class RuntimeSessionStore {
     );
     this.records.set(runtime_session_ref, {
       facts,
+      control_generation: 0,
       headless,
       identity_binding: {
         profile_storage_ref: input.profile_storage_ref ?? null
@@ -253,7 +256,7 @@ export class RuntimeSessionStore {
   getActiveIdentityEnvironmentSession(identity_environment_ref: string): RuntimeSessionFacts | null {
     for (const record of this.records.values()) {
       if (record.facts.identity_environment_ref === identity_environment_ref &&
-        !["closed", "failed", "expired"].includes(record.facts.lifecycle_state)) {
+        retainsRuntimeResources(record)) {
         return snapshot(record.facts);
       }
     }
@@ -268,7 +271,7 @@ export class RuntimeSessionStore {
     if (this.openingProfileStorageRefs.has(profile_storage_ref)) return true;
     for (const record of this.records.values()) {
       if (record.identity_binding.profile_storage_ref === profile_storage_ref &&
-        !["closed", "failed", "expired"].includes(record.facts.lifecycle_state)) return true;
+        retainsRuntimeResources(record)) return true;
     }
     return false;
   }
@@ -320,6 +323,10 @@ export class RuntimeSessionStore {
       identityEnvironment.identity_environment_ref,
       identityEnvironment.execution_identity_ref
     );
+    if (
+      existing?.facts.lifecycle_state === "disconnected" ||
+      existing?.facts.current_error?.code === "session_cleanup_failed"
+    ) return cleanupFailed();
     if (input.reuse_existing !== false && existing && (
       existing.headless === headless ||
       (owner === "core_task" && !existing.headless &&
@@ -375,6 +382,7 @@ export class RuntimeSessionStore {
     record.facts.last_seen_at = now;
     record.facts.control_lock.state = "held";
     record.facts.control_lock.updated_at = now;
+    record.control_generation += 1;
     record.facts.facts.push({ key: "session.lock", source: "observed", value: record.facts.control_owner });
     return snapshot(record.facts);
   }
@@ -382,6 +390,9 @@ export class RuntimeSessionStore {
   releaseSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): RuntimeSessionFacts | RuntimeSessionUnavailable {
     const record = this.records.get(runtime_session_ref);
     if (!record) return unavailableSession("session_missing", error("session_lost", "Runtime Session is missing.", true));
+    if (record.facts.lifecycle_state !== "active" && record.facts.lifecycle_state !== "locked") {
+      return unavailableSession("session_cleanup_failed", error("session_cleanup_failed", "Runtime Session is not releasable.", true));
+    }
     const owner = input.control_owner;
     if (owner && record.facts.control_lock.owner !== owner && record.facts.control_lock.state === "held") return lockConflict(record, owner);
 
@@ -401,6 +412,7 @@ export class RuntimeSessionStore {
       updated_at: now,
       conflict_error: null
     };
+    record.control_generation += 1;
     record.user_held_session = false;
     record.read_operation_user_release_pending = confirmedReadControllerRelease;
     record.read_operation_user_handoff = false;
@@ -420,17 +432,49 @@ export class RuntimeSessionStore {
   async closeSession(runtime_session_ref: string): Promise<RuntimeSessionFacts | null> {
     const record = this.records.get(runtime_session_ref);
     if (!record) return null;
+    if (record.closing) return record.closing;
     if (record.facts.lifecycle_state === "closed") {
       record.profile_ownership?.release();
       delete record.profile_ownership;
       return snapshot(record.facts);
     }
+    const closing = this.finishCloseSession(record);
+    record.closing = closing;
+    try {
+      return await closing;
+    } finally {
+      if (record.closing === closing) delete record.closing;
+    }
+  }
+
+  private async finishCloseSession(record: RuntimeSessionRecord): Promise<RuntimeSessionFacts> {
+    const runtimeSessionRef = record.facts.runtime_session_ref;
+    const closingAt = new Date().toISOString();
+    record.control_generation += 1;
+    record.facts.lifecycle_state = "disconnected";
+    record.facts.last_seen_at = closingAt;
+    record.facts.control_owner = "none";
+    record.facts.control_lock = {
+      owner: "none",
+      state: "released",
+      holder_ref: null,
+      updated_at: closingAt,
+      conflict_error: null
+    };
     try {
       await record.close?.();
-    } finally {
-      record.profile_ownership?.release();
-      delete record.profile_ownership;
+    } catch (cause) {
+      record.facts.lifecycle_state = "failed";
+      record.facts.current_error = error("session_cleanup_failed", "Runtime Session cleanup failed.", true);
+      record.facts.availability.cdp = "unavailable";
+      record.facts.availability.viewer = "unavailable";
+      record.facts.availability.snapshot = "unavailable";
+      this.viewerControls.markClosed(runtimeSessionRef, closingAt);
+      this.launchOptions.on_session_closed?.(runtimeSessionRef);
+      throw cause;
     }
+    record.profile_ownership?.release();
+    delete record.profile_ownership;
     const now = new Date().toISOString();
     record.facts.lifecycle_state = "closed";
     record.facts.closed_at = now;
@@ -450,8 +494,8 @@ export class RuntimeSessionStore {
     record.read_operation_user_release_pending = false;
     record.read_operation_user_handoff = false;
     record.facts.current_page = { ...record.facts.current_page, status: "unavailable", observed_at: now };
-    this.viewerControls.markClosed(runtime_session_ref, now);
-    this.launchOptions.on_session_closed?.(runtime_session_ref);
+    this.viewerControls.markClosed(runtimeSessionRef, now);
+    this.launchOptions.on_session_closed?.(runtimeSessionRef);
     return snapshot(record.facts);
   }
 
@@ -492,6 +536,7 @@ export class RuntimeSessionStore {
       updated_at: control.updated_at,
       conflict_error: null
     };
+    record.control_generation += 1;
     // Only the server-owned handoff path calls applyHandoff; create/lock input
     // must never be treated as proof that a user held this session.
     record.user_held_session = control.owner === "user" && isInteractiveUserViewer(record.facts);
@@ -618,7 +663,7 @@ export class RuntimeSessionStore {
         record.facts.identity_environment_ref === identity_environment_ref &&
         record.facts.execution_identity_ref === execution_identity_ref &&
         record.facts.lifecycle_state !== "closed" &&
-        record.facts.lifecycle_state !== "failed" &&
+        (record.facts.lifecycle_state !== "failed" || record.facts.current_error?.code === "session_cleanup_failed") &&
         record.facts.lifecycle_state !== "expired"
       ) {
         return record;
@@ -628,6 +673,11 @@ export class RuntimeSessionStore {
   }
 
   private acquireControl(record: RuntimeSessionRecord, owner: ControlOwner, holder_ref: string): RuntimeSessionUnavailable | null {
+    if (
+      record.facts.lifecycle_state !== "active" &&
+      record.facts.lifecycle_state !== "idle" &&
+      record.facts.lifecycle_state !== "locked"
+    ) return unavailableSession("session_cleanup_failed", error("session_cleanup_failed", "Runtime Session is not reusable.", true));
     if (hasControlConflict(record, owner, holder_ref)) return lockConflict(record, owner);
     if (record.read_operation_user_release_pending && owner !== "core_task") return lockConflict(record, owner);
     const now = new Date().toISOString();
@@ -641,6 +691,7 @@ export class RuntimeSessionStore {
       updated_at: now,
       conflict_error: null
     };
+    record.control_generation += 1;
     record.user_held_session = false;
     record.read_operation_user_handoff = record.read_operation_user_release_pending && owner === "core_task";
     record.read_operation_user_release_pending = false;
@@ -697,6 +748,12 @@ function lockConflict(record: RuntimeSessionRecord, requestedOwner: ControlOwner
 function hasControlConflict(record: RuntimeSessionRecord, owner: ControlOwner, holder_ref: string): boolean {
   return record.facts.control_lock.state === "held" &&
     (record.facts.control_lock.owner !== owner || record.facts.control_lock.holder_ref !== holder_ref);
+}
+
+function retainsRuntimeResources(record: RuntimeSessionRecord): boolean {
+  return record.facts.lifecycle_state !== "closed" &&
+    record.facts.lifecycle_state !== "expired" &&
+    (record.facts.lifecycle_state !== "failed" || record.facts.current_error?.code === "session_cleanup_failed");
 }
 
 function cleanupFailed(): RuntimeSessionUnavailable {

@@ -3,7 +3,7 @@ import type { AllowlistedReadOperationId, AllowlistedReadOperationSite, LocalPro
 
 export type DetailReadFailureClass = "detail_ref_invalid" | "detail_ref_missing" | "detail_ref_expired" | "detail_ref_consumed" | "detail_ref_binding_mismatch";
 
-interface DetailReadTargetRecord {
+export interface DetailReadTargetRecord {
   detail_ref: string;
   runtime_session_ref: string;
   site_id: AllowlistedReadOperationSite;
@@ -80,6 +80,14 @@ export class DetailReadTargetStore {
     this.records.delete(input.detail_ref);
     this.addTombstone(input.detail_ref, "detail_ref_consumed", now);
     return { ...record, consumed: true };
+  }
+
+  restoreAfterRetryableFailure(record: DetailReadTargetRecord, now = Date.now()): boolean {
+    if (!record.consumed || record.expires_at <= now || this.records.has(record.detail_ref)) return false;
+    if (this.tombstones.get(record.detail_ref)?.failure !== "detail_ref_consumed") return false;
+    this.tombstones.delete(record.detail_ref);
+    this.records.set(record.detail_ref, { ...record, consumed: false });
+    return true;
   }
 
   clearSession(runtimeSessionRef: string, now = Date.now()): void {
