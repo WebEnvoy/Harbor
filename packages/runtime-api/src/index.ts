@@ -392,9 +392,7 @@ export class HarborRuntime {
   }
 
   releaseSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): RuntimeSessionFacts | RuntimeSessionUnavailable {
-    const result = this.runtimeSessions.releaseSession(runtime_session_ref, input);
-    if (!("status" in result)) this.detailReadTargets.clearSession(runtime_session_ref);
-    return result;
+    return this.runtimeSessions.releaseSession(runtime_session_ref, input);
   }
 
   async stopSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): Promise<RuntimeSessionFacts | RuntimeSessionUnavailable> {

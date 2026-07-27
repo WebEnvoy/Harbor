@@ -1088,7 +1088,15 @@ test("reuses, locks, releases, and stops identity environment sessions", async (
   assert.equal(released.lifecycle_state, "idle");
   assert.equal(released.control_owner, "none");
   assert.equal(released.control_lock.state, "released");
-  assert.equal(detailTargets.consume({ detail_ref: releaseRef, runtime_session_ref: opened.runtime_session_ref, site_id: "boss", operation_id: "boss_read_job_detail", now: 2_000 }), "detail_ref_expired");
+  const retainedReleaseTarget = detailTargets.consume({
+    detail_ref: releaseRef,
+    runtime_session_ref: opened.runtime_session_ref,
+    site_id: "boss",
+    operation_id: "boss_read_job_detail",
+    now: 2_000
+  });
+  assert.equal(typeof retainedReleaseTarget, "object");
+  if (typeof retainedReleaseTarget === "string") throw new Error("release should retain detail refs for the next turn");
 
   const userLocked = runtime.lockSession(opened.runtime_session_ref, { control_owner: "user", holder_ref: "manual_user" });
   assert.equal("status" in userLocked, false);

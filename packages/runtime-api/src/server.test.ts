@@ -1609,6 +1609,17 @@ test("consumes a BOSS detail ref only once from the same real-search session", a
     assert.match(detailRef, /^detail_ref_/);
     assert.equal(JSON.stringify(search.body).includes("AbC_123"), false);
 
+    const released = await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, {
+      control_owner: "core_task"
+    });
+    assert.equal(released.lifecycle_state, "idle");
+    const reused = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_boss-detail",
+      url: "https://www.zhipin.com/web/geek/job",
+      control_owner: "core_task"
+    });
+    assert.equal(reused.runtime_session_ref, session.runtime_session_ref);
+
     const detail = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss", operation_id: "boss_read_job_detail", detail_ref: detailRef
     });
