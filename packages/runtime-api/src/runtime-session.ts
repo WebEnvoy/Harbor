@@ -112,7 +112,10 @@ export class RuntimeSessionStore {
   constructor(
     private readonly viewerControls: ViewerControlStore,
     private readonly launcher: LocalProviderLauncher,
-    private readonly launchOptions: { resolve_proxy?: (proxy_ref: string) => string | null } = {}
+    private readonly launchOptions: {
+      resolve_proxy?: (proxy_ref: string) => string | null;
+      on_session_closed?: (runtime_session_ref: string) => void;
+    } = {}
   ) {}
 
   async createSession(input: CreateRuntimeSessionInput = {}): Promise<RuntimeSessionFacts> {
@@ -448,6 +451,7 @@ export class RuntimeSessionStore {
     record.read_operation_user_handoff = false;
     record.facts.current_page = { ...record.facts.current_page, status: "unavailable", observed_at: now };
     this.viewerControls.markClosed(runtime_session_ref, now);
+    this.launchOptions.on_session_closed?.(runtime_session_ref);
     return snapshot(record.facts);
   }
 

@@ -1157,6 +1157,18 @@ test("replaces visibility-incompatible identity sessions without leaking viewer 
   assert.equal(launches[0]?.headless, true);
   assert.equal(core.availability.viewer, "unsupported");
 
+  const detailTargets = (runtime as unknown as { detailReadTargets: {
+    register: (input: { runtime_session_ref: string; site_id: "boss"; search_operation_id: "boss_job_search"; targets: { canonical_url: string }[]; now: number }) => string[];
+    consume: (input: { detail_ref: string; runtime_session_ref: string; site_id: "boss"; operation_id: "boss_read_job_detail"; now: number }) => unknown;
+  } }).detailReadTargets;
+  const [replacementRef] = detailTargets.register({
+    runtime_session_ref: core.runtime_session_ref,
+    site_id: "boss",
+    search_operation_id: "boss_job_search",
+    targets: [{ canonical_url: "https://www.zhipin.com/job_detail/Replacement_Lifecycle.html" }],
+    now: 1_000
+  });
+
   const blockedManual = await runtime.openIdentityEnvironmentSession({
     identity_environment,
     url: "https://www.zhipin.com/web/geek/job",
@@ -1198,6 +1210,13 @@ test("replaces visibility-incompatible identity sessions without leaking viewer 
   if ("status" in closedViewer) throw new Error("closed viewer facts should remain readable");
   assert.equal(closedViewer.viewer.availability, "expired");
   assert.equal(closedViewer.control.owner, "none");
+  assert.equal(detailTargets.consume({
+    detail_ref: replacementRef,
+    runtime_session_ref: core.runtime_session_ref,
+    site_id: "boss",
+    operation_id: "boss_read_job_detail",
+    now: 2_000
+  }), "detail_ref_expired");
 
   const reusedManual = await runtime.openIdentityEnvironmentSession({
     identity_environment,
@@ -1221,11 +1240,22 @@ test("replaces visibility-incompatible identity sessions without leaking viewer 
   assert.equal(launches.length, 2);
   assert.equal(closes.length, 1);
 
-  const stopped = await runtime.stopSession(manual.runtime_session_ref, { control_owner: "user" });
-  assert.equal("status" in stopped, false);
-  if ("status" in stopped) throw new Error("manual session should stop cleanly");
-  assert.equal(stopped.control_lock.state, "closed");
+  const [closeRef] = detailTargets.register({
+    runtime_session_ref: manual.runtime_session_ref,
+    site_id: "boss",
+    search_operation_id: "boss_job_search",
+    targets: [{ canonical_url: "https://www.zhipin.com/job_detail/Close_Lifecycle.html" }],
+    now: 3_000
+  });
+  await runtime.close();
   assert.equal(closes.length, 2);
+  assert.equal(detailTargets.consume({
+    detail_ref: closeRef,
+    runtime_session_ref: manual.runtime_session_ref,
+    site_id: "boss",
+    operation_id: "boss_read_job_detail",
+    now: 4_000
+  }), "detail_ref_expired");
 });
 
 test("replaces a headed Core session when Core requests headless execution", async () => {
