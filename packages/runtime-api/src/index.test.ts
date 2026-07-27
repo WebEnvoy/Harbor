@@ -115,7 +115,8 @@ const server = createServer((request, response) => {
     }]));
     return;
   }
-  if (url.pathname === "/json/new") {
+if (url.pathname === "/json/new") {
+    if (process.env.HARBOR_FAKE_BROWSER_NEW_URL_MARKER) writeFileSync(process.env.HARBOR_FAKE_BROWSER_NEW_URL_MARKER, decodeURIComponent(url.search.slice(1)));
     response.end(JSON.stringify({
       id: "fake-page",
       type: "page",
@@ -832,6 +833,7 @@ function installFakeCdpWebSocket(ignoredMethod: string): void {
 }
 
 class DelayedNavigationAckCdpWebSocket extends EventTarget {
+  static ignoreFrameTree = false;
   readyState = 0;
 
   constructor(_url: string | URL) {
@@ -879,18 +881,25 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
         return;
       }
       this.respond(message.id, {
-        result: {
-          value: {
-            origin: "https://www.xiaohongshu.com",
-            pathname: "/search_result",
-            search: "?keyword=AI",
-            ready: true,
-            pinia_ready: true,
-            list_valid: true,
-            note_count: 1,
-            detail_urls: ["https://www.xiaohongshu.com/explore/0123456789abcdef01234567"]
-          }
+      result: {
+        value: {
+          origin: "https://www.xiaohongshu.com",
+          pathname: "/search_result",
+          search: "?keyword=AI",
+          ready: true,
+          pinia_ready: true,
+          list_valid: true,
+          note_count: 1,
+          detail_urls: ["https://www.xiaohongshu.com/explore/0123456789abcdef01234567"]
         }
+      }
+    });
+      return;
+    }
+    if (message.method === "Page.getFrameTree") {
+      if (DelayedNavigationAckCdpWebSocket.ignoreFrameTree) return;
+      this.respond(message.id, {
+        frameTree: { frame: { url: "https://www.xiaohongshu.com/explore" } }
       });
       return;
     }
@@ -913,13 +922,16 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
   }
 }
 
-test("does not wait for the official Chrome Page.navigate acknowledgement when the read already proceeds", async () => {
+test("bootstraps XHS reads through the canonical explore page without waiting for navigation acknowledgement", async () => {
   const dir = mkdtempSync(join(tmpdir(), "harbor-read-navigation-ack-"));
+  const newUrlMarker = join(dir, "new-url");
   const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
   const previousWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
+  const previousNewUrlMarker = process.env.HARBOR_FAKE_BROWSER_NEW_URL_MARKER;
   const originalWebSocket = globalThis.WebSocket;
   process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
   process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = "ws://127.0.0.1/fake-page";
+  process.env.HARBOR_FAKE_BROWSER_NEW_URL_MARKER = newUrlMarker;
   globalThis.WebSocket = DelayedNavigationAckCdpWebSocket as unknown as typeof WebSocket;
   try {
     const provider = await launchLocalDedicatedProvider({
@@ -942,15 +954,33 @@ test("does not wait for the official Chrome Page.navigate acknowledgement when t
       expected_origin: "https://www.xiaohongshu.com"
     });
     const elapsed = Date.now() - startedAt;
-    await provider.close();
     assert.ok(elapsed < 500, "read operation must not wait for the delayed navigation acknowledgement");
+    assert.equal(readFileSync(newUrlMarker, "utf8"), "https://www.xiaohongshu.com/explore");
     assert.equal(result.status, "completed");
+
+    DelayedNavigationAckCdpWebSocket.ignoreFrameTree = true;
+    const boundedStartedAt = Date.now();
+    const unavailable = await provider.probeReadOperation({
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      query: "AI",
+      target_url: "https://www.xiaohongshu.com/search_result?keyword=AI",
+      expected_origin: "https://www.xiaohongshu.com"
+    });
+    const boundedElapsed = Date.now() - boundedStartedAt;
+    await provider.close();
+    assert.ok(boundedElapsed < 5500, "XHS bootstrap commit readback must remain bounded");
+    assert.equal(unavailable.status, "unavailable");
+    if (unavailable.status === "unavailable") assert.equal(unavailable.failure_class, "page_not_ready");
   } finally {
+    DelayedNavigationAckCdpWebSocket.ignoreFrameTree = false;
     globalThis.WebSocket = originalWebSocket;
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
     if (previousWebSocketUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
     else process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = previousWebSocketUrl;
+    if (previousNewUrlMarker === undefined) delete process.env.HARBOR_FAKE_BROWSER_NEW_URL_MARKER;
+    else process.env.HARBOR_FAKE_BROWSER_NEW_URL_MARKER = previousNewUrlMarker;
     rmSync(dir, { recursive: true, force: true });
   }
 });

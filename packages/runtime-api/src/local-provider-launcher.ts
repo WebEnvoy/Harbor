@@ -595,12 +595,14 @@ async function openProviderUrl(port: string, url: string, signal?: AbortSignal):
 
 async function probeProviderReadOperation(port: string, input: LocalProviderReadProbeInput): Promise<LocalProviderReadProbeResult> {
   try {
-    const page = await createBlankProviderPage(port);
+    const bootstrapUrl = input.site_id === "xiaohongshu" ? "https://www.xiaohongshu.com/explore" : "about:blank";
+    const page = await createProviderPage(port, bootstrapUrl);
     if (!page.id || !page.webSocketDebuggerUrl) throw new Error("Read-operation page has no target id or CDP websocket.");
     const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.enable");
       await client.send("Runtime.enable");
       await client.send("Network.enable");
+      if (input.site_id === "xiaohongshu" && !await waitForProviderPageCommit(client, bootstrapUrl)) return null;
       await client.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
       let blockedRedirect = false;
       const stopIntercepting = client.on("Fetch.requestPaused", (event) => {
@@ -771,10 +773,26 @@ interface ReadProbeObservation {
   validation?: ReturnType<typeof validateReadOperationProbe>;
 }
 
-async function createBlankProviderPage(port: string): Promise<CdpPageTarget> {
-  const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent("about:blank")}`, { method: "PUT" });
+async function createProviderPage(port: string, url: string): Promise<CdpPageTarget> {
+  const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });
   if (!response.ok) throw new Error(`CDP read-operation target creation failed: ${response.status}`);
   return await response.json() as CdpPageTarget;
+}
+
+async function waitForProviderPageCommit(client: CdpClient, targetUrl: string): Promise<boolean> {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    let result: Record<string, unknown>;
+    try {
+      result = await client.send("Page.getFrameTree", {}, Math.min(500, Math.max(1, deadline - Date.now())));
+    } catch {
+      continue;
+    }
+    const frame = (result.frameTree as { frame?: { url?: unknown } } | undefined)?.frame;
+    if (typeof frame?.url === "string" && urlsReferToSamePage(frame.url, targetUrl)) return true;
+    await abortableDelay(Math.min(250, Math.max(1, deadline - Date.now())));
+  }
+  return false;
 }
 
 async function closeProviderPage(port: string, targetId: string): Promise<void> {
@@ -855,7 +873,7 @@ export function validateReadOperationProbe(
     };
   }
   if (input.operation_id === "xhs_search_notes") {
-    const xhsSurface = observation.pathname === "/search_result";
+    const xhsSurface = observation.pathname === "/search_result" || observation.pathname === "/search_result/";
     if (!xhsSurface || !hasExactPublicQuery(observation.search, "keyword", input.query ?? "") || !observation.pinia_ready || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
       return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search/note, Pinia, or operation-specific read signal is unavailable.", retryable: true };
     }
@@ -1553,14 +1571,14 @@ class CdpClient {
     };
   }
 
-  send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+  send(method: string, params: Record<string, unknown> = {}, timeoutMs = 20000): Promise<Record<string, unknown>> {
     if (this.signal?.aborted) return Promise.reject(new Error(`CDP command aborted: ${method}`));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`CDP command timed out: ${method}`));
-      }, 20000);
+      }, Math.max(1, timeoutMs));
       this.pending.set(id, { resolve, reject, timer });
       this.ws.send(JSON.stringify({ id, method, params }));
     });

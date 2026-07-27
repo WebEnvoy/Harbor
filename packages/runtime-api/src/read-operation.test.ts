@@ -782,6 +782,7 @@ test("fails closed when the live probe lacks an operation-specific surface or re
     operation_response_url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
   };
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pathname: "/settings" }).status, "unavailable");
+  assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pathname: "/search_result/" }).status, "completed");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "?keyword=other" }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "" }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "?keyword=AI&keyword=AI" }).status, "unavailable");
