@@ -327,7 +327,8 @@ export class HarborRuntime {
     const ownerOptions = withProfileBackedLocalMaterial(identityEnvironmentOptions);
     this.identityEnvironments = new LocalIdentityEnvironmentManager(ownerOptions);
     this.runtimeSessions = new RuntimeSessionStore(this.viewerControls, launcher, {
-      resolve_proxy: ownerOptions.resolve_proxy
+      resolve_proxy: ownerOptions.resolve_proxy,
+      on_session_closed: (runtimeSessionRef) => this.detailReadTargets.clearSession(runtimeSessionRef)
     });
     this.providerLifecycle = new ManagedProviderLifecycle(providerLifecycleOptions);
   }
@@ -392,15 +393,11 @@ export class HarborRuntime {
   }
 
   releaseSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): RuntimeSessionFacts | RuntimeSessionUnavailable {
-    const result = this.runtimeSessions.releaseSession(runtime_session_ref, input);
-    if (!("status" in result)) this.detailReadTargets.clearSession(runtime_session_ref);
-    return result;
+    return this.runtimeSessions.releaseSession(runtime_session_ref, input);
   }
 
   async stopSession(runtime_session_ref: string, input: RuntimeSessionControlInput = {}): Promise<RuntimeSessionFacts | RuntimeSessionUnavailable> {
-    const result = await this.runtimeSessions.stopSession(runtime_session_ref, input);
-    if (!("status" in result)) this.detailReadTargets.clearSession(runtime_session_ref);
-    return result;
+    return this.runtimeSessions.stopSession(runtime_session_ref, input);
   }
 
   async close(): Promise<void> {
