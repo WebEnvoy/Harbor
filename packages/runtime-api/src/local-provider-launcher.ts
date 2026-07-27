@@ -1397,7 +1397,8 @@ async function readPageFacts(port: string, requested_url: string, signal?: Abort
   }
 }
 
-async function readTargetPageFacts(page: CdpPageTarget | undefined, requested_url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
+export async function readTargetPageFacts(page: CdpPageTarget | undefined, requested_url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
+  if (!page) return unavailablePageFacts("url_unreachable", requested_url, new Error("Requested page target is unavailable."));
   let observed: { title: string; url: string } | null = null;
   if (page?.webSocketDebuggerUrl) {
     try {
@@ -1437,11 +1438,35 @@ async function pageTargets(port: string, signal?: AbortSignal): Promise<CdpPageT
   return (await response.json()) as CdpPageTarget[];
 }
 
-function selectPage(pages: CdpPageTarget[], requested_url?: string) {
-  return pages.find((candidate) => candidate.type === "page" && candidate.url === requested_url) ??
-    pages.find((candidate) => candidate.type === "page" && candidate.webSocketDebuggerUrl) ??
+export function selectPage(pages: CdpPageTarget[], requested_url?: string) {
+  if (requested_url) {
+    const pageTargets = pages.filter((candidate) => candidate.type === "page");
+    return pages.find((candidate) => candidate.type === "page" && candidate.url === requested_url) ??
+      pages.find((candidate) => candidate.type === "page" && urlsReferToSamePage(candidate.url, requested_url)) ??
+      (pageTargets.length === 1 ? pageTargets[0] : undefined);
+  }
+  return pages.find((candidate) => candidate.type === "page" && candidate.webSocketDebuggerUrl) ??
     pages.find((candidate) => candidate.type === "page") ??
     pages[0];
+}
+
+function urlsReferToSamePage(candidate_url?: string, requested_url?: string): boolean {
+  if (!candidate_url || !requested_url) return false;
+  try {
+    const candidate = new URL(candidate_url);
+    const requested = new URL(requested_url);
+    if (!["http:", "https:"].includes(candidate.protocol) || !["http:", "https:"].includes(requested.protocol)) return false;
+    return candidate.origin === requested.origin &&
+      candidate.pathname === requested.pathname &&
+      candidate.hash === requested.hash &&
+      normalizedQuery(candidate) === normalizedQuery(requested);
+  } catch {
+    return candidate_url === requested_url;
+  }
+}
+
+function normalizedQuery(url: URL): string {
+  return JSON.stringify([...url.searchParams.entries()].sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey)));
 }
 
 async function readPageTitle(webSocketUrl: string, requested_url: string, signal?: AbortSignal): Promise<{ title: string; url: string } | null> {
