@@ -634,7 +634,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         ) operationResponse = { requestId, status, url: response!.url as string };
       });
       navigationStarted = true;
-      await client.send("Page.navigate", { url: input.target_url });
+      void client.send("Page.navigate", { url: input.target_url }).catch(() => undefined);
       for (let attempt = 0; attempt < 20; attempt++) {
         if (blockedRedirect) {
           stopObservingNetwork();
