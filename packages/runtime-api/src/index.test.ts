@@ -986,7 +986,12 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
 });
 
 test("opens an identity environment session with page and controller facts", async () => {
-  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const launches: LocalProviderLaunchInput[] = [];
+  const fixtureLauncher = createFixtureLauncher("ready");
+  const runtime = new HarborRuntime((input) => {
+    launches.push(input);
+    return fixtureLauncher(input);
+  });
   const session = await runtime.openIdentityEnvironmentSession({
     identity_environment: {
       ...providerFixture({ [cloakPath]: { executable: true } }),
@@ -1018,6 +1023,7 @@ test("opens an identity environment session with page and controller facts", asy
   assert.equal(session.control_owner, "agent");
   assert.equal(session.control_lock.owner, "agent");
   assert.equal(session.control_lock.holder_ref, "agent_run_1");
+  assert.equal(launches[0]?.timeout_ms, 15_000);
   assert.equal(session.facts.some((fact) => fact.key === "lifecycle.reference.donut_browser"), true);
 
   const publicJson = JSON.stringify(session);

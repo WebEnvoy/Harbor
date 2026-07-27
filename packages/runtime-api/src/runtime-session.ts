@@ -142,7 +142,7 @@ export class RuntimeSessionStore {
         const result = await this.launcher({
           browser_path: input.browser_path ?? "",
           headless,
-          timeout_ms: input.timeout_ms ?? 5000,
+          timeout_ms: input.timeout_ms ?? 15_000,
           url: requestedUrl,
           profile_ref,
           profile_storage_ref: input.profile_storage_ref,
