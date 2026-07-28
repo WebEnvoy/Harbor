@@ -440,7 +440,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
     title: "公开标题",
     desc: "公开正文摘要",
     user: { nickname: "公开作者", userId: "author_123" },
-    interactInfo: { likedCount: "10", commentCount: "2", collectedCount: "3", shareCount: "1" },
+    interactInfo: { likedCount: 10, commentCount: 2, collectedCount: 3, shareCount: 0 },
     private: "must-not-return"
   };
   const pinia = { _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: piniaNote } } } }]]) };
@@ -455,7 +455,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
       if (selector.includes("like")) return { textContent: "10" };
       if (selector.includes("comment")) return { textContent: "2" };
       if (selector.includes("collect")) return { textContent: "3" };
-      if (selector.includes("share")) return { textContent: "1" };
+      if (selector.includes("share")) return { textContent: "0" };
       if (selector.includes("note-title") || selector.includes(".title")) return { textContent: "公开标题" };
       if (selector.includes("detail-desc") || selector.includes("note-desc") || selector.includes("note-content")) return { textContent: "公开正文摘要" };
       if (selector.includes("author")) return { textContent: "公开作者" };
@@ -470,7 +470,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   assert.equal(observed.normalized.canonical_url, `${location.origin}${location.pathname}`);
   assert.equal(observed.normalized.note_id, "0123456789abcdef01234567");
   assert.equal(observed.normalized.author.author_id, "author_123");
-  assert.deepEqual(observed.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "1" });
+  assert.deepEqual(observed.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "0" });
   assert.equal(JSON.stringify(observed).includes("must-not-return"), false);
   assert.equal(JSON.stringify(observed).includes("xsec_token"), false);
 
@@ -490,6 +490,13 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   const dummy = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? dummyApp : document.querySelector(selector) }, location);
   assert.equal(dummy.pinia_ready, true);
   assert.equal(dummy.normalized, undefined);
+
+  const numericTitleStore = { _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: { ...piniaNote, title: 123 } } } } }]]) };
+  assert.equal(evaluate({ __PINIA__: numericTitleStore }, document, location).normalized, undefined);
+  for (const invalidMetric of [{}, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    const invalidMetricStore = { _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: { ...piniaNote, interactInfo: { ...piniaNote.interactInfo, likedCount: invalidMetric } } } } } }]]) };
+    assert.equal(evaluate({ __PINIA__: invalidMetricStore }, document, location).normalized, undefined);
+  }
 
   const withoutPinia = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? { __vue_app__: { config: { globalProperties: {} } } } : document.querySelector(selector) }, location);
   assert.equal(withoutPinia.pinia_ready, false);
