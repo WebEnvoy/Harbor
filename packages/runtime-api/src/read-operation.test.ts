@@ -436,14 +436,14 @@ test("observes BOSS SPA, login wall, and challenge state without returning page 
 test("observes XHS detail Vue and note Pinia readiness without returning store contents", () => {
   const evaluate = new Function("window", "document", "location", `return ${readProbeExpression("xiaohongshu", "", undefined, "xhs_read_note_detail")}`);
   const piniaNote = {
-    note_id: "0123456789abcdef01234567",
+    noteId: "0123456789abcdef01234567",
     title: "公开标题",
-    body_summary: "公开正文摘要",
-    author: { display_name: "公开作者", author_id: "author_123" },
-    interaction_metrics: { likes: "10", comments: "2", collects: "3", shares: "1" },
+    desc: "公开正文摘要",
+    user: { nickname: "公开作者", userId: "author_123" },
+    interactInfo: { likedCount: "10", commentCount: "2", collectedCount: "3", shareCount: "1" },
     private: "must-not-return"
   };
-  const pinia = { _s: new Map([["noteDetail", { $state: { currentNote: piniaNote } }]]) };
+  const pinia = { _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: piniaNote } } } }]]) };
   const app = { __vue_app__: { config: { globalProperties: { $pinia: pinia } } } };
   const document = {
     readyState: "complete",
@@ -479,13 +479,13 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   assert.equal(withoutNoteStore.pinia_ready, false);
   assert.equal(withoutNoteStore.normalized, undefined);
 
-  const mismatchedStore = { _s: new Map([["noteDetail", { $state: { currentNote: { ...piniaNote, note_id: "fedcba987654321001234567" } } }]]) };
+  const mismatchedStore = { _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: { ...piniaNote, noteId: "fedcba987654321001234567" } } } } }]]) };
   const mismatchedApp = { __vue_app__: { config: { globalProperties: { $pinia: mismatchedStore } } } };
   const mismatched = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? mismatchedApp : document.querySelector(selector) }, location);
   assert.equal(mismatched.pinia_ready, true);
   assert.equal(mismatched.normalized, undefined);
 
-  const dummyStore = { _s: new Map([["noteDetail", { $state: { currentNote: { ...piniaNote, title: "注入标题" } } }]]) };
+  const dummyStore = { _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: { ...piniaNote, title: "注入标题" } } } } }]]) };
   const dummyApp = { __vue_app__: { config: { globalProperties: { $pinia: dummyStore } } } };
   const dummy = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? dummyApp : document.querySelector(selector) }, location);
   assert.equal(dummy.pinia_ready, true);

@@ -1108,7 +1108,9 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const noteStores = stores instanceof Map ? Array.from(stores.entries()).filter(([key]) => /note|detail/i.test(String(key))) : [];
     const matchesStore = ([, candidate]) => {
       const state = unwrap(candidate?.$state) || candidate;
-      const details = [unwrap(state?.currentNote), unwrap(state?.noteDetail), unwrap(state?.detail), unwrap(state?.note), state].filter((value) => value && typeof value === "object");
+      const detailMap = unwrap(state?.noteDetailMap);
+      const mappedDetail = detailMap instanceof Map ? unwrap(detailMap.get(noteId)) : unwrap(detailMap?.[noteId]);
+      const details = [unwrap(mappedDetail?.note), unwrap(state?.currentNote), unwrap(state?.noteDetail), unwrap(state?.detail), unwrap(state?.note), state].filter((value) => value && typeof value === "object");
       return details.some((detail) => {
         const storeAuthor = unwrap(detail.author) || unwrap(detail.user) || {};
         const storeMetrics = unwrap(detail.interaction_metrics) || unwrap(detail.interactInfo) || unwrap(detail.metrics) || {};
