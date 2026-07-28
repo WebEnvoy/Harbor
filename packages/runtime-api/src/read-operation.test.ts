@@ -467,7 +467,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   const piniaNote = {
     noteId: "0123456789abcdef01234567",
     title: "公开标题",
-    desc: "公开正文摘要",
+    desc: "这是用于验证正文相关性的公开正文摘要",
     user: { nickname: "公开作者", userId: "author_123" },
     interactInfo: { likedCount: 10, commentCount: 2, collectedCount: 3, shareCount: 0 },
     private: "must-not-return"
@@ -490,7 +490,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
       if (selector.includes("author")) return { textContent: "公开作者" };
       if (selector.includes("like") || selector.includes("comment") || selector.includes("collect") || selector.includes("share")) return { textContent: "999" };
       if (selector.includes("note-title") || selector.includes(".title")) return { textContent: "公开标题" };
-      if (selector.includes("detail-desc") || selector.includes("note-desc")) return { textContent: "公开正文摘要" };
+      if (selector.includes("detail-desc") || selector.includes("note-desc")) return { textContent: piniaNote.desc };
       return null;
     }
   };
@@ -533,6 +533,26 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
     }
   }, location);
   assert.equal(directDetail.normalized.author.author_id, "author_123");
+  const observeBodyPair = (renderedBody: string, storedBody: string) => evaluate({
+    __PINIA__: {
+      _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: { ...piniaNote, desc: storedBody } } } } }]])
+    }
+  }, {
+    ...document,
+    querySelector: (selector: string) => selector === "#noteContainer"
+      ? {
+          querySelector: (detailSelector: string) => detailSelector.includes("detail-desc") || detailSelector.includes("note-desc")
+            ? { textContent: renderedBody }
+            : detailRoot.querySelector(detailSelector)
+        }
+      : document.querySelector(selector)
+  }, location);
+  const decoratedBody = observeBodyPair(`${piniaNote.desc} #美食 #家常菜`, piniaNote.desc);
+  assert.equal(decoratedBody.normalized.body_summary, `${piniaNote.desc} #美食 #家常菜`);
+  assert.equal(observeBodyPair("1234567 #公开笔记装饰内容", "1234567").normalized, undefined);
+  assert.equal(observeBodyPair("12345678abcdefghijklmnop", "12345678").normalized, undefined);
+  assert.equal(observeBodyPair("12345678", "1234567890123456").normalized, undefined);
+  assert.equal(observeBodyPair(piniaNote.desc, "这是另一条完全无关且长度足够的公开正文").normalized, undefined);
   const missingDetailAuthor = evaluate({}, {
     ...document,
     querySelector: (selector: string) => selector === "#noteContainer"

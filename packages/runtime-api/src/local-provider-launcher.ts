@@ -1095,6 +1095,10 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const pinia = window.__PINIA__ || window.__pinia || vue?.config?.globalProperties?.$pinia;
     const stores = pinia?._s;
     const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
+    const sameBoundedBody = (rendered, stored) => {
+      if (rendered === stored) return true;
+      return stored.length >= 8 && stored.length * 2 >= rendered.length && rendered.includes(stored);
+    };
     const detailRoot = document.querySelector('#noteContainer') || document.querySelector('.note-detail-mask, [class*="note-detail"]');
     const pickDetail = (selectors, max) => clean(detailRoot?.querySelector(selectors)?.textContent, max);
     const title = pickDetail('.note-content .title, #detail-title, [class*="note-title"]', 200);
@@ -1132,7 +1136,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
           shares: metric(storeMetrics.shares, storeMetrics.shareCount)
         };
         const matches = clean(unwrap(detail.note_id) || unwrap(detail.noteId) || unwrap(detail.id), 64) === noteId &&
-          clean(unwrap(detail.title), 200) === title && clean(unwrap(detail.body_summary) || unwrap(detail.desc) || unwrap(detail.description) || unwrap(detail.body), 4000) === body &&
+          clean(unwrap(detail.title), 200) === title && sameBoundedBody(body, clean(unwrap(detail.body_summary) || unwrap(detail.desc) || unwrap(detail.description) || unwrap(detail.body), 4000)) &&
           clean(unwrap(storeAuthor.display_name) || unwrap(storeAuthor.nickname) || unwrap(storeAuthor.name), 100) === author &&
           clean(unwrap(storeAuthor.author_id) || unwrap(storeAuthor.userId) || unwrap(storeAuthor.id), 100) === authorId &&
           (!likes || metrics.likes === likes) && (!comments || metrics.comments === comments) &&
