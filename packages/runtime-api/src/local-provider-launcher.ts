@@ -671,8 +671,6 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           return { validation: validateReadOperationProbe(input, value) };
         }
         if (value?.origin && value.ready && observedResponse !== null && (input.operation_id !== "boss_read_job_detail" || observedBossDetailResponse !== null)) {
-          stopObservingNetwork();
-          stopIntercepting();
           const bossResponse = input.operation_id === "boss_job_search"
             ? await readBossJobSearchResponseSummary(client, observedResponse.requestId)
             : null;
@@ -688,6 +686,19 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
             boss_detail_response_status: observedBossDetailResponse?.status,
             boss_detail_response_url: observedBossDetailResponse?.url
           });
+          if (
+            input.operation_id === "xhs_read_note_detail" &&
+            validation.status === "unavailable" &&
+            validation.failure_class === "page_not_ready" &&
+            value.pathname === new URL(input.target_url).pathname &&
+            value.rendered_surface === true &&
+            isPendingXiaohongshuInitialization(value)
+          ) {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            continue;
+          }
+          stopObservingNetwork();
+          stopIntercepting();
           if (validation.status === "unavailable") return { validation };
           const screenshot = await captureProbeScreenshot(client);
           return screenshot ? {
@@ -831,14 +842,14 @@ export function validateReadOperationProbe(
   if (!observation.ready) return { status: "unavailable", failure_class: "page_not_ready", message: "The read-operation page did not reach the expected operation surface.", retryable: true };
   if (input.operation_id === "xhs_read_note_detail" || input.operation_id === "boss_read_job_detail") {
     const xhs = input.operation_id === "xhs_read_note_detail";
-    if (xhs && (!observation.vue_ready || !observation.pinia_ready)) {
-      return { status: "unavailable", failure_class: "page_not_ready", message: "The Xiaohongshu detail Vue app or Pinia note store is not ready.", retryable: true };
-    }
     const expectedPath = new URL(input.target_url).pathname;
     const pathMatches = observation.pathname === expectedPath;
     const rendered = observation.rendered_surface === true;
     if (!pathMatches || !rendered || !isSuccessfulReadResponse(observation.operation_response_status) || !isOperationReadNetworkUrl(input, observation.operation_response_url)) {
       return { status: "unavailable", failure_class: rendered ? "site_changed" : "empty_result", message: "The bound detail page did not expose the expected read-only surface.", retryable: true };
+    }
+    if (xhs && (!observation.vue_ready || !observation.pinia_ready)) {
+      return { status: "unavailable", failure_class: "page_not_ready", message: "The Xiaohongshu detail Vue app or Pinia note store is not ready.", retryable: true };
     }
     const normalized = validateDetailNormalizedSummary(input, observation.normalized);
     if (!normalized) return { status: "unavailable", failure_class: "field_missing", message: "Required bounded public detail fields are missing.", retryable: true };

@@ -834,6 +834,9 @@ function installFakeCdpWebSocket(ignoredMethod: string): void {
 
 class DelayedNavigationAckCdpWebSocket extends EventTarget {
   static ignoreFrameTree = false;
+  static detailMode = false;
+  static detailEvaluationCount = 0;
+  static detailRequestContinued = false;
   readyState = 0;
 
   constructor(_url: string | URL) {
@@ -847,13 +850,16 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
   send(payload: string): void {
     const message = JSON.parse(payload) as { id: number; method: string; params?: { requestId?: string; expression?: string } };
     if (message.method === "Page.navigate") {
+      const url = DelayedNavigationAckCdpWebSocket.detailMode
+        ? "https://www.xiaohongshu.com/explore/0123456789abcdef01234567"
+        : "https://www.xiaohongshu.com/search_result?keyword=AI";
       queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
         data: JSON.stringify({
           method: "Fetch.requestPaused",
           params: {
             requestId: "navigation",
             resourceType: "Document",
-            request: { url: "https://www.xiaohongshu.com/search_result?keyword=AI" }
+            request: { url }
           }
         })
       })));
@@ -868,16 +874,72 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
             method: "Network.responseReceived",
             params: {
               requestId: "search-response",
-              response: { status: 200, url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes" }
+              response: {
+                status: 200,
+                url: DelayedNavigationAckCdpWebSocket.detailMode
+                  ? "https://www.xiaohongshu.com/explore/0123456789abcdef01234567"
+                  : "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
+              }
             }
           })
         }));
       });
       return;
     }
+    if (message.method === "Fetch.continueRequest" && message.params?.requestId === "detail-resource") {
+      DelayedNavigationAckCdpWebSocket.detailRequestContinued = true;
+      this.respond(message.id, {});
+      return;
+    }
     if (message.method === "Runtime.evaluate") {
       if (message.params?.expression?.includes("document.title")) {
         this.respond(message.id, { result: { value: { title: "Fake page", url: "about:blank", readyState: "complete" } } });
+        return;
+      }
+      if (DelayedNavigationAckCdpWebSocket.detailMode) {
+        const ready = ++DelayedNavigationAckCdpWebSocket.detailEvaluationCount > 1 &&
+          DelayedNavigationAckCdpWebSocket.detailRequestContinued;
+        if (DelayedNavigationAckCdpWebSocket.detailEvaluationCount === 1) {
+          queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
+            data: JSON.stringify({
+              method: "Fetch.requestPaused",
+              params: {
+                requestId: "detail-resource",
+                resourceType: "Script",
+                request: { url: "https://www.xiaohongshu.com/detail-resource.js" }
+              }
+            })
+          })));
+        }
+        this.respond(message.id, {
+          result: {
+            value: {
+              origin: "https://www.xiaohongshu.com",
+              pathname: "/explore/0123456789abcdef01234567",
+              ready: true,
+              rendered_surface: true,
+              login_like: false,
+              challenge_like: false,
+              vue_ready: ready,
+              pinia_ready: ready,
+              normalized: ready ? {
+                kind: "xiaohongshu_note_detail",
+                canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+                note_id: "0123456789abcdef01234567",
+                title: "公开标题",
+                summary: "公开摘要",
+                body_summary: "公开正文摘要",
+                author: {
+                  display_name: "公开作者",
+                  author_id: "author_123",
+                  profile_url: "https://www.xiaohongshu.com/user/profile/author_123"
+                },
+                interaction_metrics: { likes: "10", comments: "2", collects: "3", shares: "1" },
+                source_status: "located"
+              } : undefined
+            }
+          }
+        });
         return;
       }
       this.respond(message.id, {
@@ -958,6 +1020,19 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     assert.equal(readFileSync(newUrlMarker, "utf8"), "https://www.xiaohongshu.com/explore");
     assert.equal(result.status, "completed");
 
+    DelayedNavigationAckCdpWebSocket.detailMode = true;
+    const detail = await provider.probeReadOperation({
+      site_id: "xiaohongshu",
+      operation_id: "xhs_read_note_detail",
+      detail_ref: "detail_ref_delayed-readiness",
+      target_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+      expected_origin: "https://www.xiaohongshu.com"
+    });
+    assert.equal(detail.status, "completed");
+    assert.equal(DelayedNavigationAckCdpWebSocket.detailEvaluationCount, 2);
+    assert.equal(DelayedNavigationAckCdpWebSocket.detailRequestContinued, true);
+    DelayedNavigationAckCdpWebSocket.detailMode = false;
+
     DelayedNavigationAckCdpWebSocket.ignoreFrameTree = true;
     const boundedStartedAt = Date.now();
     const unavailable = await provider.probeReadOperation({
@@ -974,6 +1049,9 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     if (unavailable.status === "unavailable") assert.equal(unavailable.failure_class, "page_not_ready");
   } finally {
     DelayedNavigationAckCdpWebSocket.ignoreFrameTree = false;
+    DelayedNavigationAckCdpWebSocket.detailMode = false;
+    DelayedNavigationAckCdpWebSocket.detailEvaluationCount = 0;
+    DelayedNavigationAckCdpWebSocket.detailRequestContinued = false;
     globalThis.WebSocket = originalWebSocket;
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
