@@ -1104,10 +1104,12 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const profilePath = authorLink ? new URL(authorLink.getAttribute('href'), location.origin).pathname : "";
     const authorId = profilePath.startsWith('/user/profile/') ? profilePath.slice('/user/profile/'.length).split('/')[0] : "";
     const profileUrl = authorId ? location.origin + '/user/profile/' + authorId : "";
-    const likes = pickDetail('[class*="like"] [class*="count"], .like-wrapper .count', 40);
-    const comments = pickDetail('[class*="comment"] [class*="count"], .comment-wrapper .count', 40);
-    const collects = pickDetail('[class*="collect"] [class*="count"], .collect-wrapper .count', 40);
-    const shares = pickDetail('[class*="share"] [class*="count"], .share-wrapper .count', 40);
+    const engagementRoot = detailRoot?.querySelector('.interactions.engage-bar');
+    const pickMetric = (selectors) => clean(engagementRoot?.querySelector(selectors)?.textContent, 40);
+    const likes = pickMetric('[class*="like"] [class*="count"], .like-wrapper .count');
+    const comments = pickMetric('[class*="comment"] [class*="count"], .comment-wrapper .count');
+    const collects = pickMetric('[class*="collect"] [class*="count"], .collect-wrapper .count');
+    const shares = pickMetric('[class*="share"] [class*="count"], .share-wrapper .count');
     const noteId = location.pathname.split('/').filter(Boolean).at(-1) || "";
     const noteStores = stores instanceof Map ? Array.from(stores.entries()).filter(([key]) => /note|detail/i.test(String(key))) : [];
     let matchedMetrics;
