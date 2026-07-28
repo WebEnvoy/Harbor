@@ -1574,13 +1574,13 @@ async function captureProviderScreenshot(port: string, requested_url: string): P
 }
 
 async function activePage(port: string, requested_url: string, signal?: AbortSignal): Promise<CdpPageTarget> {
-  for (let attempt = 0; attempt < 40; attempt++) {
-    signal?.throwIfAborted();
-    const page = selectPage(await pageTargets(port, signal), requested_url);
-    if (page) return page;
-    if (attempt < 39) await abortableDelay(25, signal);
+  const readinessSignal = signal ?? AbortSignal.timeout(1000);
+  while (true) {
+    readinessSignal.throwIfAborted();
+    const page = selectPage(await pageTargets(port, readinessSignal), requested_url);
+    if (page && (requested_url === "about:blank" || (page.url && page.url !== "about:blank"))) return page;
+    await abortableDelay(25, readinessSignal);
   }
-  throw new Error("CDP page target is unavailable.");
 }
 
 async function pageTargets(port: string, signal?: AbortSignal): Promise<CdpPageTarget[]> {
