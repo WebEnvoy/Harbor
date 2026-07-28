@@ -1073,7 +1073,11 @@ function sameBossDetailSummary(value: LocalProviderDetailPublicSummary, source: 
 export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id"], query: string, cityCode?: string, operationId?: LocalProviderReadProbeInput["operation_id"]): string {
   if (operationId === "xhs_read_note_detail" || operationId === "boss_read_job_detail") return `(() => {
     const text = document.body?.innerText || "";
-    const clean = (value, max) => typeof value === "string" ? value.replace(/\\s+/g, " ").trim().slice(0, max) : "";
+    const clean = (value, max) => {
+      if (typeof value !== "string") return "";
+      const truncated = value.replace(/\\s+/g, " ").trim().slice(0, max);
+      return /[\\uD800-\\uDBFF]$/.test(truncated) ? truncated.slice(0, -1) : truncated;
+    };
     const pick = (selectors, max) => clean(document.querySelector(selectors)?.textContent, max);
     const challengeSurface = typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]')).some((element) => {
       const view = document.defaultView;
@@ -1103,17 +1107,14 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       const storedCharacters = Array.from(storedCompact);
       if (renderedCompact === storedCompact) return true;
       if (storedCharacters.length >= 8 && storedCharacters.length * 2 >= renderedCharacters.length && renderedCompact.includes(storedCompact)) return true;
-      if (renderedCharacters.length < 8 || renderedCharacters.length * 2 < storedCharacters.length || storedCompact.includes(renderedCompact)) return false;
-      let renderedIndex = 0;
-      for (const character of storedCharacters) {
-        if (character === renderedCharacters[renderedIndex]) renderedIndex++;
-      }
-      return renderedIndex === renderedCharacters.length;
+      if (renderedCharacters.length < 8 || renderedCharacters.length * 2 < storedCharacters.length) return false;
+      const withoutPresentationCharacters = storedCompact.replace(/[\\p{Extended_Pictographic}\\uFE0F\\u200D\\u{1F3FB}-\\u{1F3FF}]/gu, "");
+      return renderedCompact === withoutPresentationCharacters;
     };
     const detailRoot = document.querySelector('#noteContainer') || document.querySelector('.note-detail-mask, [class*="note-detail"]');
     const pickDetail = (selectors, max) => clean(detailRoot?.querySelector(selectors)?.textContent, max);
     const title = pickDetail('.note-content .title, #detail-title, [class*="note-title"]', 200);
-    const body = pickDetail('#detail-desc, .note-content .desc, [class*="note-desc"]', 4000);
+    const body = pickDetail('#detail-desc, .note-content .desc, [class*="note-desc"]', 2000);
     const author = clean(detailRoot?.querySelector('.author-container .name, .author-wrapper .name, [class*="author"] [class*="name"]')?.textContent, 100);
     const authorLink = detailRoot?.querySelector('.author-container a[href*="/user/profile/"], .author-wrapper a[href*="/user/profile/"], [class*="author"] a[href*="/user/profile/"]');
     const profilePath = authorLink ? new URL(authorLink.getAttribute('href'), location.origin).pathname : "";
@@ -1147,7 +1148,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
           shares: metric(storeMetrics.shares, storeMetrics.shareCount)
         };
         const matches = clean(unwrap(detail.note_id) || unwrap(detail.noteId) || unwrap(detail.id), 64) === noteId &&
-          clean(unwrap(detail.title), 200) === title && sameBoundedBody(body, clean(unwrap(detail.body_summary) || unwrap(detail.desc) || unwrap(detail.description) || unwrap(detail.body), 4000)) &&
+          clean(unwrap(detail.title), 200) === title && sameBoundedBody(body, clean(unwrap(detail.body_summary) || unwrap(detail.desc) || unwrap(detail.description) || unwrap(detail.body), 2000)) &&
           clean(unwrap(storeAuthor.display_name) || unwrap(storeAuthor.nickname) || unwrap(storeAuthor.name), 100) === author &&
           clean(unwrap(storeAuthor.author_id) || unwrap(storeAuthor.userId) || unwrap(storeAuthor.id), 100) === authorId &&
           (!likes || metrics.likes === likes) && (!comments || metrics.comments === comments) &&
@@ -1160,8 +1161,8 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const storeMatched = noteStores.some(matchesStore);
     const interactionMetrics = matchedMetrics ? { likes: likes || matchedMetrics.likes, comments: comments || matchedMetrics.comments, collects: collects || matchedMetrics.collects, shares: shares || matchedMetrics.shares } : undefined;
     const metricsLocated = Boolean(likes && comments && collects && shares);
-    const normalizedTitle = title || body.slice(0, 200);
-    const normalized = storeMatched && normalizedTitle && body && author && authorId && profileUrl && interactionMetrics && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title: normalizedTitle, summary: body.slice(0, 500), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: interactionMetrics, source_status: metricsLocated ? "located" : "partially_located" } : undefined;
+    const normalizedTitle = title || clean(body, 200);
+    const normalized = storeMatched && normalizedTitle && body && author && authorId && profileUrl && interactionMetrics && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title: normalizedTitle, summary: clean(body, 500), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: interactionMetrics, source_status: metricsLocated ? "located" : "partially_located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
       : `
     const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);

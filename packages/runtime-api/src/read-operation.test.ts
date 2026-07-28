@@ -554,6 +554,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   assert.equal(observeBodyPair("12345678abcdefghijklmnop", "12345678").normalized, undefined);
   assert.equal(observeBodyPair("12345678", "1234567890123456").normalized, undefined);
   assert.equal(observeBodyPair("12345678", "12348765").normalized, undefined);
+  assert.equal(observeBodyPair("abcdefgh", "a1b2c3d4e5f6g7h").normalized, undefined);
   assert.equal(observeBodyPair(piniaNote.desc, "这是另一条完全无关且长度足够的公开正文").normalized, undefined);
   const titlelessBody = "这是一条没有单独标题的公开笔记正文";
   const titleless = evaluate({
@@ -573,6 +574,29 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
       : document.querySelector(selector)
   }, location);
   assert.equal(titleless.normalized.title, titlelessBody);
+  const longBody = "正".repeat(2_100);
+  const boundedLongBody = observeBodyPair(longBody, longBody).normalized;
+  assert.equal(boundedLongBody.summary.length, 500);
+  assert.equal(boundedLongBody.body_summary.length, 2_000);
+  const titleBoundaryBody = `${"正".repeat(199)}😀正文`;
+  const titleBoundary = evaluate({
+    __PINIA__: {
+      _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: { ...piniaNote, title: "", desc: titleBoundaryBody } } } } }]])
+    }
+  }, {
+    ...document,
+    querySelector: (selector: string) => selector === "#noteContainer"
+      ? {
+          querySelector: (detailSelector: string) => detailSelector.includes("detail-desc") || detailSelector.includes("note-desc")
+            ? { textContent: titleBoundaryBody }
+            : detailSelector.includes("note-title") || detailSelector.includes(".title")
+              ? { textContent: "" }
+              : detailRoot.querySelector(detailSelector)
+        }
+      : document.querySelector(selector)
+  }, location);
+  assert.equal(titleBoundary.normalized.title, "正".repeat(199));
+  assert.equal(/[\uD800-\uDBFF]$/.test(titleBoundary.normalized.title), false);
   const missingDetailAuthor = evaluate({}, {
     ...document,
     querySelector: (selector: string) => selector === "#noteContainer"
