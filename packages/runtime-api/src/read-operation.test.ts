@@ -475,9 +475,17 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   const pinia = { _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: piniaNote } } } }]]) };
   const app = { __vue_app__: { config: { globalProperties: { $pinia: pinia } } } };
   const detailRoot = {
-    querySelector: (selector: string) => selector.includes("user/profile")
-      ? { getAttribute: () => "/user/profile/author_123" }
-      : selector.includes("author") ? { textContent: "公开作者" } : null
+    querySelector: (selector: string) => {
+      if (selector.includes("user/profile")) return { getAttribute: () => "/user/profile/author_123" };
+      if (selector.includes("author")) return { textContent: "公开作者" };
+      if (selector.includes("like")) return { textContent: "10" };
+      if (selector.includes("comment")) return { textContent: "2" };
+      if (selector.includes("collect")) return { textContent: "3" };
+      if (selector.includes("share")) return { textContent: "0" };
+      if (selector.includes("note-title") || selector.includes(".title")) return { textContent: "公开标题" };
+      if (selector.includes("detail-desc") || selector.includes("note-desc")) return { textContent: "公开正文摘要" };
+      return null;
+    }
   };
   const narrowDetailRoot = { querySelector: () => null };
   const document = {
@@ -490,12 +498,9 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
       if (selector === '.note-detail-mask, [class*="note-detail"]') return narrowDetailRoot;
       if (selector.includes("captcha") || selector.includes("login")) return null;
       if (selector.includes("user/profile")) return { getAttribute: () => "/user/profile/logged_in_user" };
-      if (selector.includes("like")) return { textContent: "10" };
-      if (selector.includes("comment")) return { textContent: "2" };
-      if (selector.includes("collect")) return { textContent: "3" };
-      if (selector.includes("share")) return { textContent: "0" };
-      if (selector.includes("note-title") || selector.includes(".title")) return { textContent: "公开标题" };
-      if (selector.includes("detail-desc") || selector.includes("note-desc") || selector.includes("note-content")) return { textContent: "公开正文摘要" };
+      if (selector.includes("like") || selector.includes("comment") || selector.includes("collect") || selector.includes("share")) return { textContent: "999" };
+      if (selector.includes("note-title") || selector.includes(".title")) return { textContent: "推荐标题" };
+      if (selector.includes("detail-desc") || selector.includes("note-desc") || selector.includes("note-content")) return { textContent: "推荐正文" };
       if (selector.includes("author")) return { textContent: "登录用户" };
       if (selector.includes("interaction-container")) return {};
       return null;
@@ -532,7 +537,9 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
 
   const missingVisibleShare = evaluate({}, {
     ...document,
-    querySelector: (selector: string) => selector.includes("share") ? null : document.querySelector(selector)
+    querySelector: (selector: string) => selector === "#noteContainer"
+      ? { querySelector: (detailSelector: string) => detailSelector.includes("share") ? null : detailRoot.querySelector(detailSelector) }
+      : document.querySelector(selector)
   }, location);
   assert.equal(missingVisibleShare.normalized.source_status, "partially_located");
   assert.deepEqual(missingVisibleShare.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "0" });
@@ -556,7 +563,9 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   };
   const missingShareEverywhere = evaluate({ __PINIA__: missingShareStore }, {
     ...document,
-    querySelector: (selector: string) => selector.includes("share") ? null : document.querySelector(selector)
+    querySelector: (selector: string) => selector === "#noteContainer"
+      ? { querySelector: (detailSelector: string) => detailSelector.includes("share") ? null : detailRoot.querySelector(detailSelector) }
+      : document.querySelector(selector)
   }, location);
   assert.equal(missingShareEverywhere.normalized.source_status, "partially_located");
   assert.deepEqual(missingShareEverywhere.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "" });
