@@ -1114,14 +1114,18 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       return details.some((detail) => {
         const storeAuthor = unwrap(detail.author) || unwrap(detail.user) || {};
         const storeMetrics = unwrap(detail.interaction_metrics) || unwrap(detail.interactInfo) || unwrap(detail.metrics) || {};
+        const metric = (primary, fallback) => {
+          const value = unwrap(primary) ?? unwrap(fallback);
+          return typeof value === "number" && Number.isFinite(value) ? String(value).slice(0, 40) : clean(value, 40);
+        };
         return clean(unwrap(detail.note_id) || unwrap(detail.noteId) || unwrap(detail.id), 64) === noteId &&
           clean(unwrap(detail.title), 200) === title && clean(unwrap(detail.body_summary) || unwrap(detail.desc) || unwrap(detail.description) || unwrap(detail.body), 4000) === body &&
           clean(unwrap(storeAuthor.display_name) || unwrap(storeAuthor.nickname) || unwrap(storeAuthor.name), 100) === author &&
           clean(unwrap(storeAuthor.author_id) || unwrap(storeAuthor.userId) || unwrap(storeAuthor.id), 100) === authorId &&
-          clean(unwrap(storeMetrics.likes) || unwrap(storeMetrics.likedCount), 40) === likes &&
-          clean(unwrap(storeMetrics.comments) || unwrap(storeMetrics.commentCount), 40) === comments &&
-          clean(unwrap(storeMetrics.collects) || unwrap(storeMetrics.collectedCount), 40) === collects &&
-          clean(unwrap(storeMetrics.shares) || unwrap(storeMetrics.shareCount), 40) === shares;
+          metric(storeMetrics.likes, storeMetrics.likedCount) === likes &&
+          metric(storeMetrics.comments, storeMetrics.commentCount) === comments &&
+          metric(storeMetrics.collects, storeMetrics.collectedCount) === collects &&
+          metric(storeMetrics.shares, storeMetrics.shareCount) === shares;
       });
     };
     const piniaReady = noteStores.length > 0;
