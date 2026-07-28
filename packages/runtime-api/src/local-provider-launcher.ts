@@ -1285,7 +1285,15 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const listFailure = feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";
-    const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge/i.test(text) || Boolean(document.querySelector?.('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"]'));
+    const challengeSurface = typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]')).some((element) => {
+      const view = document.defaultView;
+      if (!view) return false;
+      const style = view.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 &&
+        rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < view.innerHeight && rect.left < view.innerWidth;
+    });
+    const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge/i.test(text) || challengeSurface;
     const login = /登录后|扫码登录|手机号登录/.test(text) || location.pathname.startsWith('/login') || Boolean(document.querySelector?.('.login-dialog, [class*="login"] form, [class*="login"] [class*="qrcode"]'));
     return {
       origin: location.origin,

@@ -330,6 +330,28 @@ test("correlates the official Vue Pinia search store without exposing store cont
     login_like: false,
     challenge_like: false
   });
+  const challengeOverlay = {
+    getBoundingClientRect: () => ({ width: 640, height: 360, top: 100, left: 100, right: 740, bottom: 460 })
+  };
+  const challengeDocument = (display: "block" | "none") => ({
+    ...document,
+    defaultView: {
+      innerWidth: 1280,
+      innerHeight: 720,
+      getComputedStyle: () => ({ display, visibility: display === "none" ? "hidden" : "visible", opacity: display === "none" ? "0" : "1" })
+    },
+    querySelectorAll: (selector: string) => selector === 'a[href*="/explore/"]' ? anchors : [challengeOverlay]
+  });
+  assert.equal(evaluate({}, challengeDocument("none"), {
+    origin: "https://www.xiaohongshu.com",
+    pathname: "/search_result",
+    search: `?keyword=${encodeURIComponent(query)}`
+  }).challenge_like, false);
+  assert.equal(evaluate({}, challengeDocument("block"), {
+    origin: "https://www.xiaohongshu.com",
+    pathname: "/search_result",
+    search: `?keyword=${encodeURIComponent(query)}`
+  }).challenge_like, true);
   const validated = validateReadOperationProbe({
     site_id: "xiaohongshu",
     operation_id: "xhs_search_notes",
