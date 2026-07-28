@@ -474,20 +474,26 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   };
   const pinia = { _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: piniaNote } } } }]]) };
   const app = { __vue_app__: { config: { globalProperties: { $pinia: pinia } } } };
+  const detailRoot = {
+    querySelector: (selector: string) => selector.includes("user/profile")
+      ? { getAttribute: () => "/user/profile/author_123" }
+      : selector.includes("author") ? { textContent: "公开作者" } : null
+  };
   const document = {
     readyState: "complete",
     body: { innerText: "公开笔记详情" },
     querySelector: (selector: string) => {
       if (selector === "#app") return app;
+      if (selector === '.note-detail-mask, [class*="note-detail"]') return detailRoot;
       if (selector.includes("captcha") || selector.includes("login")) return null;
-      if (selector.includes("user/profile")) return { getAttribute: () => "/user/profile/author_123" };
+      if (selector.includes("user/profile")) return { getAttribute: () => "/user/profile/logged_in_user" };
       if (selector.includes("like")) return { textContent: "10" };
       if (selector.includes("comment")) return { textContent: "2" };
       if (selector.includes("collect")) return { textContent: "3" };
       if (selector.includes("share")) return { textContent: "0" };
       if (selector.includes("note-title") || selector.includes(".title")) return { textContent: "公开标题" };
       if (selector.includes("detail-desc") || selector.includes("note-desc") || selector.includes("note-content")) return { textContent: "公开正文摘要" };
-      if (selector.includes("author")) return { textContent: "公开作者" };
+      if (selector.includes("author")) return { textContent: "登录用户" };
       if (selector.includes("interaction-container")) return {};
       return null;
     }
@@ -502,6 +508,13 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   assert.deepEqual(observed.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "0" });
   assert.equal(JSON.stringify(observed).includes("must-not-return"), false);
   assert.equal(JSON.stringify(observed).includes("xsec_token"), false);
+  const missingDetailAuthor = evaluate({}, {
+    ...document,
+    querySelector: (selector: string) => selector === '.note-detail-mask, [class*="note-detail"]'
+      ? { querySelector: () => null }
+      : document.querySelector(selector)
+  }, location);
+  assert.equal(missingDetailAuthor.normalized, undefined);
 
   const missingVisibleShare = evaluate({}, {
     ...document,

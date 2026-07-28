@@ -1097,8 +1097,9 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
     const title = pick('.note-content .title, #detail-title, [class*="note-title"]', 200);
     const body = pick('#detail-desc, .note-content .desc, [class*="note-desc"]', 4000);
-    const author = pick('.author-container .name, .author-wrapper .name, [class*="author"] [class*="name"]', 100);
-    const authorLink = document.querySelector('a[href^="/user/profile/"], a[href*="xiaohongshu.com/user/profile/"]');
+    const detailRoot = document.querySelector('.note-detail-mask, [class*="note-detail"]');
+    const author = clean(detailRoot?.querySelector('.author-container .name, .author-wrapper .name, [class*="author"] [class*="name"]')?.textContent, 100);
+    const authorLink = detailRoot?.querySelector('.author-container a[href*="/user/profile/"], .author-wrapper a[href*="/user/profile/"], [class*="author"] a[href*="/user/profile/"]');
     const profilePath = authorLink ? new URL(authorLink.getAttribute('href'), location.origin).pathname : "";
     const authorId = profilePath.startsWith('/user/profile/') ? profilePath.slice('/user/profile/'.length).split('/')[0] : "";
     const profileUrl = authorId ? location.origin + '/user/profile/' + authorId : "";
