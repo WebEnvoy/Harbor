@@ -631,7 +631,7 @@ export class RuntimeSessionStore {
       };
     }
     const result = await probeReadOperation(input);
-    if (result.page) this.applyPageFacts(record, input.target_url, result.page);
+    if (result.page) this.applyPageFacts(record, result.page.current_url ?? input.target_url, result.page);
     return result;
   }
 

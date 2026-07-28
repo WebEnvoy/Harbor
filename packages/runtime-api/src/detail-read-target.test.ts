@@ -32,6 +32,17 @@ test("binds opaque detail refs to one session, site, operation, ttl, and consump
   assert.equal(JSON.stringify(store).includes("AbC_123"), false);
   assert.equal(store.consume({ detail_ref: detailRef, runtime_session_ref: "session_a", site_id: "boss", operation_id: "boss_read_job_detail", now: 2_001 }), "detail_ref_consumed");
 
+  const [xhsRef] = store.register({
+    runtime_session_ref: "session_a",
+    site_id: "xiaohongshu",
+    search_operation_id: "xhs_search_notes",
+    targets: [{ canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=private-navigation-token&xsec_source=pc_search" }],
+    now: 2_000
+  });
+  const xhsTarget = store.consume({ detail_ref: xhsRef, runtime_session_ref: "session_a", site_id: "xiaohongshu", operation_id: "xhs_read_note_detail", now: 2_001 });
+  assert.equal(typeof xhsTarget === "object" && xhsTarget.canonical_url.includes("private-navigation-token"), true);
+  assert.equal(JSON.stringify(store).includes("private-navigation-token"), false);
+
   const [expired] = store.register({
     runtime_session_ref: "session_a",
     site_id: "xiaohongshu",

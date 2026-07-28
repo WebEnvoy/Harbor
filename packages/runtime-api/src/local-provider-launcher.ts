@@ -17,6 +17,7 @@ import {
 } from "./identity-environment-configuration.js";
 import { prepareProfileStorage } from "./profile-storage.js";
 import { trustLocalProviderReadProbe, trustLocalProviderSiteResourceProbe } from "./read-operation-probe-trust.js";
+import { isCanonicalDetailUrl } from "./detail-read-target.js";
 import type {
   BossJobDetailPublicSummary,
   LocalProviderLaunchInput,
@@ -671,6 +672,9 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           return { validation: validateReadOperationProbe(input, value) };
         }
         if (value?.origin && value.ready && observedResponse !== null && (input.operation_id !== "boss_read_job_detail" || observedBossDetailResponse !== null)) {
+          const xhsResponse = input.operation_id === "xhs_search_notes"
+            ? await readXhsSearchResponseSummary(client, observedResponse.requestId)
+            : null;
           const bossResponse = input.operation_id === "boss_job_search"
             ? await readBossJobSearchResponseSummary(client, observedResponse.requestId)
             : null;
@@ -681,6 +685,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
             ...value,
             operation_response_status: observedResponse.status,
             operation_response_url: observedResponse.url,
+            xhs_response: xhsResponse,
             boss_response: bossResponse,
             boss_detail_response: bossDetailSummary,
             boss_detail_response_status: observedBossDetailResponse?.status,
@@ -774,6 +779,7 @@ interface ReadProbeObservation {
   detail_urls?: string[];
   operation_response_status?: number;
   operation_response_url?: string;
+  xhs_response?: XhsSearchResponseSummary | XhsSearchResponseFailure | null;
   boss_response?: BossJobSearchResponseSummary | BossJobSearchResponseFailure | null;
   boss_detail_response?: BossJobDetailResponseSummary | BossJobSearchResponseFailure | null;
   boss_detail_response_status?: number;
@@ -890,13 +896,23 @@ export function validateReadOperationProbe(
     }
     const detailUrls = observation.detail_urls ?? [];
     if (observation.list_failure) {
-      return { status: "unavailable", failure_class: observation.list_failure, message: "Xiaohongshu search did not expose a valid page-matched note list.", retryable: true };
+      return { status: "unavailable", failure_class: observation.list_failure, message: "Xiaohongshu search did not expose a valid page-matched note list.", retryable: observation.list_failure === "page_not_ready" };
     }
     if (!observation.list_valid) {
       return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search note results are not correlated with the rendered page.", retryable: true };
     }
     if (!Number.isInteger(observation.note_count) || observation.note_count! < 1 || observation.note_count! > 15 || detailUrls.length !== observation.note_count || !validXhsSearchTargets(detailUrls)) {
-      return { status: "unavailable", failure_class: "site_changed", message: "Xiaohongshu search note targets do not match the expected public shape.", retryable: true };
+      return { status: "unavailable", failure_class: "site_changed", message: "Xiaohongshu search note targets do not match the expected public shape.", retryable: false };
+    }
+    if (!observation.xhs_response || observation.xhs_response.status === "unavailable") {
+      return observation.xhs_response ?? { status: "unavailable", failure_class: "network_resource_unavailable", message: "The Xiaohongshu search response summary is unavailable.", retryable: true };
+    }
+    if (!validXhsSearchTargets(observation.xhs_response.detail_urls)) {
+      return { status: "unavailable", failure_class: "site_changed", message: "The Xiaohongshu search response contains invalid detail navigation targets.", retryable: false };
+    }
+    const correlatedTargets = correlateXhsSearchTargets(detailUrls, observation.xhs_response.detail_urls);
+    if (!correlatedTargets) {
+      return { status: "unavailable", failure_class: "site_changed", message: "The Xiaohongshu search response and rendered targets do not match.", retryable: false };
     }
     return {
       status: "completed",
@@ -911,7 +927,7 @@ export function validateReadOperationProbe(
         result_count: observation.note_count,
         source_signals: ["pinia_store", "xhs_search_read_network"]
       },
-      detail_urls: detailUrls
+      detail_urls: correlatedTargets
     };
   }
   const bossJobsSurface = observation.pathname === "/web/geek/job";
@@ -945,14 +961,21 @@ export function validateReadOperationProbe(
 
 function validXhsSearchTargets(values: readonly string[]): boolean {
   if (new Set(values).size !== values.length) return false;
-  return values.every((value) => {
-    try {
-      const url = new URL(value);
-      return url.origin === "https://www.xiaohongshu.com" && !url.username && !url.password && !url.search && !url.hash && /^\/explore\/[a-f0-9]{24}$/i.test(url.pathname);
-    } catch {
-      return false;
-    }
+  return values.every((value) => isCanonicalDetailUrl("xiaohongshu", value));
+}
+
+function correlateXhsSearchTargets(rendered: readonly string[], network: readonly string[]): string[] | null {
+  const entries = network.map((value) => {
+    const url = new URL(value);
+    return [`${url.origin}${url.pathname}`, value] as const;
   });
+  const byPath = new Map(entries);
+  if (byPath.size !== entries.length) return null;
+  const correlated = rendered.map((value) => {
+    const url = new URL(value);
+    return byPath.get(`${url.origin}${url.pathname}`);
+  });
+  return correlated.every((value): value is string => typeof value === "string") ? correlated : null;
 }
 
 function isSuccessfulReadResponse(status: unknown): status is number {
@@ -1099,8 +1122,8 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
           clean(unwrap(storeMetrics.shares) || unwrap(storeMetrics.shareCount), 40) === shares;
       });
     };
-    const piniaReady = noteStores.some(matchesStore);
-    const normalized = piniaReady && title && body && author && authorId && profileUrl && likes && comments && collects && shares && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 2000), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: { likes, comments, collects, shares }, source_status: "located" } : undefined;
+    const piniaReady = noteStores.length > 0;
+    const normalized = noteStores.some(matchesStore) && title && body && author && authorId && profileUrl && likes && comments && collects && shares && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 2000), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: { likes, comments, collects, shares }, source_status: "located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
       : `
     const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);
@@ -1177,15 +1200,18 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       const card = unwrap(feed?.noteCard) || unwrap(feed?.note_card) || {};
       const values = [unwrap(feed?.id), unwrap(feed?.noteId), unwrap(feed?.note_id), unwrap(card?.id), unwrap(card?.noteId), unwrap(card?.note_id)];
       const value = values.find((entry) => entry !== undefined && entry !== null && entry !== "");
+      const tokenValues = [unwrap(feed?.xsecToken), unwrap(feed?.xsec_token), unwrap(card?.xsecToken), unwrap(card?.xsec_token)];
+      const xsecToken = tokenValues.find((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 512 && /^[A-Za-z0-9_-]+$/.test(entry));
       const noteLike = Boolean(feed?.noteCard || feed?.note_card || values.some((entry) => entry !== undefined));
       if (!noteLike) return { kind: 'other' };
       return typeof value === "string" && /^[a-f0-9]{24}$/i.test(value)
-        ? { kind: 'note', id: value.toLowerCase() }
+        ? { kind: 'note', id: value.toLowerCase(), xsecToken }
         : { kind: 'malformed' };
     };
     const candidates = boundedFeeds.map(noteCandidate);
     const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note').map((candidate) => candidate.id);
     const feedIds = allFeedIds.slice(0, 15);
+    const feedTokens = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.xsecToken).map((candidate) => [candidate.id, candidate.xsecToken]));
     const duplicateFeed = new Set(allFeedIds).size !== allFeedIds.length;
     const anchors = typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href*="/explore/"]')).slice(0, 60) : [];
     const pageTargets = new Map();
@@ -1194,15 +1220,29 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       try {
         const url = new URL(anchor.getAttribute?.('href') || anchor.href || '', location.origin);
         const match = new RegExp('^/explore/([a-f0-9]{24})$', 'i').exec(url.pathname);
-        if (url.origin !== location.origin || url.username || url.password || !match) {
+        const validQuery = !url.hash &&
+          Array.from(url.searchParams.keys()).every((key) => key === 'xsec_token' || key === 'xsec_source') &&
+          url.searchParams.getAll('xsec_token').length <= 1 &&
+          url.searchParams.getAll('xsec_source').length <= 1;
+        if (url.origin !== location.origin || url.username || url.password || !match || !validQuery) {
           invalidPageTarget = true;
           continue;
         }
         const id = match[1].toLowerCase();
-        pageTargets.set(id, location.origin + '/explore/' + id);
+        pageTargets.set(id, url.href);
       } catch { invalidPageTarget = true; }
     }
-    const detailUrls = feedIds.flatMap((id) => pageTargets.has(id) ? [pageTargets.get(id)] : []);
+    const detailUrls = feedIds.flatMap((id) => {
+      const target = pageTargets.get(id);
+      if (!target) return [];
+      const targetUrl = new URL(target);
+      const token = feedTokens.get(id);
+      if (token && !targetUrl.searchParams.has('xsec_token')) {
+        targetUrl.searchParams.set('xsec_token', token);
+        targetUrl.searchParams.set('xsec_source', 'pc_search');
+      }
+      return [targetUrl.href];
+    });
     // A note card commonly exposes the same canonical target through both its
     // card wrapper and title link. Duplicate anchors are presentation detail,
     // not evidence that the feed contract changed.
@@ -1284,6 +1324,18 @@ interface BossJobSearchResponseSummary {
   detail_urls?: string[];
 }
 
+interface XhsSearchResponseSummary {
+  status: "completed";
+  detail_urls: string[];
+}
+
+type XhsSearchResponseFailure = {
+  status: "unavailable";
+  failure_class: "permission_denied" | "empty_result" | "site_changed" | "network_resource_unavailable";
+  message: string;
+  retryable: boolean;
+};
+
 interface BossJobDetailResponseSummary {
   status: "completed";
   title: string;
@@ -1305,6 +1357,56 @@ type BossJobSearchResponseFailure = {
 };
 
 const MAX_BOSS_RESPONSE_BYTES = 512 * 1024;
+const MAX_XHS_RESPONSE_BYTES = 512 * 1024;
+
+async function readXhsSearchResponseSummary(client: CdpClient, requestId: string): Promise<XhsSearchResponseSummary | XhsSearchResponseFailure> {
+  try {
+    const response = await client.send("Network.getResponseBody", { requestId });
+    const encoded = typeof response.body === "string" ? response.body : "";
+    const bytes = response.base64Encoded === true ? Buffer.from(encoded, "base64") : Buffer.from(encoded, "utf8");
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_XHS_RESPONSE_BYTES) return xhsResponseFailure("network_resource_unavailable", "Xiaohongshu search response is empty or exceeds the summary read limit.", true);
+    return summarizeXhsSearchResponse(bytes.toString("utf8"));
+  } catch {
+    return xhsResponseFailure("network_resource_unavailable", "Xiaohongshu search response summary could not be read.", true);
+  }
+}
+
+export function summarizeXhsSearchResponse(body: string): XhsSearchResponseSummary | XhsSearchResponseFailure {
+  let parsed: unknown;
+  try { parsed = JSON.parse(body); } catch { return xhsResponseFailure("site_changed", "Xiaohongshu search response is not valid JSON.", false); }
+  if (!isPlainRecord(parsed)) return xhsResponseFailure("site_changed", "Xiaohongshu search response has an unexpected shape.", false);
+  if (parsed.success === false || typeof parsed.code === "number" && parsed.code !== 0) return xhsResponseFailure("permission_denied", "Xiaohongshu search response rejected the request.", false);
+  if (parsed.success !== true || parsed.code !== 0) return xhsResponseFailure("site_changed", "Xiaohongshu search response has no explicit success state.", false);
+  const data = isPlainRecord(parsed.data) ? parsed.data : null;
+  if (!data || !Array.isArray(data.items)) return xhsResponseFailure("site_changed", "Xiaohongshu search response has no item list.", false);
+  if (data.items.length === 0) return xhsResponseFailure("empty_result", "Xiaohongshu search returned no notes.", false);
+  const detail_urls: string[] = [];
+  for (const item of data.items.slice(0, 60)) {
+    if (!isPlainRecord(item)) continue;
+    const card = isPlainRecord(item.note_card) ? item.note_card : isPlainRecord(item.noteCard) ? item.noteCard : {};
+    const noteIds = [item.id, item.note_id, item.noteId, card.id, card.note_id, card.noteId]
+      .filter((value): value is string => typeof value === "string" && /^[a-f0-9]{24}$/i.test(value))
+      .map((value) => value.toLowerCase());
+    if (new Set(noteIds).size > 1) return xhsResponseFailure("site_changed", "Xiaohongshu search item identifiers do not match.", false);
+    const tokens = [item.xsec_token, item.xsecToken, card.xsec_token, card.xsecToken]
+      .filter((value): value is string => typeof value === "string" && value.length > 0 && value.length <= 512 && /^[A-Za-z0-9_-]+$/.test(value));
+    if (new Set(tokens).size > 1) return xhsResponseFailure("site_changed", "Xiaohongshu search item navigation tokens do not match.", false);
+    const noteId = noteIds[0];
+    const token = tokens[0];
+    if (typeof noteId !== "string" || typeof token !== "string") continue;
+    const target = new URL(`/explore/${noteId.toLowerCase()}`, "https://www.xiaohongshu.com");
+    target.searchParams.set("xsec_token", token);
+    target.searchParams.set("xsec_source", "pc_search");
+    detail_urls.push(target.href);
+  }
+  return detail_urls.length > 0
+    ? { status: "completed", detail_urls }
+    : xhsResponseFailure("site_changed", "Xiaohongshu search items have no valid detail navigation targets.", false);
+}
+
+function xhsResponseFailure(failure_class: XhsSearchResponseFailure["failure_class"], message: string, retryable: boolean): XhsSearchResponseFailure {
+  return { status: "unavailable", failure_class, message, retryable };
+}
 
 async function readBossJobSearchResponseSummary(client: CdpClient, requestId: string): Promise<BossJobSearchResponseSummary | BossJobSearchResponseFailure> {
   try {
@@ -1403,18 +1505,28 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readOperationPageFacts(targetUrl: string): LocalProviderPageFacts {
+export function readOperationPageFacts(targetUrl: string): LocalProviderPageFacts {
   const evidence_ref = opaqueRef("validation");
+  const publicUrl = publicReadOperationUrl(targetUrl);
   return {
-    current_url: targetUrl,
+    current_url: publicUrl,
     title: null,
     status: "ready",
     facts: [
-      { key: "page.current_url", source: "observed", value: targetUrl, evidence_ref },
+      { key: "page.current_url", source: "observed", value: publicUrl, evidence_ref },
       { key: "page.title", source: "observed", value: "not_read", evidence_ref },
       { key: "page.status", source: "validation_evidence", value: "operation_probe_ready", evidence_ref }
     ]
   };
+}
+
+function publicReadOperationUrl(targetUrl: string): string {
+  const url = new URL(targetUrl);
+  if (url.origin === "https://www.xiaohongshu.com" && /^\/explore\/[a-f0-9]{24}$/i.test(url.pathname)) {
+    url.search = "";
+    url.hash = "";
+  }
+  return url.href;
 }
 
 async function readPageFacts(port: string, requested_url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
