@@ -31,6 +31,20 @@ test("selectPage preserves a redirect when it is the only page target", () => {
   assert.equal(selected?.id, "redirect");
 });
 
+test("selectPage accepts the bounded Xiaohongshu search type redirect", () => {
+  const requestedUrl = "https://www.xiaohongshu.com/search_result?keyword=citywalk&source=web_search_result_notes";
+  const aboutBlank = { id: "blank", type: "page", url: "about:blank", webSocketDebuggerUrl: "ws://blank" };
+  const redirected = { id: "target", type: "page", url: `${requestedUrl}&type=51`, webSocketDebuggerUrl: "ws://target" };
+
+  assert.equal(selectPage([aboutBlank, redirected], requestedUrl)?.id, "target");
+  for (const suffix of ["type=50", "type=51&extra=1", "type=51&type=51"]) {
+    assert.equal(selectPage([
+      aboutBlank,
+      { ...redirected, url: `${requestedUrl}&${suffix}` }
+    ], requestedUrl), undefined);
+  }
+});
+
 test("selectPage prefers an exact URL and preserves repeated query parameter order", () => {
   const requestedUrl = "https://www.xiaohongshu.com/search_result?tag=first&tag=second";
   const reordered = { id: "reordered", type: "page", url: "https://www.xiaohongshu.com/search_result?tag=second&tag=first", webSocketDebuggerUrl: "ws://reordered" };
