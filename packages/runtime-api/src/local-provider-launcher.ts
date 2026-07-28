@@ -1058,7 +1058,9 @@ function validPublicProfileUrl(value: string, authorId: string): boolean {
 }
 
 function validMetrics(value: XiaohongshuNoteDetailPublicSummary["interaction_metrics"]): boolean {
-  return [value.likes, value.comments, value.collects, value.shares].every((entry) => boundedText(entry, 40));
+  return [value.likes, value.comments, value.collects, value.shares].every((entry) =>
+    typeof entry === "string" && entry.length <= 40 && entry.trim() === entry && !/[\u0000-\u001f\u007f]/.test(entry)
+  );
 }
 
 function sameBossDetailSummary(value: LocalProviderDetailPublicSummary, source: BossJobDetailResponseSummary): boolean {
@@ -1106,6 +1108,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const shares = pick('[class*="share"] [class*="count"], .share-wrapper .count', 40);
     const noteId = location.pathname.split('/').filter(Boolean).at(-1) || "";
     const noteStores = stores instanceof Map ? Array.from(stores.entries()).filter(([key]) => /note|detail/i.test(String(key))) : [];
+    let matchedMetrics;
     const matchesStore = ([, candidate]) => {
       const state = unwrap(candidate?.$state) || candidate;
       const detailMap = unwrap(state?.noteDetailMap);
@@ -1118,18 +1121,27 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
           const value = unwrap(primary) ?? unwrap(fallback);
           return typeof value === "number" && Number.isFinite(value) ? String(value).slice(0, 40) : clean(value, 40);
         };
-        return clean(unwrap(detail.note_id) || unwrap(detail.noteId) || unwrap(detail.id), 64) === noteId &&
+        const metrics = {
+          likes: metric(storeMetrics.likes, storeMetrics.likedCount),
+          comments: metric(storeMetrics.comments, storeMetrics.commentCount),
+          collects: metric(storeMetrics.collects, storeMetrics.collectedCount),
+          shares: metric(storeMetrics.shares, storeMetrics.shareCount)
+        };
+        const matches = clean(unwrap(detail.note_id) || unwrap(detail.noteId) || unwrap(detail.id), 64) === noteId &&
           clean(unwrap(detail.title), 200) === title && clean(unwrap(detail.body_summary) || unwrap(detail.desc) || unwrap(detail.description) || unwrap(detail.body), 4000) === body &&
           clean(unwrap(storeAuthor.display_name) || unwrap(storeAuthor.nickname) || unwrap(storeAuthor.name), 100) === author &&
           clean(unwrap(storeAuthor.author_id) || unwrap(storeAuthor.userId) || unwrap(storeAuthor.id), 100) === authorId &&
-          metric(storeMetrics.likes, storeMetrics.likedCount) === likes &&
-          metric(storeMetrics.comments, storeMetrics.commentCount) === comments &&
-          metric(storeMetrics.collects, storeMetrics.collectedCount) === collects &&
-          metric(storeMetrics.shares, storeMetrics.shareCount) === shares;
+          (!likes || metrics.likes === likes) && (!comments || metrics.comments === comments) &&
+          (!collects || metrics.collects === collects) && (!shares || metrics.shares === shares);
+        if (matches) matchedMetrics = metrics;
+        return matches;
       });
     };
     const piniaReady = noteStores.length > 0;
-    const normalized = noteStores.some(matchesStore) && title && body && author && authorId && profileUrl && likes && comments && collects && shares && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 2000), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: { likes, comments, collects, shares }, source_status: "located" } : undefined;
+    const storeMatched = noteStores.some(matchesStore);
+    const interactionMetrics = matchedMetrics ? { likes: likes || matchedMetrics.likes, comments: comments || matchedMetrics.comments, collects: collects || matchedMetrics.collects, shares: shares || matchedMetrics.shares } : undefined;
+    const metricsLocated = Boolean(likes && comments && collects && shares);
+    const normalized = storeMatched && title && body && author && authorId && profileUrl && interactionMetrics && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 2000), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: interactionMetrics, source_status: metricsLocated ? "located" : "partially_located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
       : `
     const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);
