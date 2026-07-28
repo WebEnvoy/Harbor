@@ -333,25 +333,42 @@ test("correlates the official Vue Pinia search store without exposing store cont
   const challengeOverlay = {
     getBoundingClientRect: () => ({ width: 640, height: 360, top: 100, left: 100, right: 740, bottom: 460 })
   };
-  const challengeDocument = (display: "block" | "none") => ({
+  const challengeDocument = ({
+    display = "block",
+    visibility = "visible",
+    opacity = "1",
+    rect = challengeOverlay.getBoundingClientRect(),
+    text = "公开搜索结果"
+  }: {
+    display?: "block" | "none";
+    visibility?: "visible" | "hidden";
+    opacity?: "1" | "0";
+    rect?: ReturnType<typeof challengeOverlay.getBoundingClientRect>;
+    text?: string;
+  } = {}) => ({
     ...document,
+    body: { innerText: text },
     defaultView: {
       innerWidth: 1280,
       innerHeight: 720,
-      getComputedStyle: () => ({ display, visibility: display === "none" ? "hidden" : "visible", opacity: display === "none" ? "0" : "1" })
+      getComputedStyle: () => ({ display, visibility, opacity })
     },
-    querySelectorAll: (selector: string) => selector === 'a[href*="/explore/"]' ? anchors : [challengeOverlay]
+    querySelectorAll: (selector: string) => selector === 'a[href*="/explore/"]'
+      ? anchors
+      : [{ getBoundingClientRect: () => rect }]
   });
-  assert.equal(evaluate({}, challengeDocument("none"), {
+  const evaluateChallenge = (probeDocument: ReturnType<typeof challengeDocument>) => evaluate({}, probeDocument, {
     origin: "https://www.xiaohongshu.com",
     pathname: "/search_result",
     search: `?keyword=${encodeURIComponent(query)}`
-  }).challenge_like, false);
-  assert.equal(evaluate({}, challengeDocument("block"), {
-    origin: "https://www.xiaohongshu.com",
-    pathname: "/search_result",
-    search: `?keyword=${encodeURIComponent(query)}`
-  }).challenge_like, true);
+  }).challenge_like;
+  assert.equal(evaluateChallenge(challengeDocument({ display: "none" })), false);
+  assert.equal(evaluateChallenge(challengeDocument({ visibility: "hidden" })), false);
+  assert.equal(evaluateChallenge(challengeDocument({ opacity: "0" })), false);
+  assert.equal(evaluateChallenge(challengeDocument({ rect: { width: 0, height: 0, top: 100, left: 100, right: 100, bottom: 100 } })), false);
+  assert.equal(evaluateChallenge(challengeDocument({ rect: { width: 640, height: 360, top: 800, left: 100, right: 740, bottom: 1160 } })), false);
+  assert.equal(evaluateChallenge(challengeDocument()), true);
+  assert.equal(evaluateChallenge(challengeDocument({ display: "none", text: "访问异常，请完成安全验证" })), true);
   const validated = validateReadOperationProbe({
     site_id: "xiaohongshu",
     operation_id: "xhs_search_notes",
