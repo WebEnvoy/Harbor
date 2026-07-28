@@ -173,6 +173,7 @@ export interface LocalProviderReadProbeInput {
   operation_id: AllowlistedReadOperationId;
   query?: string;
   city_code?: string;
+  limit?: number;
   detail_ref?: string;
   target_url: string;
   expected_origin: string;
@@ -211,7 +212,7 @@ export type LocalProviderSiteResourceProbeResult =
     };
 
 export interface LocalProviderReadProbePublicSummary {
-  schema_version: "harbor-read-operation-public-summary/v0";
+  schema_version: "harbor-read-operation-public-summary/v0" | "harbor-read-operation-public-summary/v1";
   operation_id: AllowlistedReadOperationId;
   result_kind: "xiaohongshu_search_notes_surface" | "boss_job_search_surface" | "xiaohongshu_note_detail_surface" | "boss_job_detail_surface";
   surface: "search_result" | "web_geek_jobs" | "note_detail" | "job_detail";
@@ -223,8 +224,23 @@ export interface LocalProviderReadProbePublicSummary {
   job_count?: number;
   result_count?: number;
   detail_refs?: readonly string[];
+  items?: readonly XiaohongshuSearchPublicItem[];
   normalized?: LocalProviderDetailPublicSummary;
   source_signals: readonly string[];
+}
+
+export interface XiaohongshuSearchPublicFields {
+  title: string;
+  author_display_name?: string;
+  interaction_metrics?: {
+    likes?: string;
+    comments?: string;
+    collects?: string;
+  };
+}
+
+export interface XiaohongshuSearchPublicItem extends XiaohongshuSearchPublicFields {
+  detail_ref: string;
 }
 
 export interface XiaohongshuNoteDetailPublicSummary {
@@ -291,6 +307,7 @@ export type LocalProviderReadProbeResult =
       public_summary_source_ref: string;
       public_summary: LocalProviderReadProbePublicSummary;
       detail_targets?: LocalProviderReadProbeDetailTarget[];
+      search_items?: XiaohongshuSearchPublicFields[];
     }
   | {
       status: "unavailable";

@@ -1527,6 +1527,99 @@ test("fails closed before probing when PATCH login state or release lacks a conf
   }
 });
 
+test("returns bounded XHS public search cards paired with opaque detail refs", async () => {
+  const observedLimits: Array<number | undefined> = [];
+  const probe = trustLocalProviderReadProbe(async (input) => {
+    observedLimits.push(input.limit);
+    const sources = ["pinia_store_summary", "network_summary", "dom_snapshot_summary"].map((kind) => ({ kind, ref: opaqueRef("source") }));
+    return {
+      status: "completed",
+      observed_at: "2026-07-28T00:00:00.000Z",
+      observed_origin: "https://www.xiaohongshu.com",
+      page: localReadPage(input.target_url),
+      source_refs: sources,
+      evidence_ref_kinds: [{ kind: "snapshot_ref", ref: opaqueRef("evidence") }],
+      public_summary_source_ref: sources[1]!.ref,
+      public_summary: {
+        schema_version: "harbor-read-operation-public-summary/v0",
+        operation_id: "xhs_search_notes",
+        result_kind: "xiaohongshu_search_notes_surface",
+        surface: "search_result",
+        result_state: "operation_read_response_observed",
+        response_status: 200,
+        result_count: 2,
+        source_signals: ["pinia_store", "xhs_search_read_network"]
+      },
+      detail_targets: [
+        { canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=private-navigation-token&xsec_source=pc_search" },
+        { canonical_url: "https://www.xiaohongshu.com/explore/89abcdef0123456701234567?xsec_token=second-private-token&xsec_source=pc_search" }
+      ],
+      search_items: [{
+        title: "公开搜索笔记",
+        author_display_name: "公开作者",
+        interaction_metrics: { likes: "128", comments: "12", collects: "34" }
+      }, {
+        title: "第二条公开笔记",
+        author_display_name: "第二位公开作者",
+        interaction_metrics: { likes: "64" }
+      }],
+      cookie_header: "session=private-cookie",
+      cdp_endpoint: "ws://private-cdp-endpoint",
+      raw_response_body: "raw-private-body"
+    };
+  });
+  const runtime = new HarborRuntime(createBossReadLauncher(probe));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    await postIdentityEnvironment(`${running.url}/runtime/identity-environments`, {
+      identity_environment_ref: "identity-env_xhs-public-cards",
+      execution_identity_ref: "execution-identity_xhs-public-cards",
+      profile_ref: "profile_xhs-public-cards",
+      profile_storage_ref: "profile-storage_xhs-public-cards",
+      site: { site_id: "xiaohongshu", origin: "https://www.xiaohongshu.com", display_name: "小红书" },
+      login_state: "logged_in",
+      storage_state: "present"
+    });
+    const session = await postJson(`${running.url}/runtime/identity-environment-sessions`, {
+      identity_environment_ref: "identity-env_xhs-public-cards",
+      url: "https://www.xiaohongshu.com/explore",
+      control_owner: "user"
+    });
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "user", handoff_reason: "login_required" });
+    assert.ok(runtime.completeManualAuthentication(session.runtime_session_ref));
+    runtime.recordHandoff(session.runtime_session_ref, { control_owner: "core_task", handoff_reason: "user_requested" });
+
+    const search = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      query: "AI",
+      limit: 2
+    });
+    assert.equal(search.status, 201, JSON.stringify(search.body));
+    assert.equal(search.body.public_summary.schema_version, "harbor-read-operation-public-summary/v1");
+    assert.deepEqual(search.body.public_summary.items.map((item: { detail_ref: string }) => item.detail_ref), search.body.public_summary.detail_refs);
+    assert.deepEqual(search.body.public_summary.items.map((item: { title: string }) => item.title), ["公开搜索笔记", "第二条公开笔记"]);
+    assert.deepEqual(observedLimits, [2]);
+    const publicJson = JSON.stringify(search.body).toLowerCase();
+    for (const forbidden of ["xsec", "private-navigation-token", "profile-storage_xhs-public-cards", "private-cookie", "private-cdp-endpoint", "raw-private-body"]) {
+      assert.equal(publicJson.includes(forbidden), false, forbidden);
+    }
+
+    for (const limit of [0, 1.5, 16]) {
+      const invalid = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
+        site_id: "xiaohongshu",
+        operation_id: "xhs_search_notes",
+        query: "AI",
+        limit
+      });
+      assert.equal(invalid.status, 400, String(limit));
+    }
+    assert.deepEqual(observedLimits, [2]);
+  } finally {
+    await running.close();
+  }
+});
+
 test("consumes a BOSS detail ref only once from the same real-search session", async () => {
   let failDetailProbe = false;
   let detailProbeRetryable = true;

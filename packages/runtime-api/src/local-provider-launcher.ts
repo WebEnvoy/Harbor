@@ -34,7 +34,8 @@ import type {
   RuntimeErrorCode,
   RuntimeErrorFact,
   RuntimeFact,
-  XiaohongshuNoteDetailPublicSummary
+  XiaohongshuNoteDetailPublicSummary,
+  XiaohongshuSearchPublicFields
 } from "./runtime-session-types.js";
 
 type CdpPageTarget = { id?: string; type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
@@ -659,10 +660,11 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           vue_ready?: boolean;
           pinia_ready?: boolean;
           list_valid?: boolean;
-          list_failure?: "empty_result" | "page_not_ready" | "site_changed";
+          list_failure?: "empty_result" | "page_not_ready" | "field_missing" | "site_changed";
           note_count?: number;
           normalized?: ObservedDetailPublicSummary;
           detail_urls?: string[];
+          search_items?: XiaohongshuSearchPublicFields[];
         } } | undefined)?.value;
         const observedResponse = operationResponse as { requestId: string; status: number; url: string } | null;
         const observedBossDetailResponse = bossDetailResponse as { requestId: string; status: number; url: string } | null;
@@ -698,6 +700,15 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
             value.pathname === new URL(input.target_url).pathname &&
             value.rendered_surface === true &&
             isPendingXiaohongshuInitialization(value)
+          ) {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            continue;
+          }
+          if (
+            input.operation_id === "xhs_search_notes" &&
+            validation.status === "unavailable" &&
+            validation.failure_class === "page_not_ready" &&
+            (value.pathname === "/search_result" || value.pathname === "/search_result/")
           ) {
             await new Promise((resolve) => setTimeout(resolve, 250));
             continue;
@@ -739,7 +750,8 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       evidence_ref_kinds,
       public_summary_source_ref: source_refs.find((source) => source.kind === "network_summary" || source.kind === "wapi_job_detail_summary")?.ref ?? source_refs[0]!.ref,
       public_summary: validation.public_summary,
-      detail_targets: validation.detail_urls?.map((canonical_url) => ({ canonical_url }))
+      detail_targets: validation.detail_urls?.map((canonical_url) => ({ canonical_url })),
+      search_items: validation.search_items
     };
   } catch (cause) {
     return probeUnavailable(
@@ -773,10 +785,11 @@ interface ReadProbeObservation {
   vue_ready?: boolean;
   pinia_ready?: boolean;
   list_valid?: boolean;
-  list_failure?: "empty_result" | "page_not_ready" | "site_changed";
+  list_failure?: "empty_result" | "page_not_ready" | "field_missing" | "site_changed";
   note_count?: number;
   normalized?: ObservedDetailPublicSummary;
   detail_urls?: string[];
+  search_items?: XiaohongshuSearchPublicFields[];
   operation_response_status?: number;
   operation_response_url?: string;
   xhs_response?: XhsSearchResponseSummary | XhsSearchResponseFailure | null;
@@ -840,7 +853,7 @@ export function validateReadOperationProbe(
   input: LocalProviderReadProbeInput,
   observation: ReadProbeObservation
 ):
-  | { status: "completed"; source_kinds: string[]; public_summary: LocalProviderReadProbePublicSummary; detail_urls?: string[] }
+  | { status: "completed"; source_kinds: string[]; public_summary: LocalProviderReadProbePublicSummary; detail_urls?: string[]; search_items?: XiaohongshuSearchPublicFields[] }
   | { status: "unavailable"; failure_class: Extract<LocalProviderReadProbeResult, { status: "unavailable" }>["failure_class"]; message: string; retryable: boolean } {
   if (observation.origin !== input.expected_origin) return { status: "unavailable", failure_class: "origin_drift", message: "The read-operation page left the pinned allowed origin.", retryable: false };
   if (observation.challenge_like) return { status: "unavailable", failure_class: "safety_challenge", message: "The read-operation page shows a verification or safety challenge.", retryable: false };
@@ -895,13 +908,15 @@ export function validateReadOperationProbe(
       return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search/note, Pinia, or operation-specific read signal is unavailable.", retryable: true };
     }
     const detailUrls = observation.detail_urls ?? [];
+    const searchItems = observation.search_items ?? [];
     if (observation.list_failure) {
       return { status: "unavailable", failure_class: observation.list_failure, message: "Xiaohongshu search did not expose a valid page-matched note list.", retryable: observation.list_failure === "page_not_ready" };
     }
     if (!observation.list_valid) {
       return { status: "unavailable", failure_class: "page_not_ready", message: "Xiaohongshu search note results are not correlated with the rendered page.", retryable: true };
     }
-    if (!Number.isInteger(observation.note_count) || observation.note_count! < 1 || observation.note_count! > 15 || detailUrls.length !== observation.note_count || !validXhsSearchTargets(detailUrls)) {
+    const resultLimit = input.limit ?? 15;
+    if (!Number.isInteger(observation.note_count) || observation.note_count! < 1 || detailUrls.length !== observation.note_count || searchItems.length !== detailUrls.length || !validXhsSearchTargets(detailUrls)) {
       return { status: "unavailable", failure_class: "site_changed", message: "Xiaohongshu search note targets do not match the expected public shape.", retryable: false };
     }
     if (!observation.xhs_response || observation.xhs_response.status === "unavailable") {
@@ -910,9 +925,9 @@ export function validateReadOperationProbe(
     if (!validXhsSearchTargets(observation.xhs_response.detail_urls)) {
       return { status: "unavailable", failure_class: "site_changed", message: "The Xiaohongshu search response contains invalid detail navigation targets.", retryable: false };
     }
-    const correlatedTargets = correlateXhsSearchTargets(detailUrls, observation.xhs_response.detail_urls);
-    if (!correlatedTargets) {
-      return { status: "unavailable", failure_class: "site_changed", message: "The Xiaohongshu search response and rendered targets do not match.", retryable: false };
+    const correlated = correlateXhsSearchResults(detailUrls, searchItems, observation.xhs_response.detail_urls, observation.xhs_response.search_items, resultLimit);
+    if (!correlated) {
+      return { status: "unavailable", failure_class: "site_changed", message: "The Xiaohongshu search response and Pinia public fields do not match.", retryable: false };
     }
     return {
       status: "completed",
@@ -924,10 +939,11 @@ export function validateReadOperationProbe(
         surface: "search_result",
         result_state: "operation_read_response_observed",
         response_status: observation.operation_response_status,
-        result_count: observation.note_count,
+        result_count: correlated.detail_urls.length,
         source_signals: ["pinia_store", "xhs_search_read_network"]
       },
-      detail_urls: correlatedTargets
+      detail_urls: correlated.detail_urls,
+      search_items: correlated.search_items
     };
   }
   const bossJobsSurface = observation.pathname === "/web/geek/job";
@@ -964,18 +980,38 @@ function validXhsSearchTargets(values: readonly string[]): boolean {
   return values.every((value) => isCanonicalDetailUrl("xiaohongshu", value));
 }
 
-function correlateXhsSearchTargets(rendered: readonly string[], network: readonly string[]): string[] | null {
-  const entries = network.map((value) => {
+function correlateXhsSearchResults(
+  renderedUrls: readonly string[],
+  renderedItems: readonly XiaohongshuSearchPublicFields[],
+  networkUrls: readonly string[],
+  networkItems: readonly XiaohongshuSearchPublicFields[],
+  limit: number
+): { detail_urls: string[]; search_items: XiaohongshuSearchPublicFields[] } | null {
+  if (networkUrls.length !== networkItems.length || renderedUrls.length !== renderedItems.length) return null;
+  const entries = networkUrls.map((value, index) => {
     const url = new URL(value);
-    return [`${url.origin}${url.pathname}`, value] as const;
+    return [`${url.origin}${url.pathname}`, { url: value, item: networkItems[index]! }] as const;
   });
   const byPath = new Map(entries);
   if (byPath.size !== entries.length) return null;
-  const correlated = rendered.map((value) => {
+  const correlated: Array<{ url: string; item: XiaohongshuSearchPublicFields }> = [];
+  for (const [index, value] of renderedUrls.entries()) {
     const url = new URL(value);
-    return byPath.get(`${url.origin}${url.pathname}`);
-  });
-  return correlated.every((value): value is string => typeof value === "string") ? correlated : null;
+    const result = byPath.get(`${url.origin}${url.pathname}`);
+    if (!result) continue;
+    if (!sameXhsSearchFields(renderedItems[index]!, result.item)) return null;
+    correlated.push(result);
+  }
+  const bounded = correlated.slice(0, limit);
+  return bounded.length > 0
+    ? { detail_urls: bounded.map((value) => value.url), search_items: bounded.map((value) => value.item) }
+    : null;
+}
+
+function sameXhsSearchFields(left: XiaohongshuSearchPublicFields, right: XiaohongshuSearchPublicFields): boolean {
+  return left.title === right.title &&
+    left.author_display_name === right.author_display_name &&
+    JSON.stringify(left.interaction_metrics ?? {}) === JSON.stringify(right.interaction_metrics ?? {});
 }
 
 function isSuccessfulReadResponse(status: unknown): status is number {
@@ -1233,6 +1269,20 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const pinia = window.__PINIA__ || window.__pinia || document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$pinia;
     const store = pinia?._s instanceof Map ? pinia._s.get("search") : undefined;
     const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
+    const clean = (value, max) => {
+      if (typeof value !== 'string') return '';
+      const text = value.replace(/\\s+/g, ' ').trim();
+      if (!text || text.length > max || /[\\u0000-\\u001f\\u007f]/.test(text)) return '';
+      if (/(?:^|[^a-z0-9_-])(?:[a-z0-9_-]*token|cookie|authorization|password|passwd|secret|credential|profile[_-]?storage|raw[_-]?(?:dom|har)|network[_-]?response[_-]?body)\\s*[=:]\\s*\\S+/i.test(text) || /\\bbearer\\s+\\S+/i.test(text)) return '';
+      return text;
+    };
+    const metric = (...values) => {
+      for (const raw of values) {
+        const value = typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? String(raw) : typeof raw === 'string' ? raw.trim() : '';
+        if (value && value.length <= 40 && /^[0-9０-９.,+\\-\\s万千百wWkKmM]+$/u.test(value)) return value;
+      }
+      return '';
+    };
     const feeds = unwrap(store?.feeds);
     const boundedFeeds = Array.isArray(feeds) ? feeds.slice(0, 60) : [];
     const noteCandidate = (feed) => {
@@ -1241,16 +1291,26 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       const value = values.find((entry) => entry !== undefined && entry !== null && entry !== "");
       const tokenValues = [unwrap(feed?.xsecToken), unwrap(feed?.xsec_token), unwrap(card?.xsecToken), unwrap(card?.xsec_token)];
       const xsecToken = tokenValues.find((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 512 && /^[A-Za-z0-9_-]+={0,2}$/.test(entry));
+      const user = unwrap(card?.user) || {};
+      const interactions = unwrap(card?.interactInfo) || unwrap(card?.interact_info) || {};
+      const title = clean(unwrap(card?.displayTitle) || unwrap(card?.display_title) || unwrap(card?.title), 200);
+      const author = clean(unwrap(user?.nickname) || unwrap(user?.displayName) || unwrap(user?.display_name) || unwrap(user?.name), 100);
+      const likes = metric(unwrap(interactions?.likedCount), unwrap(interactions?.liked_count), unwrap(interactions?.likes));
+      const comments = metric(unwrap(interactions?.commentCount), unwrap(interactions?.comment_count), unwrap(interactions?.comments));
+      const collects = metric(unwrap(interactions?.collectedCount), unwrap(interactions?.collected_count), unwrap(interactions?.collects));
+      const interactionMetrics = { ...(likes ? { likes } : {}), ...(comments ? { comments } : {}), ...(collects ? { collects } : {}) };
+      const publicItem = title ? { title, ...(author ? { author_display_name: author } : {}), ...(Object.keys(interactionMetrics).length ? { interaction_metrics: interactionMetrics } : {}) } : undefined;
       const noteLike = Boolean(feed?.noteCard || feed?.note_card || values.some((entry) => entry !== undefined));
       if (!noteLike) return { kind: 'other' };
       return typeof value === "string" && /^[a-f0-9]{24}$/i.test(value)
-        ? { kind: 'note', id: value.toLowerCase(), xsecToken }
+        ? { kind: 'note', id: value.toLowerCase(), xsecToken, publicItem }
         : { kind: 'malformed' };
     };
     const candidates = boundedFeeds.map(noteCandidate);
     const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note').map((candidate) => candidate.id);
-    const feedIds = Array.from(new Set(allFeedIds)).slice(0, 15);
+    const feedIds = Array.from(new Set(allFeedIds));
     const feedTokens = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.xsecToken).map((candidate) => [candidate.id, candidate.xsecToken]));
+    const feedPublicItems = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.publicItem).map((candidate) => [candidate.id, candidate.publicItem]));
     const anchors = typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href*="/explore/"]')).slice(0, 60) : [];
     const pageTargets = new Map();
     for (const anchor of anchors) {
@@ -1277,12 +1337,17 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       }
       return [targetUrl.href];
     });
+    const searchItems = detailUrls.flatMap((value) => {
+      const id = new URL(value).pathname.split('/').at(-1);
+      const item = feedPublicItems.get(id);
+      return item ? [item] : [];
+    });
     // A note card commonly exposes the same canonical target through both its
     // card wrapper and title link. Duplicate anchors are presentation detail,
     // not evidence that the feed contract changed.
     // The feed can include promoted or non-note entries alongside valid note
     // cards. Only the canonical ids and targets consumed below are trusted.
-    const listFailure = feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 ? 'page_not_ready' : undefined;
+    const listFailure = feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 || searchItems.length !== detailUrls.length ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";
     const challengeSurface = typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]')).some((element) => {
@@ -1305,6 +1370,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       list_failure: listFailure,
       note_count: listValid ? detailUrls.length : 0,
       detail_urls: detailUrls,
+      search_items: searchItems,
       login_like: login,
       challenge_like: challenge
     };
@@ -1368,11 +1434,12 @@ interface BossJobSearchResponseSummary {
 interface XhsSearchResponseSummary {
   status: "completed";
   detail_urls: string[];
+  search_items: XiaohongshuSearchPublicFields[];
 }
 
 type XhsSearchResponseFailure = {
   status: "unavailable";
-  failure_class: "permission_denied" | "empty_result" | "site_changed" | "network_resource_unavailable";
+  failure_class: "permission_denied" | "empty_result" | "field_missing" | "site_changed" | "network_resource_unavailable";
   message: string;
   retryable: boolean;
 };
@@ -1422,6 +1489,7 @@ export function summarizeXhsSearchResponse(body: string): XhsSearchResponseSumma
   if (!data || !Array.isArray(data.items)) return xhsResponseFailure("site_changed", "Xiaohongshu search response has no item list.", false);
   if (data.items.length === 0) return xhsResponseFailure("empty_result", "Xiaohongshu search returned no notes.", false);
   const detail_urls: string[] = [];
+  const search_items: XiaohongshuSearchPublicFields[] = [];
   for (const item of data.items.slice(0, 60)) {
     if (!isPlainRecord(item)) continue;
     const card = isPlainRecord(item.note_card) ? item.note_card : isPlainRecord(item.noteCard) ? item.noteCard : {};
@@ -1435,14 +1503,54 @@ export function summarizeXhsSearchResponse(body: string): XhsSearchResponseSumma
     const noteId = noteIds[0];
     const token = tokens[0];
     if (typeof noteId !== "string" || typeof token !== "string") continue;
+    const title = firstSafeSearchText([card.display_title, card.displayTitle, card.title], 200);
+    if (!title) return xhsResponseFailure("field_missing", "Xiaohongshu search item has no bounded public title.", false);
+    const user = isPlainRecord(card.user) ? card.user : {};
+    const author = firstSafeSearchText([user.nickname, user.display_name, user.displayName, user.name], 100);
+    const interactions = isPlainRecord(card.interact_info) ? card.interact_info : isPlainRecord(card.interactInfo) ? card.interactInfo : {};
+    const interaction_metrics = compactMetrics({
+      likes: firstMetric([interactions.liked_count, interactions.likedCount, interactions.likes]),
+      comments: firstMetric([interactions.comment_count, interactions.commentCount, interactions.comments]),
+      collects: firstMetric([interactions.collected_count, interactions.collectedCount, interactions.collects])
+    });
     const target = new URL(`/explore/${noteId.toLowerCase()}`, "https://www.xiaohongshu.com");
     target.searchParams.set("xsec_token", token);
     target.searchParams.set("xsec_source", "pc_search");
     detail_urls.push(target.href);
+    search_items.push({
+      title,
+      ...(author ? { author_display_name: author } : {}),
+      ...(interaction_metrics ? { interaction_metrics } : {})
+    });
   }
   return detail_urls.length > 0
-    ? { status: "completed", detail_urls }
+    ? { status: "completed", detail_urls, search_items }
     : xhsResponseFailure("site_changed", "Xiaohongshu search items have no valid detail navigation targets.", false);
+}
+
+function firstSafeSearchText(values: unknown[], max: number): string | undefined {
+  return values.find((value): value is string => safeSearchPublicText(value, max));
+}
+
+function safeSearchPublicText(value: unknown, max: number): value is string {
+  return boundedText(value, max) &&
+    !/(?:^|[^a-z0-9_-])(?:[a-z0-9_-]*token|cookie|authorization|password|passwd|secret|credential|profile[_-]?storage|raw[_-]?(?:dom|har)|network[_-]?response[_-]?body)\s*[=:]\s*\S+/i.test(value) &&
+    !/\bbearer\s+\S+/i.test(value);
+}
+
+function firstMetric(values: unknown[]): string | undefined {
+  for (const value of values) {
+    const normalized = typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? String(value)
+      : typeof value === "string" ? value.trim() : "";
+    if (normalized && normalized.length <= 40 && /^[0-9０-９.,+\-\s万千百wWkKmM]+$/u.test(normalized)) return normalized;
+  }
+  return undefined;
+}
+
+function compactMetrics(metrics: XiaohongshuSearchPublicFields["interaction_metrics"]): XiaohongshuSearchPublicFields["interaction_metrics"] {
+  const entries = Object.entries(metrics ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 function xhsResponseFailure(failure_class: XhsSearchResponseFailure["failure_class"], message: string, retryable: boolean): XhsSearchResponseFailure {
