@@ -656,6 +656,17 @@ function resolveTargetUrl(
     }
     if (url.protocol !== "https:" || url.username || url.password) return "target_url_invalid";
     if (url.origin !== entry.allowed_origin) return "target_origin_not_allowed";
+    if (
+      entry.operation_id === "xhs_search_notes" &&
+      (url.pathname === "/search_result" || url.pathname === "/search_result/")
+    ) {
+      const sourced = new URL(derived);
+      sourced.pathname = url.pathname;
+      if (url.searchParams.get("source") === "web_search_result_notes") {
+        sourced.searchParams.set("source", "web_search_result_notes");
+      }
+      if (url.toString() === sourced.toString()) return { target_url: sourced.toString() };
+    }
     if (!matchesTargetSchema(url, entry) || url.toString() !== derived) return "target_path_not_allowlisted";
   }
   return { target_url: derived };

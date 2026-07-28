@@ -73,6 +73,27 @@ test("admits only the two pinned read-only operation identities", () => {
 });
 
 test("fails closed for invalid target URLs and cross-origin requests", () => {
+  for (const pathname of ["/search_result", "/search_result/"]) {
+    const url = `https://www.xiaohongshu.com${pathname}?keyword=AI+tools&source=web_search_result_notes`;
+    const sourcedSearch = admitAllowlistedReadOperation({
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      query: "AI tools",
+      url
+    });
+    assert.equal(typeof sourcedSearch === "string" ? sourcedSearch : sourcedSearch.target_url, url);
+  }
+  for (const suffix of ["source=forged", "source=web_search_result_notes&source=web_search_result_notes", "source=web_search_result_notes&extra=1"]) {
+    assert.equal(
+      admitAllowlistedReadOperation({
+        site_id: "xiaohongshu",
+        operation_id: "xhs_search_notes",
+        query: "AI tools",
+        url: `https://www.xiaohongshu.com/search_result?keyword=AI+tools&${suffix}`
+      }),
+      "target_path_not_allowlisted"
+    );
+  }
   assert.equal(
     admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", city_code: "101010100", url: "http://www.zhipin.com/web/geek/jobs" }),
     "target_url_invalid"
