@@ -1216,12 +1216,10 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     };
     const candidates = boundedFeeds.map(noteCandidate);
     const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note').map((candidate) => candidate.id);
-    const feedIds = allFeedIds.slice(0, 15);
+    const feedIds = Array.from(new Set(allFeedIds)).slice(0, 15);
     const feedTokens = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.xsecToken).map((candidate) => [candidate.id, candidate.xsecToken]));
-    const duplicateFeed = new Set(allFeedIds).size !== allFeedIds.length;
     const anchors = typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href*="/explore/"]')).slice(0, 60) : [];
     const pageTargets = new Map();
-    let invalidPageTarget = false;
     for (const anchor of anchors) {
       try {
         const url = new URL(anchor.getAttribute?.('href') || anchor.href || '', location.origin);
@@ -1230,13 +1228,10 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
           Array.from(url.searchParams.keys()).every((key) => key === 'xsec_token' || key === 'xsec_source') &&
           url.searchParams.getAll('xsec_token').length <= 1 &&
           url.searchParams.getAll('xsec_source').length <= 1;
-        if (url.origin !== location.origin || url.username || url.password || !match || !validQuery) {
-          invalidPageTarget = true;
-          continue;
-        }
+        if (url.origin !== location.origin || url.username || url.password || !match || !validQuery) continue;
         const id = match[1].toLowerCase();
         pageTargets.set(id, url.href);
-      } catch { invalidPageTarget = true; }
+      } catch {}
     }
     const detailUrls = feedIds.flatMap((id) => {
       const target = pageTargets.get(id);
@@ -1254,8 +1249,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     // not evidence that the feed contract changed.
     // The feed can include promoted or non-note entries alongside valid note
     // cards. Only the canonical ids and targets consumed below are trusted.
-    const structuralDrift = duplicateFeed || invalidPageTarget;
-    const listFailure = structuralDrift ? 'site_changed' : feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 ? 'page_not_ready' : undefined;
+    const listFailure = feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";
     const challenge = /验证码|安全验证|访问异常|captcha|challenge required|verification challenge/i.test(text) || Boolean(document.querySelector?.('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"]'));

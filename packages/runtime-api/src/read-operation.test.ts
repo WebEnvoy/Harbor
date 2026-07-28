@@ -377,7 +377,8 @@ test("correlates the official Vue Pinia search store without exposing store cont
     querySelector: () => null,
     querySelectorAll: () => [anchors[0]]
   }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
-  assert.equal(duplicateFeed.list_failure, "site_changed");
+  assert.equal(duplicateFeed.list_valid, true);
+  assert.deepEqual(duplicateFeed.detail_urls, [`https://www.xiaohongshu.com/explore/${noteIds[0]}`]);
 
   const unsupportedFeed = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ kind: "promoted-banner" }, { noteCard: { id: "not-a-note" } }] }]]) } }, {
     ...document,
@@ -398,7 +399,14 @@ test("correlates the official Vue Pinia search store without exposing store cont
     querySelector: () => null,
     querySelectorAll: () => [{ getAttribute: () => `https://evil.example/explore/${noteIds[0]}` }]
   }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
-  assert.equal(invalidAnchor.list_failure, "site_changed");
+  assert.equal(invalidAnchor.list_failure, "page_not_ready");
+
+  const unrelatedInvalidAnchor = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: noteIds[0] } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => [anchors[0], { getAttribute: () => `https://evil.example/explore/${noteIds[1]}` }]
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(unrelatedInvalidAnchor.list_valid, true);
 });
 
 test("observes BOSS SPA, login wall, and challenge state without returning page text", () => {
