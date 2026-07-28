@@ -1097,9 +1097,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
     const sameBoundedBody = (rendered, stored) => {
       if (rendered === stored) return true;
-      const shorter = rendered.length <= stored.length ? rendered : stored;
-      const longer = rendered.length > stored.length ? rendered : stored;
-      return shorter.length >= 8 && shorter.length * 2 >= longer.length && longer.includes(shorter);
+      return stored.length >= 8 && stored.length * 2 >= rendered.length && rendered.includes(stored);
     };
     const detailRoot = document.querySelector('#noteContainer') || document.querySelector('.note-detail-mask, [class*="note-detail"]');
     const pickDetail = (selectors, max) => clean(detailRoot?.querySelector(selectors)?.textContent, max);
