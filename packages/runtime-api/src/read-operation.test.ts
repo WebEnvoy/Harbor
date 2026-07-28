@@ -479,12 +479,15 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
       ? { getAttribute: () => "/user/profile/author_123" }
       : selector.includes("author") ? { textContent: "公开作者" } : null
   };
+  const narrowDetailRoot = { querySelector: () => null };
   const document = {
     readyState: "complete",
     body: { innerText: "公开笔记详情" },
     querySelector: (selector: string) => {
       if (selector === "#app") return app;
-      if (selector === '.note-detail-mask, [class*="note-detail"], #noteContainer') return detailRoot;
+      if (selector === "#noteContainer") return detailRoot;
+      if (selector === '.note-detail-mask, [class*="note-detail"], #noteContainer') return narrowDetailRoot;
+      if (selector === '.note-detail-mask, [class*="note-detail"]') return narrowDetailRoot;
       if (selector.includes("captcha") || selector.includes("login")) return null;
       if (selector.includes("user/profile")) return { getAttribute: () => "/user/profile/logged_in_user" };
       if (selector.includes("like")) return { textContent: "10" };
@@ -511,7 +514,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   const directDetail = evaluate({}, {
     ...document,
     querySelector: (selector: string) => {
-      if (selector === '.note-detail-mask, [class*="note-detail"], #noteContainer') return detailRoot;
+      if (selector === "#noteContainer") return detailRoot;
       if (selector === '.note-detail-mask, [class*="note-detail"]') return null;
       return document.querySelector(selector);
     }
@@ -519,8 +522,10 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   assert.equal(directDetail.normalized.author.author_id, "author_123");
   const missingDetailAuthor = evaluate({}, {
     ...document,
-    querySelector: (selector: string) => selector === '.note-detail-mask, [class*="note-detail"], #noteContainer'
+    querySelector: (selector: string) => selector === "#noteContainer"
       ? { querySelector: () => null }
+      : selector === '.note-detail-mask, [class*="note-detail"]'
+        ? null
       : document.querySelector(selector)
   }, location);
   assert.equal(missingDetailAuthor.normalized, undefined);
