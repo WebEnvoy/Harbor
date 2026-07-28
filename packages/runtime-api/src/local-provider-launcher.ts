@@ -1537,7 +1537,7 @@ function publicReadOperationUrl(targetUrl: string): string {
 
 async function readPageFacts(port: string, requested_url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
   try {
-    const page = selectPage(await pageTargets(port, signal), requested_url);
+    const page = await activePage(port, requested_url, signal);
     return readTargetPageFacts(page, requested_url, signal);
   } catch (cause) {
     return unavailablePageFacts("cdp_unavailable", requested_url, cause);
@@ -1574,9 +1574,13 @@ async function captureProviderScreenshot(port: string, requested_url: string): P
 }
 
 async function activePage(port: string, requested_url: string, signal?: AbortSignal): Promise<CdpPageTarget> {
-  const page = selectPage(await pageTargets(port, signal), requested_url);
-  if (!page) throw new Error("CDP page target is unavailable.");
-  return page;
+  const readinessSignal = signal ?? AbortSignal.timeout(1000);
+  while (true) {
+    readinessSignal.throwIfAborted();
+    const page = selectPage(await pageTargets(port, readinessSignal), requested_url);
+    if (page && (requested_url === "about:blank" || (page.url && page.url !== "about:blank"))) return page;
+    await abortableDelay(25, readinessSignal);
+  }
 }
 
 async function pageTargets(port: string, signal?: AbortSignal): Promise<CdpPageTarget[]> {

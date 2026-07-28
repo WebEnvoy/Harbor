@@ -97,6 +97,7 @@ if (!profileDir) process.exit(2);
 mkdirSync(profileDir, { recursive: true });
 if (existsSync(join(profileDir, "DevToolsActivePort"))) process.exit(4);
 if (process.env.HARBOR_FAKE_BROWSER_MARKER) writeFileSync(process.env.HARBOR_FAKE_BROWSER_MARKER, profileDir);
+let pageListCalls = 0;
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   if (url.pathname === process.env.HARBOR_FAKE_BROWSER_HANG_PATH) return;
@@ -107,7 +108,16 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ Browser: "FakeBrowser/1.0", "Protocol-Version": "1.3", webSocketDebuggerUrl: "ws://127.0.0.1:" + port + "/devtools/browser/fake" }));
     return;
   }
-  if (url.pathname === "/json/list") {
+if (url.pathname === "/json/list") {
+    pageListCalls += 1;
+    if (pageListCalls <= Number(process.env.HARBOR_FAKE_BROWSER_EMPTY_LIST_COUNT || 0)) {
+      response.end("[]");
+      return;
+    }
+    if (pageListCalls <= Number(process.env.HARBOR_FAKE_BROWSER_EMPTY_LIST_COUNT || 0) + Number(process.env.HARBOR_FAKE_BROWSER_ABOUT_BLANK_LIST_COUNT || 0)) {
+      response.end(JSON.stringify([{ type: "page", url: "about:blank" }]));
+      return;
+    }
     response.end(JSON.stringify([{
       type: "page",
       url: process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL || requestedUrl,
@@ -685,6 +695,8 @@ test("bounds provider version and page-list readback while preserving redirect f
   const previousRedirectTitle = process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE;
   const previousWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
   const previousPortDelay = process.env.HARBOR_FAKE_BROWSER_PORT_DELAY_MS;
+  const previousEmptyListCount = process.env.HARBOR_FAKE_BROWSER_EMPTY_LIST_COUNT;
+  const previousAboutBlankListCount = process.env.HARBOR_FAKE_BROWSER_ABOUT_BLANK_LIST_COUNT;
   const originalWebSocket = globalThis.WebSocket;
   const browserPath = writeFakeBrowserExecutable(dir);
   process.env.HARBOR_PROFILE_STORAGE_ROOT = join(dir, "profiles");
@@ -723,8 +735,26 @@ test("bounds provider version and page-list readback while preserving redirect f
     assert.equal(delayedVersion.status, "unavailable");
     assert.ok(Date.now() - delayedStartedAt < 700, "port readiness and version readback must share one launch deadline");
     delete process.env.HARBOR_FAKE_BROWSER_PORT_DELAY_MS;
-
     delete process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
+
+    process.env.HARBOR_FAKE_BROWSER_EMPTY_LIST_COUNT = "1";
+    process.env.HARBOR_FAKE_BROWSER_ABOUT_BLANK_LIST_COUNT = "1";
+    const delayedPage = await launchLocalDedicatedProvider({
+      browser_path: browserPath,
+      headless: false,
+      timeout_ms: 500,
+      url: "https://www.zhipin.com/web/geek/job",
+      profile_ref: "profile_delayed-page-target",
+      provider_ref: "provider_fake"
+    });
+    assert.equal(delayedPage.status, "ready");
+    if (delayedPage.status === "ready") {
+      assert.equal(delayedPage.page.status, "ready");
+      await delayedPage.close();
+    }
+    delete process.env.HARBOR_FAKE_BROWSER_EMPTY_LIST_COUNT;
+    delete process.env.HARBOR_FAKE_BROWSER_ABOUT_BLANK_LIST_COUNT;
+
     process.env.HARBOR_FAKE_BROWSER_REDIRECT_URL = "https://www.zhipin.com/web/passport/zp/verify.html?code=35";
     process.env.HARBOR_FAKE_BROWSER_REDIRECT_TITLE = "安全验证 - BOSS直聘";
     const redirected = await launchLocalDedicatedProvider({
@@ -800,6 +830,10 @@ test("bounds provider version and page-list readback while preserving redirect f
     else process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = previousWebSocketUrl;
     if (previousPortDelay === undefined) delete process.env.HARBOR_FAKE_BROWSER_PORT_DELAY_MS;
     else process.env.HARBOR_FAKE_BROWSER_PORT_DELAY_MS = previousPortDelay;
+    if (previousEmptyListCount === undefined) delete process.env.HARBOR_FAKE_BROWSER_EMPTY_LIST_COUNT;
+    else process.env.HARBOR_FAKE_BROWSER_EMPTY_LIST_COUNT = previousEmptyListCount;
+    if (previousAboutBlankListCount === undefined) delete process.env.HARBOR_FAKE_BROWSER_ABOUT_BLANK_LIST_COUNT;
+    else process.env.HARBOR_FAKE_BROWSER_ABOUT_BLANK_LIST_COUNT = previousAboutBlankListCount;
     rmSync(dir, { recursive: true, force: true });
   }
 });
