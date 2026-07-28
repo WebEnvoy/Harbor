@@ -929,7 +929,12 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
             items: [{
               id: "0123456789abcdef01234567",
               xsec_token: "private-navigation-token",
-              note_card: { id: "0123456789abcdef01234567" }
+              note_card: {
+                id: "0123456789abcdef01234567",
+                display_title: "公开搜索笔记",
+                user: { nickname: "公开作者" },
+                interact_info: { liked_count: 10, comment_count: 2, collected_count: 3 }
+              }
             }]
           }
         }),
@@ -1003,7 +1008,12 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
           pinia_ready: true,
           list_valid: true,
           note_count: 1,
-          detail_urls: ["https://www.xiaohongshu.com/explore/0123456789abcdef01234567"]
+          detail_urls: ["https://www.xiaohongshu.com/explore/0123456789abcdef01234567"],
+          search_items: [{
+            title: "公开搜索笔记",
+            author_display_name: "公开作者",
+            interaction_metrics: { likes: "10", comments: "2", collects: "3" }
+          }]
         }
       }
     });
@@ -1070,6 +1080,14 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     assert.ok(elapsed < 500, "read operation must not wait for the delayed navigation acknowledgement");
     assert.equal(readFileSync(newUrlMarker, "utf8"), "https://www.xiaohongshu.com/explore");
     assert.equal(result.status, "completed");
+    if (result.status === "completed") {
+      assert.deepEqual(result.search_items, [{
+        title: "公开搜索笔记",
+        author_display_name: "公开作者",
+        interaction_metrics: { likes: "10", comments: "2", collects: "3" }
+      }]);
+      assert.equal(JSON.stringify(result.search_items).includes("private-navigation-token"), false);
+    }
 
     DelayedNavigationAckCdpWebSocket.detailMode = true;
     const detail = await provider.probeReadOperation({

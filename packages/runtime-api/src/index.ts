@@ -688,6 +688,7 @@ export class HarborRuntime {
       expected_origin: admission.entry.allowed_origin,
       query: admission.request.query,
       city_code: admission.request.city_code,
+      limit: admission.request.limit,
       detail_ref: admission.request.detail_ref
     });
     if (probe.status === "unavailable") {
@@ -713,7 +714,18 @@ export class HarborRuntime {
           targets: probe.detail_targets
         })
       : [];
-    const publicSummary = detail_refs.length > 0 ? { ...probe.public_summary, detail_refs } : probe.public_summary;
+    const publicSummary = detail_refs.length > 0
+      ? {
+          ...probe.public_summary,
+          detail_refs,
+          ...(admission.entry.operation_id === "xhs_search_notes" && probe.search_items?.length === detail_refs.length
+            ? {
+                schema_version: "harbor-read-operation-public-summary/v1" as const,
+                items: probe.search_items.map((item, index) => ({ ...item, detail_ref: detail_refs[index]! }))
+              }
+            : {})
+        }
+      : probe.public_summary;
     const proof = this.readOperationObservations.capture({
       operation_ref: opaqueRef("read_operation"),
       runtime_session_ref,

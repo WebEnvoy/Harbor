@@ -21,6 +21,7 @@ const xhsProbe = validateReadOperationProbe({
   site_id: "xiaohongshu",
   operation_id: "xhs_search_notes",
   query: "runtime api smoke",
+  limit: 1,
   target_url: "https://www.xiaohongshu.com/search_result?keyword=runtime+api+smoke",
   expected_origin: "https://www.xiaohongshu.com"
 }, {
@@ -32,12 +33,19 @@ const xhsProbe = validateReadOperationProbe({
   list_valid: true,
   note_count: 1,
   detail_urls: [xhsNoteUrl],
+  search_items: [{ title: "公开搜索笔记", author_display_name: "公开作者", interaction_metrics: { likes: "10" } }],
   operation_response_status: 200,
-  operation_response_url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
+  operation_response_url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes",
+  xhs_response: {
+    status: "completed",
+    detail_urls: [xhsNoteUrl],
+    search_items: [{ title: "公开搜索笔记", author_display_name: "公开作者", interaction_metrics: { likes: "10" } }]
+  }
 });
 assert.equal(xhsProbe.status, "completed");
 if (xhsProbe.status === "completed") {
   assert.deepEqual(xhsProbe.detail_urls, [xhsNoteUrl]);
+  assert.deepEqual(xhsProbe.search_items, [{ title: "公开搜索笔记", author_display_name: "公开作者", interaction_metrics: { likes: "10" } }]);
   assert.equal(xhsProbe.public_summary.result_count, 1);
 }
 

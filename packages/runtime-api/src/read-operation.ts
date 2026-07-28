@@ -67,6 +67,7 @@ export interface AllowlistedReadOperationRequest {
   operation_id: AllowlistedReadOperationId;
   query?: string;
   city_code?: string;
+  limit?: number;
   detail_ref?: string;
   url?: string;
 }
@@ -579,6 +580,7 @@ function samePublicSummary(left: LocalProviderReadProbePublicSummary, right: Loc
     left.result_count === right.result_count &&
     sameNormalizedSummary(left.normalized, right.normalized) &&
     sameStrings(left.detail_refs ?? [], right.detail_refs ?? []) &&
+    JSON.stringify(left.items ?? []) === JSON.stringify(right.items ?? []) &&
     sameStrings(left.source_signals, right.source_signals);
 }
 
@@ -623,7 +625,7 @@ function isOpaqueRef(value: string): boolean {
 
 function parseRequest(input: unknown): AllowlistedReadOperationRequest | ReadOperationFailureClass {
   if (!isRecord(input)) return "invalid_request";
-  const allowedKeys = new Set(["site_id", "operation_id", "query", "city_code", "detail_ref", "url"]);
+  const allowedKeys = new Set(["site_id", "operation_id", "query", "city_code", "limit", "detail_ref", "url"]);
   if (Object.keys(input).some((key) => !allowedKeys.has(key))) return "invalid_request";
   if (!isSiteId(input.site_id) || !isOperationId(input.operation_id)) return "invalid_request";
   const detail = input.operation_id === "xhs_read_note_detail" || input.operation_id === "boss_read_job_detail";
@@ -631,12 +633,15 @@ function parseRequest(input: unknown): AllowlistedReadOperationRequest | ReadOpe
   if (detail && (input.query !== undefined || input.city_code !== undefined || input.url !== undefined)) return "invalid_request";
   if (input.operation_id === "boss_job_search" && (typeof input.city_code !== "string" || !/^\d{6,32}$/.test(input.city_code))) return "city_unresolved";
   if (input.operation_id !== "boss_job_search" && input.city_code !== undefined) return "invalid_request";
+  if (input.limit !== undefined && (typeof input.limit !== "number" || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 15)) return "invalid_request";
+  if (input.operation_id !== "xhs_search_notes" && input.limit !== undefined) return "invalid_request";
   if (input.url !== undefined && (!isPublicText(input.url) || input.url.length > 2048)) return "invalid_request";
   return {
     site_id: input.site_id,
     operation_id: input.operation_id,
     query: typeof input.query === "string" ? input.query : undefined,
     city_code: typeof input.city_code === "string" ? input.city_code : undefined,
+    limit: typeof input.limit === "number" ? input.limit : undefined,
     detail_ref: typeof input.detail_ref === "string" ? input.detail_ref : undefined,
     url: input.url
   };
@@ -744,14 +749,17 @@ export function validateDetailTruthPin(): ReadOperationFailureClass | null {
 }
 
 function isExpectedPublicSummary(entry: PinnedReadOperation, summary: LocalProviderReadProbePublicSummary): boolean {
-  if (summary.schema_version !== "harbor-read-operation-public-summary/v0" || summary.operation_id !== entry.operation_id || summary.source_signals.length === 0) return false;
+  if (summary.operation_id !== entry.operation_id || summary.source_signals.length === 0) return false;
   if (summary.result_state !== "operation_read_response_observed" || !Number.isInteger(summary.response_status) || summary.response_status < 200 || summary.response_status >= 300) return false;
   if (entry.operation_id === "xhs_search_notes") {
-    return summary.result_kind === "xiaohongshu_search_notes_surface" &&
+    return summary.schema_version === "harbor-read-operation-public-summary/v1" &&
+      summary.result_kind === "xiaohongshu_search_notes_surface" &&
       summary.surface === "search_result" &&
       Number.isInteger(summary.result_count) && summary.result_count! > 0 && summary.result_count! <= 15 &&
+      validXhsSearchItems(summary) &&
       sameStrings(summary.source_signals, ["pinia_store", "xhs_search_read_network"]);
   }
+  if (summary.schema_version !== "harbor-read-operation-public-summary/v0") return false;
   if (entry.operation_id === "xhs_read_note_detail") {
     return summary.result_kind === "xiaohongshu_note_detail_surface" && summary.surface === "note_detail" &&
       validXhsDetailSummary(summary.normalized) &&
@@ -804,6 +812,45 @@ function isPublicText(value: unknown): value is string {
 
 function isSiteId(value: unknown): value is AllowlistedReadOperationSite {
   return value === "xiaohongshu" || value === "boss";
+}
+
+function validXhsSearchItems(summary: LocalProviderReadProbePublicSummary): boolean {
+  const refs = summary.detail_refs ?? [];
+  const items = summary.items ?? [];
+  const itemKeys = new Set(["detail_ref", "title", "author_display_name", "interaction_metrics"]);
+  const metricKeys = new Set(["likes", "comments", "collects"]);
+  return refs.length === summary.result_count && items.length === refs.length && items.every((item, index) => {
+    if (
+      Object.keys(item).some((key) => !itemKeys.has(key)) ||
+      item.detail_ref !== refs[index] ||
+      !safePublicText(item.title, 200) ||
+      (item.author_display_name !== undefined && !safePublicText(item.author_display_name, 100))
+    ) return false;
+    const metrics = item.interaction_metrics;
+    return metrics === undefined || (
+      Object.keys(metrics).length > 0 &&
+      Object.keys(metrics).every((key) => metricKeys.has(key)) &&
+      Object.values(metrics).every((value) => boundedMetric(value))
+    );
+  });
+}
+
+function safePublicText(value: unknown, max: number): value is string {
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= max &&
+    value.trim() === value &&
+    !/[\u0000-\u001f\u007f]/.test(value) &&
+    !/(?:^|[^a-z0-9_-])(?:[a-z0-9_-]*token|cookie|authorization|password|passwd|secret|credential|profile[_-]?storage|raw[_-]?(?:dom|har)|network[_-]?response[_-]?body)\s*[=:]\s*\S+/i.test(value) &&
+    !/\bbearer\s+\S+/i.test(value);
+}
+
+function boundedMetric(value: unknown): boolean {
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 40 &&
+    value.trim() === value &&
+    /^[0-9０-９.,+\-\s万千百wWkKmM]+$/u.test(value);
 }
 
 function isOperationId(value: unknown): value is AllowlistedReadOperationId {
