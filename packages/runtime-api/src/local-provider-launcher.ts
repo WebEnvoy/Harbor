@@ -1645,10 +1645,23 @@ function urlsReferToSamePage(candidate_url?: string, requested_url?: string): bo
     return candidate.origin === requested.origin &&
       candidate.pathname === requested.pathname &&
       candidate.hash === requested.hash &&
-      normalizedQuery(candidate) === normalizedQuery(requested);
+      (normalizedQuery(candidate) === normalizedQuery(requested) ||
+        isBoundedXiaohongshuSearchRedirect(candidate, requested));
   } catch {
     return candidate_url === requested_url;
   }
+}
+
+function isBoundedXiaohongshuSearchRedirect(candidate: URL, requested: URL): boolean {
+  if (
+    candidate.origin !== "https://www.xiaohongshu.com" ||
+    !["/search_result", "/search_result/"].includes(candidate.pathname) ||
+    requested.searchParams.has("type") ||
+    candidate.searchParams.getAll("type").join() !== "51"
+  ) return false;
+  const withoutType = new URL(candidate);
+  withoutType.searchParams.delete("type");
+  return normalizedQuery(withoutType) === normalizedQuery(requested);
 }
 
 function normalizedQuery(url: URL): string {
