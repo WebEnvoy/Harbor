@@ -11,7 +11,7 @@ import {
   validatePinnedAllowlist
 } from "./read-operation.js";
 import { opaqueRef } from "./refs.js";
-import { probeProviderSiteResource, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobDetailResponse, summarizeBossJobSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe, validateXiaohongshuSiteResourceProbe, waitForXiaohongshuSiteResourceReadiness, xiaohongshuSiteResourceProbeExpression } from "./local-provider-launcher.js";
+import { probeProviderSiteResource, readOperationPageFacts, readProbeExpression, shouldBlockReadOperationDocumentNavigation, summarizeBossJobDetailResponse, summarizeBossJobSearchResponse, summarizeXhsSearchResponse, validateBossSpaResourceProbe, validateReadOperationProbe, validateXiaohongshuSiteResourceProbe, waitForXiaohongshuSiteResourceReadiness, xiaohongshuSiteResourceProbeExpression } from "./local-provider-launcher.js";
 
 test("pins the packaged Harbor admission mirror to Lode #262", () => {
   assert.equal(LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
@@ -279,12 +279,12 @@ test("correlates the official Vue Pinia search store without exposing store cont
   const pinia = {
     _s: new Map([["search", {
       searchValue: { value: query },
-      feeds: { value: noteIds.map((id) => ({ noteCard: { id } })) },
+      feeds: { value: noteIds.map((id) => ({ noteCard: { id }, xsec_token: "opaque-navigation-token" })) },
       hasMore: { value: true },
       private: "not_returned"
     }]])
   };
-  const anchors = noteIds.map((id) => ({ getAttribute: () => `/explore/${id}?xsec_token=not_returned` }));
+  const anchors = noteIds.map((id) => ({ getAttribute: () => `/explore/${id}` }));
   const document = {
     readyState: "complete",
     body: { innerText: "公开搜索结果" },
@@ -305,11 +305,28 @@ test("correlates the official Vue Pinia search store without exposing store cont
     list_valid: true,
     list_failure: undefined,
     note_count: 2,
-    detail_urls: noteIds.map((id) => `https://www.xiaohongshu.com/explore/${id}`),
+    detail_urls: noteIds.map((id) => `https://www.xiaohongshu.com/explore/${id}?xsec_token=opaque-navigation-token&xsec_source=pc_search`),
     login_like: false,
     challenge_like: false
   });
-  assert.equal(JSON.stringify(result).includes("not_returned"), false);
+  const validated = validateReadOperationProbe({
+    site_id: "xiaohongshu",
+    operation_id: "xhs_search_notes",
+    query,
+    target_url: `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(query)}`,
+    expected_origin: "https://www.xiaohongshu.com"
+  }, {
+    ...result,
+    operation_response_status: 200,
+    operation_response_url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes",
+    xhs_response: summarizeXhsSearchResponse(JSON.stringify({
+      success: true,
+      code: 0,
+      data: { items: noteIds.map((id) => ({ id, xsec_token: "opaque-navigation-token", note_card: { id } })) }
+    }))
+  });
+  assert.equal(validated.status, "completed");
+  if (validated.status === "completed") assert.equal(JSON.stringify(validated.public_summary).includes("opaque-navigation-token"), false);
 
   for (const candidate of [
     { _s: new Map() },
@@ -338,14 +355,14 @@ test("correlates the official Vue Pinia search store without exposing store cont
   assert.equal(mismatch.list_valid, false);
   assert.equal(mismatch.list_failure, "page_not_ready");
 
-  const mixedFeeds = [{ kind: "promoted-banner" }, { noteCard: { id: noteIds[1] } }, { recommendation: true }, { noteCard: { id: noteIds[0] } }];
+  const mixedFeeds = [{ kind: "promoted-banner" }, { noteCard: { id: noteIds[1] }, xsecToken: "opaque-navigation-token" }, { recommendation: true }, { noteCard: { id: noteIds[0] }, xsecToken: "opaque-navigation-token" }];
   const virtualSubset = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: mixedFeeds }]]) } }, {
     ...document,
     querySelector: () => null,
     querySelectorAll: () => [anchors[0]]
   }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
   assert.equal(virtualSubset.list_valid, true);
-  assert.deepEqual(virtualSubset.detail_urls, [`https://www.xiaohongshu.com/explore/${noteIds[0]}`]);
+  assert.deepEqual(virtualSubset.detail_urls, [`https://www.xiaohongshu.com/explore/${noteIds[0]}?xsec_token=opaque-navigation-token&xsec_source=pc_search`]);
 
   const reordered = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: mixedFeeds }]]) } }, {
     ...document,
@@ -353,7 +370,7 @@ test("correlates the official Vue Pinia search store without exposing store cont
     querySelectorAll: () => [...anchors].reverse()
   }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
   assert.equal(reordered.list_valid, true);
-  assert.deepEqual(reordered.detail_urls, noteIds.slice().reverse().map((id) => `https://www.xiaohongshu.com/explore/${id}`));
+  assert.deepEqual(reordered.detail_urls, noteIds.slice().reverse().map((id) => `https://www.xiaohongshu.com/explore/${id}?xsec_token=opaque-navigation-token&xsec_source=pc_search`));
 
   const duplicateFeed = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: noteIds[0] } }, { noteCard: { id: noteIds[0] } }] }]]) } }, {
     ...document,
@@ -460,18 +477,23 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   const withoutNoteStore = evaluate({ __PINIA__: { _s: new Map([["search", {}]]) } }, { ...document, querySelector: (selector: string) => selector === "#app" ? { __vue_app__: { config: { globalProperties: {} } } } : document.querySelector(selector) }, location);
   assert.equal(withoutNoteStore.vue_ready, true);
   assert.equal(withoutNoteStore.pinia_ready, false);
+  assert.equal(withoutNoteStore.normalized, undefined);
 
   const mismatchedStore = { _s: new Map([["noteDetail", { $state: { currentNote: { ...piniaNote, note_id: "fedcba987654321001234567" } } }]]) };
   const mismatchedApp = { __vue_app__: { config: { globalProperties: { $pinia: mismatchedStore } } } };
   const mismatched = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? mismatchedApp : document.querySelector(selector) }, location);
-  assert.equal(mismatched.pinia_ready, false);
+  assert.equal(mismatched.pinia_ready, true);
   assert.equal(mismatched.normalized, undefined);
 
   const dummyStore = { _s: new Map([["noteDetail", { $state: { currentNote: { ...piniaNote, title: "注入标题" } } }]]) };
   const dummyApp = { __vue_app__: { config: { globalProperties: { $pinia: dummyStore } } } };
   const dummy = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? dummyApp : document.querySelector(selector) }, location);
-  assert.equal(dummy.pinia_ready, false);
+  assert.equal(dummy.pinia_ready, true);
   assert.equal(dummy.normalized, undefined);
+
+  const withoutPinia = evaluate({}, { ...document, querySelector: (selector: string) => selector === "#app" ? { __vue_app__: { config: { globalProperties: {} } } } : document.querySelector(selector) }, location);
+  assert.equal(withoutPinia.pinia_ready, false);
+  assert.equal(withoutPinia.normalized, undefined);
 });
 
 test("detects late challenge and login overlays for both detail sites", () => {
@@ -779,7 +801,14 @@ test("fails closed when the live probe lacks an operation-specific surface or re
     note_count: 1,
     detail_urls: ["https://www.xiaohongshu.com/explore/0123456789abcdef01234567"],
     operation_response_status: 200,
-    operation_response_url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
+    operation_response_url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes",
+    xhs_response: {
+      status: "completed" as const,
+      detail_urls: [
+        "https://www.xiaohongshu.com/explore/aaaaaaaaaaaaaaaaaaaaaaaa?xsec_token=other-navigation-token&xsec_source=pc_search",
+        "https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=opaque-navigation-token&xsec_source=pc_search"
+      ]
+    }
   };
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pathname: "/settings" }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pathname: "/search_result/" }).status, "completed");
@@ -789,6 +818,8 @@ test("fails closed when the live probe lacks an operation-specific surface or re
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pinia_ready: false }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, operation_response_status: undefined }).status, "unavailable");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "empty_result", note_count: 0, detail_urls: [] })), "empty_result");
+  const emptyXhs = validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "empty_result", note_count: 0, detail_urls: [] });
+  if (emptyXhs.status === "unavailable") assert.equal(emptyXhs.retryable, false);
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "page_not_ready", note_count: 0, detail_urls: [] })), "page_not_ready");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "site_changed" })), "site_changed");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, detail_urls: [] })), "site_changed");
@@ -897,6 +928,7 @@ test("validates both detail surfaces against the exact search-bound target", () 
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, vue_ready: false })), "page_not_ready");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pinia_ready: false, pathname: "/explore/wrong" })), "site_changed");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pinia_ready: false, rendered_surface: false })), "empty_result");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, normalized: undefined })), "field_missing");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, normalized: { ...ready.normalized, title: "" } })), "field_missing");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pathname: "/explore/aaaaaaaaaaaaaaaaaaaaaaaa" })), "site_changed");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, rendered_surface: false })), "empty_result");
@@ -1001,6 +1033,41 @@ test("summarizes only a successful BOSS WAPI job list and fails closed for empty
   assert.equal(failureClass(summarizeBossJobSearchResponse('{"code":0,"zpData":{"jobList":[null]}}')), "empty_result");
   assert.equal(failureClass(summarizeBossJobSearchResponse('{"code":0,"zpData":{}}')), "site_changed");
   assert.equal(JSON.stringify(summarizeBossJobSearchResponse('{"code":0,"zpData":{"jobList":[{"secret":"not returned"}]}}')).includes("secret"), false);
+});
+
+test("summarizes only XHS note ids and private navigation targets from the bounded search response", () => {
+  const summary = summarizeXhsSearchResponse(JSON.stringify({
+    success: true,
+    code: 0,
+    data: {
+      items: [{
+        id: "0123456789abcdef01234567",
+        xsec_token: "opaque-navigation-token",
+        note_card: { id: "0123456789abcdef01234567", title: "not returned" },
+        private: "not returned"
+      }]
+    }
+  }));
+  assert.deepEqual(summary, {
+    status: "completed",
+    detail_urls: ["https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=opaque-navigation-token&xsec_source=pc_search"]
+  });
+  assert.equal(failureClass(summarizeXhsSearchResponse('{"success":false,"code":-1,"data":{"items":[]}}')), "permission_denied");
+  assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[]}}')), "empty_result");
+  assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567"}]}}')), "site_changed");
+  assert.equal(failureClass(summarizeXhsSearchResponse('{"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"token"}]}}')), "site_changed");
+  assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"token","note_card":{"id":"fedcba987654321001234567"}}]}}')), "site_changed");
+  assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","note_id":"fedcba987654321001234567","xsec_token":"token"}]}}')), "site_changed");
+  assert.equal(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"","note_card":{"id":"0123456789abcdef01234567","xsec_token":"valid-token"}}]}}').status, "completed");
+  assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"token-a","note_card":{"id":"0123456789abcdef01234567","xsec_token":"token-b"}}]}}')), "site_changed");
+  assert.equal(JSON.stringify(summary).includes("not returned"), false);
+});
+
+test("keeps XHS private navigation parameters out of public page facts", () => {
+  const facts = readOperationPageFacts("https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=private-token&xsec_source=pc_search");
+  assert.equal(facts.current_url, "https://www.xiaohongshu.com/explore/0123456789abcdef01234567");
+  assert.equal(JSON.stringify(facts).includes("xsec_"), false);
+  assert.equal(JSON.stringify(facts).includes("private-token"), false);
 });
 
 test("summarizes only a target-bound BOSS detail WAPI response without raw identifiers", () => {

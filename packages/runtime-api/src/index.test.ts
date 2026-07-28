@@ -837,6 +837,7 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
   static detailMode = false;
   static detailEvaluationCount = 0;
   static detailRequestContinued = false;
+  static navigationUrl = "";
   readyState = 0;
 
   constructor(_url: string | URL) {
@@ -848,11 +849,10 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
   }
 
   send(payload: string): void {
-    const message = JSON.parse(payload) as { id: number; method: string; params?: { requestId?: string; expression?: string } };
+    const message = JSON.parse(payload) as { id: number; method: string; params?: { requestId?: string; expression?: string; url?: string } };
     if (message.method === "Page.navigate") {
-      const url = DelayedNavigationAckCdpWebSocket.detailMode
-        ? "https://www.xiaohongshu.com/explore/0123456789abcdef01234567"
-        : "https://www.xiaohongshu.com/search_result?keyword=AI";
+      const url = message.params?.url ?? "https://www.xiaohongshu.com/search_result?keyword=AI";
+      DelayedNavigationAckCdpWebSocket.navigationUrl = url;
       queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
         data: JSON.stringify({
           method: "Fetch.requestPaused",
@@ -877,12 +877,29 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
               response: {
                 status: 200,
                 url: DelayedNavigationAckCdpWebSocket.detailMode
-                  ? "https://www.xiaohongshu.com/explore/0123456789abcdef01234567"
+                  ? DelayedNavigationAckCdpWebSocket.navigationUrl
                   : "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
               }
             }
           })
         }));
+      });
+      return;
+    }
+    if (message.method === "Network.getResponseBody" && message.params?.requestId === "search-response") {
+      this.respond(message.id, {
+        body: JSON.stringify({
+          success: true,
+          code: 0,
+          data: {
+            items: [{
+              id: "0123456789abcdef01234567",
+              xsec_token: "private-navigation-token",
+              note_card: { id: "0123456789abcdef01234567" }
+            }]
+          }
+        }),
+        base64Encoded: false
       });
       return;
     }
@@ -1025,10 +1042,14 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
       site_id: "xiaohongshu",
       operation_id: "xhs_read_note_detail",
       detail_ref: "detail_ref_delayed-readiness",
-      target_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567",
+      target_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=private-navigation-token&xsec_source=pc_search",
       expected_origin: "https://www.xiaohongshu.com"
     });
     assert.equal(detail.status, "completed");
+    if (detail.status === "completed") {
+      assert.equal(detail.page.current_url, "https://www.xiaohongshu.com/explore/0123456789abcdef01234567");
+      assert.equal(JSON.stringify(detail.page).includes("private-navigation-token"), false);
+    }
     assert.equal(DelayedNavigationAckCdpWebSocket.detailEvaluationCount, 2);
     assert.equal(DelayedNavigationAckCdpWebSocket.detailRequestContinued, true);
     DelayedNavigationAckCdpWebSocket.detailMode = false;
@@ -1043,15 +1064,46 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
       expected_origin: "https://www.xiaohongshu.com"
     });
     const boundedElapsed = Date.now() - boundedStartedAt;
-    await provider.close();
     assert.ok(boundedElapsed < 5500, "XHS bootstrap commit readback must remain bounded");
     assert.equal(unavailable.status, "unavailable");
     if (unavailable.status === "unavailable") assert.equal(unavailable.failure_class, "page_not_ready");
+
+    DelayedNavigationAckCdpWebSocket.ignoreFrameTree = false;
+    DelayedNavigationAckCdpWebSocket.detailMode = true;
+    DelayedNavigationAckCdpWebSocket.detailEvaluationCount = 0;
+    DelayedNavigationAckCdpWebSocket.detailRequestContinued = false;
+    const runtime = new HarborRuntime(async () => provider);
+    const session = await runtime.createSession({ url: "about:blank", control_owner: "core_task" });
+    const internal = runtime as unknown as {
+      runtimeSessions: {
+        probeReadOperation: (runtimeSessionRef: string, input: {
+          site_id: "xiaohongshu";
+          operation_id: "xhs_read_note_detail";
+          detail_ref: string;
+          target_url: string;
+          expected_origin: string;
+        }) => Promise<unknown>;
+      };
+    };
+    await internal.runtimeSessions.probeReadOperation(session.runtime_session_ref, {
+      site_id: "xiaohongshu",
+      operation_id: "xhs_read_note_detail",
+      detail_ref: "detail_ref_session-readback",
+      target_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=private-navigation-token&xsec_source=pc_search",
+      expected_origin: "https://www.xiaohongshu.com"
+    });
+    const readback = runtime.getSession(session.runtime_session_ref);
+    assert.equal(readback?.current_page.requested_url, "https://www.xiaohongshu.com/explore/0123456789abcdef01234567");
+    assert.equal(readback?.current_page.current_url, "https://www.xiaohongshu.com/explore/0123456789abcdef01234567");
+    assert.equal(JSON.stringify(readback).includes("private-navigation-token"), false);
+    assert.equal(JSON.stringify(readback).includes("xsec_"), false);
+    await runtime.close();
   } finally {
     DelayedNavigationAckCdpWebSocket.ignoreFrameTree = false;
     DelayedNavigationAckCdpWebSocket.detailMode = false;
     DelayedNavigationAckCdpWebSocket.detailEvaluationCount = 0;
     DelayedNavigationAckCdpWebSocket.detailRequestContinued = false;
+    DelayedNavigationAckCdpWebSocket.navigationUrl = "";
     globalThis.WebSocket = originalWebSocket;
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
