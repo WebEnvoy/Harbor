@@ -588,6 +588,8 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   }, location);
   const decoratedBody = observeBodyPair(`${piniaNote.desc} #美食 #家常菜`, piniaNote.desc);
   assert.equal(decoratedBody.normalized.body_summary, `${piniaNote.desc} #美食 #家常菜`);
+  const topicMarkedBody = observeBodyPair(`${piniaNote.desc} #美食 #家常菜`, `${piniaNote.desc} #美食[话题]# #家常菜[话题]#`);
+  assert.equal(topicMarkedBody.normalized.body_summary, `${piniaNote.desc} #美食 #家常菜`);
   assert.equal(observeBodyPair("1234abcdefgh", "12😀34🥘abcdefgh").normalized.body_summary, "1234abcdefgh");
   assert.equal(observeBodyPair("1234abcdefgh", "12\uFE0E34\u{E0100}abcdefgh").normalized.body_summary, "1234abcdefgh");
   assert.equal(observeBodyPair("1234567 #公开笔记装饰内容", "1234567").normalized, undefined);
