@@ -549,10 +549,30 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   }, location);
   const decoratedBody = observeBodyPair(`${piniaNote.desc} #美食 #家常菜`, piniaNote.desc);
   assert.equal(decoratedBody.normalized.body_summary, `${piniaNote.desc} #美食 #家常菜`);
+  assert.equal(observeBodyPair("1234abcdefgh", "12😀34🥘abcdefgh").normalized.body_summary, "1234abcdefgh");
   assert.equal(observeBodyPair("1234567 #公开笔记装饰内容", "1234567").normalized, undefined);
   assert.equal(observeBodyPair("12345678abcdefghijklmnop", "12345678").normalized, undefined);
   assert.equal(observeBodyPair("12345678", "1234567890123456").normalized, undefined);
+  assert.equal(observeBodyPair("12345678", "12348765").normalized, undefined);
   assert.equal(observeBodyPair(piniaNote.desc, "这是另一条完全无关且长度足够的公开正文").normalized, undefined);
+  const titlelessBody = "这是一条没有单独标题的公开笔记正文";
+  const titleless = evaluate({
+    __PINIA__: {
+      _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: { ...piniaNote, title: "", desc: titlelessBody } } } } }]])
+    }
+  }, {
+    ...document,
+    querySelector: (selector: string) => selector === "#noteContainer"
+      ? {
+          querySelector: (detailSelector: string) => detailSelector.includes("detail-desc") || detailSelector.includes("note-desc")
+            ? { textContent: titlelessBody }
+            : detailSelector.includes("note-title") || detailSelector.includes(".title")
+              ? { textContent: "" }
+              : detailRoot.querySelector(detailSelector)
+        }
+      : document.querySelector(selector)
+  }, location);
+  assert.equal(titleless.normalized.title, titlelessBody);
   const missingDetailAuthor = evaluate({}, {
     ...document,
     querySelector: (selector: string) => selector === "#noteContainer"

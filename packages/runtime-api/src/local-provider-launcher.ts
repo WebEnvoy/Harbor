@@ -1096,8 +1096,19 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const stores = pinia?._s;
     const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
     const sameBoundedBody = (rendered, stored) => {
-      if (rendered === stored) return true;
-      return stored.length >= 8 && stored.length * 2 >= rendered.length && rendered.includes(stored);
+      const compact = (value) => value.replace(/[\\s\\u200B-\\u200D\\uFEFF]+/g, "");
+      const renderedCompact = compact(rendered);
+      const storedCompact = compact(stored);
+      const renderedCharacters = Array.from(renderedCompact);
+      const storedCharacters = Array.from(storedCompact);
+      if (renderedCompact === storedCompact) return true;
+      if (storedCharacters.length >= 8 && storedCharacters.length * 2 >= renderedCharacters.length && renderedCompact.includes(storedCompact)) return true;
+      if (renderedCharacters.length < 8 || renderedCharacters.length * 2 < storedCharacters.length || storedCompact.includes(renderedCompact)) return false;
+      let renderedIndex = 0;
+      for (const character of storedCharacters) {
+        if (character === renderedCharacters[renderedIndex]) renderedIndex++;
+      }
+      return renderedIndex === renderedCharacters.length;
     };
     const detailRoot = document.querySelector('#noteContainer') || document.querySelector('.note-detail-mask, [class*="note-detail"]');
     const pickDetail = (selectors, max) => clean(detailRoot?.querySelector(selectors)?.textContent, max);
@@ -1149,7 +1160,8 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const storeMatched = noteStores.some(matchesStore);
     const interactionMetrics = matchedMetrics ? { likes: likes || matchedMetrics.likes, comments: comments || matchedMetrics.comments, collects: collects || matchedMetrics.collects, shares: shares || matchedMetrics.shares } : undefined;
     const metricsLocated = Boolean(likes && comments && collects && shares);
-    const normalized = storeMatched && title && body && author && authorId && profileUrl && interactionMetrics && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title, summary: body.slice(0, 2000), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: interactionMetrics, source_status: metricsLocated ? "located" : "partially_located" } : undefined;
+    const normalizedTitle = title || body.slice(0, 200);
+    const normalized = storeMatched && normalizedTitle && body && author && authorId && profileUrl && interactionMetrics && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title: normalizedTitle, summary: body.slice(0, 500), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: interactionMetrics, source_status: metricsLocated ? "located" : "partially_located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
       : `
     const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);
