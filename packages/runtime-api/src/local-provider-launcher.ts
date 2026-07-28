@@ -1100,7 +1100,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const stores = pinia?._s;
     const unwrap = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
     const sameBoundedBody = (rendered, stored) => {
-      const compact = (value) => value.replace(/[\\s\\u200B-\\u200D\\uFEFF]+/g, "");
+      const compact = (value) => value.replace(/\\[话题\\]#/g, "").replace(/[\\s\\u200B-\\u200D\\uFEFF]+/g, "");
       const renderedCompact = compact(rendered);
       const storedCompact = compact(stored);
       const renderedCharacters = Array.from(renderedCompact);
