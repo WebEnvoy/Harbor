@@ -503,6 +503,48 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   assert.equal(JSON.stringify(observed).includes("must-not-return"), false);
   assert.equal(JSON.stringify(observed).includes("xsec_token"), false);
 
+  const missingVisibleShare = evaluate({}, {
+    ...document,
+    querySelector: (selector: string) => selector.includes("share") ? null : document.querySelector(selector)
+  }, location);
+  assert.equal(missingVisibleShare.normalized.source_status, "partially_located");
+  assert.deepEqual(missingVisibleShare.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "0" });
+  assert.equal(validateReadOperationProbe({
+    site_id: "xiaohongshu",
+    operation_id: "xhs_read_note_detail",
+    detail_ref: opaqueRef("detail_ref"),
+    target_url: `${location.origin}${location.pathname}`,
+    expected_origin: location.origin
+  }, {
+    ...missingVisibleShare,
+    operation_response_status: 200,
+    operation_response_url: `${location.origin}${location.pathname}`
+  }).status, "completed");
+
+  const missingShareStore = {
+    _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: {
+      ...piniaNote,
+      interactInfo: { likedCount: 10, commentCount: 2, collectedCount: 3 }
+    } } } } }]])
+  };
+  const missingShareEverywhere = evaluate({ __PINIA__: missingShareStore }, {
+    ...document,
+    querySelector: (selector: string) => selector.includes("share") ? null : document.querySelector(selector)
+  }, location);
+  assert.equal(missingShareEverywhere.normalized.source_status, "partially_located");
+  assert.deepEqual(missingShareEverywhere.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "" });
+  assert.equal(validateReadOperationProbe({
+    site_id: "xiaohongshu",
+    operation_id: "xhs_read_note_detail",
+    detail_ref: opaqueRef("detail_ref"),
+    target_url: `${location.origin}${location.pathname}`,
+    expected_origin: location.origin
+  }, {
+    ...missingShareEverywhere,
+    operation_response_status: 200,
+    operation_response_url: `${location.origin}${location.pathname}`
+  }).status, "completed");
+
   const withoutNoteStore = evaluate({ __PINIA__: { _s: new Map([["search", {}]]) } }, { ...document, querySelector: (selector: string) => selector === "#app" ? { __vue_app__: { config: { globalProperties: {} } } } : document.querySelector(selector) }, location);
   assert.equal(withoutNoteStore.vue_ready, true);
   assert.equal(withoutNoteStore.pinia_ready, false);
