@@ -1108,7 +1108,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       if (renderedCompact === storedCompact) return true;
       if (storedCharacters.length >= 8 && storedCharacters.length * 2 >= renderedCharacters.length && renderedCompact.includes(storedCompact)) return true;
       if (renderedCharacters.length < 8 || renderedCharacters.length * 2 < storedCharacters.length) return false;
-      const withoutPresentationCharacters = storedCompact.replace(/[\\p{Extended_Pictographic}\\uFE0F\\u200D\\u{1F3FB}-\\u{1F3FF}]/gu, "");
+      const withoutPresentationCharacters = storedCompact.replace(/[\\p{Extended_Pictographic}\\uFE00-\\uFE0F\\u200D\\u{1F3FB}-\\u{1F3FF}\\u{E0100}-\\u{E01EF}]/gu, "");
       return renderedCompact === withoutPresentationCharacters;
     };
     const detailRoot = document.querySelector('#noteContainer') || document.querySelector('.note-detail-mask, [class*="note-detail"]');
