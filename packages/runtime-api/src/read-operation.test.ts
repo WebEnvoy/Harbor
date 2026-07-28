@@ -474,14 +474,21 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   };
   const pinia = { _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: piniaNote } } } }]]) };
   const app = { __vue_app__: { config: { globalProperties: { $pinia: pinia } } } };
-  const detailRoot = {
+  const engagementRoot = {
     querySelector: (selector: string) => {
-      if (selector.includes("user/profile")) return { getAttribute: () => "/user/profile/author_123" };
-      if (selector.includes("author")) return { textContent: "公开作者" };
       if (selector.includes("like")) return { textContent: "10" };
       if (selector.includes("comment")) return { textContent: "2" };
       if (selector.includes("collect")) return { textContent: "3" };
       if (selector.includes("share")) return { textContent: "0" };
+      return null;
+    }
+  };
+  const detailRoot = {
+    querySelector: (selector: string) => {
+      if (selector === ".interactions.engage-bar") return engagementRoot;
+      if (selector.includes("user/profile")) return { getAttribute: () => "/user/profile/author_123" };
+      if (selector.includes("author")) return { textContent: "公开作者" };
+      if (selector.includes("like") || selector.includes("comment") || selector.includes("collect") || selector.includes("share")) return { textContent: "999" };
       if (selector.includes("note-title") || selector.includes(".title")) return { textContent: "公开标题" };
       if (selector.includes("detail-desc") || selector.includes("note-desc")) return { textContent: "公开正文摘要" };
       return null;
@@ -507,6 +514,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
     }
   };
   const location = { origin: "https://www.xiaohongshu.com", pathname: "/explore/0123456789abcdef01234567", search: "?xsec_token=private" };
+  assert.equal((detailRoot.querySelector('[class*="like"] [class*="count"]') as { textContent?: string } | null)?.textContent, "999");
   const observed = evaluate({}, document, location);
   assert.equal(observed.vue_ready, true);
   assert.equal(observed.pinia_ready, true);
@@ -538,7 +546,11 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   const missingVisibleShare = evaluate({}, {
     ...document,
     querySelector: (selector: string) => selector === "#noteContainer"
-      ? { querySelector: (detailSelector: string) => detailSelector.includes("share") ? null : detailRoot.querySelector(detailSelector) }
+      ? {
+          querySelector: (detailSelector: string) => detailSelector === ".interactions.engage-bar"
+            ? { querySelector: (metricSelector: string) => metricSelector.includes("share") ? null : engagementRoot.querySelector(metricSelector) }
+            : detailRoot.querySelector(detailSelector)
+        }
       : document.querySelector(selector)
   }, location);
   assert.equal(missingVisibleShare.normalized.source_status, "partially_located");
@@ -564,7 +576,11 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   const missingShareEverywhere = evaluate({ __PINIA__: missingShareStore }, {
     ...document,
     querySelector: (selector: string) => selector === "#noteContainer"
-      ? { querySelector: (detailSelector: string) => detailSelector.includes("share") ? null : detailRoot.querySelector(detailSelector) }
+      ? {
+          querySelector: (detailSelector: string) => detailSelector === ".interactions.engage-bar"
+            ? { querySelector: (metricSelector: string) => metricSelector.includes("share") ? null : engagementRoot.querySelector(metricSelector) }
+            : detailRoot.querySelector(detailSelector)
+        }
       : document.querySelector(selector)
   }, location);
   assert.equal(missingShareEverywhere.normalized.source_status, "partially_located");
