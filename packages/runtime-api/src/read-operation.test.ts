@@ -895,6 +895,8 @@ test("validates both detail surfaces against the exact search-bound target", () 
   if (xhsCompleted.status === "completed") assert.equal(xhsCompleted.public_summary.normalized?.canonical_url.includes("xsec"), false);
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pinia_ready: false })), "page_not_ready");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, vue_ready: false })), "page_not_ready");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pinia_ready: false, pathname: "/explore/wrong" })), "site_changed");
+  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pinia_ready: false, rendered_surface: false })), "empty_result");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, normalized: { ...ready.normalized, title: "" } })), "field_missing");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, pathname: "/explore/aaaaaaaaaaaaaaaaaaaaaaaa" })), "site_changed");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...ready, rendered_surface: false })), "empty_result");
