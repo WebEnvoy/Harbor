@@ -279,7 +279,7 @@ test("correlates the official Vue Pinia search store without exposing store cont
   const pinia = {
     _s: new Map([["search", {
       searchValue: { value: query },
-      feeds: { value: noteIds.map((id) => ({ noteCard: { id }, xsec_token: "opaque-navigation-token" })) },
+      feeds: { value: noteIds.map((id) => ({ noteCard: { id }, xsec_token: "opaque-navigation-token=" })) },
       hasMore: { value: true },
       private: "not_returned"
     }]])
@@ -305,7 +305,7 @@ test("correlates the official Vue Pinia search store without exposing store cont
     list_valid: true,
     list_failure: undefined,
     note_count: 2,
-    detail_urls: noteIds.map((id) => `https://www.xiaohongshu.com/explore/${id}?xsec_token=opaque-navigation-token&xsec_source=pc_search`),
+    detail_urls: noteIds.map((id) => `https://www.xiaohongshu.com/explore/${id}?xsec_token=opaque-navigation-token%3D&xsec_source=pc_search`),
     login_like: false,
     challenge_like: false
   });
@@ -322,11 +322,11 @@ test("correlates the official Vue Pinia search store without exposing store cont
     xhs_response: summarizeXhsSearchResponse(JSON.stringify({
       success: true,
       code: 0,
-      data: { items: noteIds.map((id) => ({ id, xsec_token: "opaque-navigation-token", note_card: { id } })) }
+      data: { items: noteIds.map((id) => ({ id, xsec_token: "opaque-navigation-token=", note_card: { id } })) }
     }))
   });
   assert.equal(validated.status, "completed");
-  if (validated.status === "completed") assert.equal(JSON.stringify(validated.public_summary).includes("opaque-navigation-token"), false);
+  if (validated.status === "completed") assert.equal(JSON.stringify(validated.public_summary).includes("opaque-navigation-token="), false);
 
   for (const candidate of [
     { _s: new Map() },
@@ -1040,9 +1040,9 @@ test("summarizes only XHS note ids and private navigation targets from the bound
     success: true,
     code: 0,
     data: {
-      items: [{
+      items: [{ model_type: "rec_query" }, {
         id: "0123456789abcdef01234567",
-        xsec_token: "opaque-navigation-token",
+        xsec_token: "opaque-navigation-token=",
         note_card: { id: "0123456789abcdef01234567", title: "not returned" },
         private: "not returned"
       }]
@@ -1050,7 +1050,7 @@ test("summarizes only XHS note ids and private navigation targets from the bound
   }));
   assert.deepEqual(summary, {
     status: "completed",
-    detail_urls: ["https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=opaque-navigation-token&xsec_source=pc_search"]
+    detail_urls: ["https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=opaque-navigation-token%3D&xsec_source=pc_search"]
   });
   assert.equal(failureClass(summarizeXhsSearchResponse('{"success":false,"code":-1,"data":{"items":[]}}')), "permission_denied");
   assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[]}}')), "empty_result");
@@ -1059,6 +1059,7 @@ test("summarizes only XHS note ids and private navigation targets from the bound
   assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"token","note_card":{"id":"fedcba987654321001234567"}}]}}')), "site_changed");
   assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","note_id":"fedcba987654321001234567","xsec_token":"token"}]}}')), "site_changed");
   assert.equal(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"","note_card":{"id":"0123456789abcdef01234567","xsec_token":"valid-token"}}]}}').status, "completed");
+  assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"invalid=token"}]}}')), "site_changed");
   assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"token-a","note_card":{"id":"0123456789abcdef01234567","xsec_token":"token-b"}}]}}')), "site_changed");
   assert.equal(JSON.stringify(summary).includes("not returned"), false);
 });

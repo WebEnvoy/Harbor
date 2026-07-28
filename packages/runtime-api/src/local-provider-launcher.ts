@@ -1201,7 +1201,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       const values = [unwrap(feed?.id), unwrap(feed?.noteId), unwrap(feed?.note_id), unwrap(card?.id), unwrap(card?.noteId), unwrap(card?.note_id)];
       const value = values.find((entry) => entry !== undefined && entry !== null && entry !== "");
       const tokenValues = [unwrap(feed?.xsecToken), unwrap(feed?.xsec_token), unwrap(card?.xsecToken), unwrap(card?.xsec_token)];
-      const xsecToken = tokenValues.find((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 512 && /^[A-Za-z0-9_-]+$/.test(entry));
+      const xsecToken = tokenValues.find((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 512 && /^[A-Za-z0-9_-]+={0,2}$/.test(entry));
       const noteLike = Boolean(feed?.noteCard || feed?.note_card || values.some((entry) => entry !== undefined));
       if (!noteLike) return { kind: 'other' };
       return typeof value === "string" && /^[a-f0-9]{24}$/i.test(value)
@@ -1389,7 +1389,7 @@ export function summarizeXhsSearchResponse(body: string): XhsSearchResponseSumma
       .map((value) => value.toLowerCase());
     if (new Set(noteIds).size > 1) return xhsResponseFailure("site_changed", "Xiaohongshu search item identifiers do not match.", false);
     const tokens = [item.xsec_token, item.xsecToken, card.xsec_token, card.xsecToken]
-      .filter((value): value is string => typeof value === "string" && value.length > 0 && value.length <= 512 && /^[A-Za-z0-9_-]+$/.test(value));
+      .filter((value): value is string => typeof value === "string" && value.length > 0 && value.length <= 512 && /^[A-Za-z0-9_-]+={0,2}$/.test(value));
     if (new Set(tokens).size > 1) return xhsResponseFailure("site_changed", "Xiaohongshu search item navigation tokens do not match.", false);
     const noteId = noteIds[0];
     const token = tokens[0];
