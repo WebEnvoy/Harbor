@@ -484,7 +484,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
     body: { innerText: "公开笔记详情" },
     querySelector: (selector: string) => {
       if (selector === "#app") return app;
-      if (selector === '.note-detail-mask, [class*="note-detail"]') return detailRoot;
+      if (selector === '.note-detail-mask, [class*="note-detail"], #noteContainer') return detailRoot;
       if (selector.includes("captcha") || selector.includes("login")) return null;
       if (selector.includes("user/profile")) return { getAttribute: () => "/user/profile/logged_in_user" };
       if (selector.includes("like")) return { textContent: "10" };
@@ -508,9 +508,18 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
   assert.deepEqual(observed.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "0" });
   assert.equal(JSON.stringify(observed).includes("must-not-return"), false);
   assert.equal(JSON.stringify(observed).includes("xsec_token"), false);
+  const directDetail = evaluate({}, {
+    ...document,
+    querySelector: (selector: string) => {
+      if (selector === '.note-detail-mask, [class*="note-detail"], #noteContainer') return detailRoot;
+      if (selector === '.note-detail-mask, [class*="note-detail"]') return null;
+      return document.querySelector(selector);
+    }
+  }, location);
+  assert.equal(directDetail.normalized.author.author_id, "author_123");
   const missingDetailAuthor = evaluate({}, {
     ...document,
-    querySelector: (selector: string) => selector === '.note-detail-mask, [class*="note-detail"]'
+    querySelector: (selector: string) => selector === '.note-detail-mask, [class*="note-detail"], #noteContainer'
       ? { querySelector: () => null }
       : document.querySelector(selector)
   }, location);
