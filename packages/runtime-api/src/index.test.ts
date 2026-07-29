@@ -901,10 +901,12 @@ function installFakeCdpWebSocket(ignoredMethod: string, redirectUrl?: string): v
 class DelayedNavigationAckCdpWebSocket extends EventTarget {
   static ignoreFrameTree = false;
   static bootstrapRedirectUrl = "";
+  static bootstrapRedirectMethod = "";
   static detailMode = false;
   static detailEvaluationCount = 0;
   static detailRequestContinued = false;
   static fetchResponseBodyUsed = false;
+  static preflightResponseBodyUsed = false;
   static searchResponseIntercepted = false;
   static navigationUrl = "";
   static navigationUrls: string[] = [];
@@ -944,17 +946,55 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
           params: {
             requestId: "navigation",
             resourceType: "Document",
-            request: { url: documentUrl }
+            request: {
+              url: documentUrl,
+              ...(DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod
+                ? { method: DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod }
+                : {})
+            }
           }
         })
       })));
-      this.respond(message.id, { result: { type: "undefined" } });
       return;
     }
     if (message.method === "Fetch.continueRequest" && message.params?.requestId === "navigation") {
       queueMicrotask(() => {
         this.respond(message.id, {});
         if (DelayedNavigationAckCdpWebSocket.navigationUrl.includes("/search_result")) {
+          this.dispatchEvent(new MessageEvent("message", {
+            data: JSON.stringify({
+              method: "Network.requestWillBeSent",
+              params: {
+                requestId: "preflight-response",
+                request: { method: "OPTIONS", url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes" }
+              }
+            })
+          }));
+          this.dispatchEvent(new MessageEvent("message", {
+            data: JSON.stringify({
+              method: "Fetch.requestPaused",
+              params: {
+                requestId: "preflight-response-fetch",
+                resourceType: "XHR",
+                request: { method: "OPTIONS", url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes" }
+              }
+            })
+          }));
+          this.dispatchEvent(new MessageEvent("message", {
+            data: JSON.stringify({
+              method: "Network.responseReceived",
+              params: {
+                requestId: "preflight-response",
+                response: { status: 200, url: "https://so.xiaohongshu.com/api/sns/web/v2/search/notes" }
+              }
+            })
+          }));
+          this.dispatchEvent(new MessageEvent("message", {
+            data: JSON.stringify({
+              method: "Network.loadingFinished",
+              params: { requestId: "preflight-response" }
+            })
+          }));
           this.dispatchEvent(new MessageEvent("message", {
             data: JSON.stringify({
               method: "Network.requestWillBeSent",
@@ -991,6 +1031,24 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
             })
           }));
         }
+      });
+      return;
+    }
+    if (message.method === "Network.getResponseBody" && message.params?.requestId === "preflight-response") {
+      DelayedNavigationAckCdpWebSocket.preflightResponseBodyUsed = true;
+      this.respond(message.id, {
+        body: JSON.stringify({
+          success: true,
+          code: 0,
+          data: {
+            items: [{
+              id: "fedcba987654321001234567",
+              xsec_token: "preflight-private-token",
+              note_card: { id: "fedcba987654321001234567", display_title: "错误预检结果" }
+            }]
+          }
+        }),
+        base64Encoded: false
       });
       return;
     }
@@ -1257,6 +1315,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     assert.equal(result.status, "completed");
     assert.equal(DelayedNavigationAckCdpWebSocket.searchResponseIntercepted, true);
     assert.equal(DelayedNavigationAckCdpWebSocket.fetchResponseBodyUsed, true);
+    assert.equal(DelayedNavigationAckCdpWebSocket.preflightResponseBodyUsed, false);
     assert.equal(DelayedNavigationAckCdpWebSocket.responseBodyRequestedBeforeFinished, false);
     if (result.status === "completed") {
       assert.deepEqual(result.search_items, [{
@@ -1284,7 +1343,8 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     assert.equal(DelayedNavigationAckCdpWebSocket.detailRequestContinued, true);
     DelayedNavigationAckCdpWebSocket.detailMode = false;
 
-    DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl = "https://example.com/cross-origin";
+    DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl = "https://so.xiaohongshu.com/api/sns/web/v2/search/notes";
+    DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod = "POST";
     const drift = await provider.probeReadOperation({
       site_id: "xiaohongshu",
       operation_id: "xhs_search_notes",
@@ -1298,6 +1358,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
       assert.equal(drift.retryable, false);
     }
     DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl = "";
+    DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod = "";
 
     DelayedNavigationAckCdpWebSocket.ignoreFrameTree = true;
     const boundedStartedAt = Date.now();
@@ -1347,6 +1408,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     DelayedNavigationAckCdpWebSocket.detailEvaluationCount = 0;
     DelayedNavigationAckCdpWebSocket.detailRequestContinued = false;
     DelayedNavigationAckCdpWebSocket.fetchResponseBodyUsed = false;
+    DelayedNavigationAckCdpWebSocket.preflightResponseBodyUsed = false;
     DelayedNavigationAckCdpWebSocket.searchResponseIntercepted = false;
     const runtime = new HarborRuntime(async () => provider);
     const session = await runtime.createSession({ url: "about:blank", control_owner: "core_task" });
@@ -1377,6 +1439,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
   } finally {
     DelayedNavigationAckCdpWebSocket.ignoreFrameTree = false;
     DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl = "";
+    DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod = "";
     DelayedNavigationAckCdpWebSocket.detailMode = false;
     DelayedNavigationAckCdpWebSocket.detailEvaluationCount = 0;
     DelayedNavigationAckCdpWebSocket.detailRequestContinued = false;
@@ -1386,6 +1449,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     DelayedNavigationAckCdpWebSocket.pageCloseCount = 0;
     DelayedNavigationAckCdpWebSocket.searchResponseFinished = false;
     DelayedNavigationAckCdpWebSocket.responseBodyRequestedBeforeFinished = false;
+    DelayedNavigationAckCdpWebSocket.preflightResponseBodyUsed = false;
     DelayedNavigationAckCdpWebSocket.searchResponseIntercepted = false;
     globalThis.WebSocket = originalWebSocket;
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;

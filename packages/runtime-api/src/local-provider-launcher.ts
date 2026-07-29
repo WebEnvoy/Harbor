@@ -639,6 +639,11 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         const url = typeof request?.url === "string" ? request.url : "";
         const method = typeof request?.method === "string" ? request.method : "";
         if (!requestId) return;
+        if (shouldBlockReadOperationDocumentNavigation(event.resourceType, url, input.expected_origin)) {
+          blockedRedirect = true;
+          void client.send("Fetch.failRequest", { requestId, errorReason: "Aborted" }).catch(() => undefined);
+          return;
+        }
         if (
           typeof event.responseStatusCode === "number" &&
           input.operation_id === "xhs_search_notes" &&
@@ -651,11 +656,6 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         }
         if (input.operation_id === "xhs_search_notes" && method === "POST" && isOperationReadNetworkUrl(input, url)) {
           void client.send("Fetch.continueRequest", { requestId, interceptResponse: true }).catch(() => undefined);
-          return;
-        }
-        if (shouldBlockReadOperationDocumentNavigation(event.resourceType, url, input.expected_origin)) {
-          blockedRedirect = true;
-          void client.send("Fetch.failRequest", { requestId, errorReason: "Aborted" }).catch(() => undefined);
           return;
         }
         void client.send("Fetch.continueRequest", { requestId }).catch(() => undefined);
@@ -905,11 +905,10 @@ async function createProviderPage(
 
 async function navigateProviderPage(client: CdpClient, url: string): Promise<void> {
   await client.send("Runtime.enable");
-  const result = await client.send("Runtime.evaluate", {
+  void client.send("Runtime.evaluate", {
     expression: `location.assign(${JSON.stringify(url)})`,
     returnByValue: true
-  });
-  if (result.exceptionDetails) throw new Error("CDP page navigation failed.");
+  }).catch(() => undefined);
 }
 
 async function waitForProviderPageCommit(
