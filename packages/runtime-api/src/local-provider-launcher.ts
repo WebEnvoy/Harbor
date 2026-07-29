@@ -42,6 +42,7 @@ type CdpPageTarget = { id?: string; type?: string; webSocketDebuggerUrl?: string
 type ObservedDetailPublicSummary = Omit<XiaohongshuNoteDetailPublicSummary, "source_citation"> | Omit<BossJobDetailPublicSummary, "detail_ref" | "source_citation">;
 
 class ProviderPageCommitError extends Error {}
+class ProviderOriginDriftError extends Error {}
 
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
@@ -598,27 +599,18 @@ async function openProviderUrl(port: string, url: string, signal?: AbortSignal):
 async function probeProviderReadOperation(port: string, input: LocalProviderReadProbeInput): Promise<LocalProviderReadProbeResult> {
   try {
     const bootstrapUrl = input.site_id === "xiaohongshu" ? "https://www.xiaohongshu.com/explore" : "about:blank";
-    const page = await createProviderPage(port, bootstrapUrl);
+    const page = await createProviderPage(port, bootstrapUrl, undefined, input.expected_origin);
     if (!page.id || !page.webSocketDebuggerUrl) throw new Error("Read-operation page has no target id or CDP websocket.");
     const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.enable");
       await client.send("Runtime.enable");
       await client.send("Network.enable");
-      await client.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
       let blockedRedirect = false;
-      const stopIntercepting = client.on("Fetch.requestPaused", (event) => {
-        const requestId = typeof event.requestId === "string" ? event.requestId : "";
-        const resourceType = event.resourceType;
-        const request = event.request as { url?: unknown } | undefined;
-        const url = typeof request?.url === "string" ? request.url : "";
-        if (!requestId) return;
-        if (shouldBlockReadOperationDocumentNavigation(resourceType, url, input.expected_origin)) {
-          blockedRedirect = true;
-          void client.send("Fetch.failRequest", { requestId, errorReason: "Aborted" }).catch(() => undefined);
-          return;
-        }
-        void client.send("Fetch.continueRequest", { requestId }).catch(() => undefined);
-      });
+      const stopIntercepting = await interceptProviderDocumentNavigation(
+        client,
+        input.expected_origin,
+        () => { blockedRedirect = true; }
+      );
       let navigationStarted = false;
       let operationResponse: { requestId: string; status: number; url: string } | null = null;
       let bossDetailResponse: { requestId: string; status: number; url: string } | null = null;
@@ -738,7 +730,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       stopObservingNetwork();
       stopIntercepting();
       return null;
-    }).finally(() => closeProviderPage(port, page.id!));
+    }).finally(() => closeProviderPage(port, page.id!, page.webSocketDebuggerUrl).catch(() => undefined));
     const pageFacts = readOperationPageFacts(input.target_url);
     if (!observation) return probeUnavailable("page_not_ready", "The read-operation page did not reach a ready state.", true, pageFacts);
     if (observation.blocked_redirect) return probeUnavailable("origin_drift", "A cross-origin document redirect was blocked before navigation.", false, pageFacts);
@@ -765,6 +757,9 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       search_items: validation.search_items
     };
   } catch (cause) {
+    if (cause instanceof ProviderOriginDriftError) {
+      return probeUnavailable("origin_drift", cause.message, false);
+    }
     return probeUnavailable(
       cause instanceof ProviderPageCommitError ? "page_not_ready" : "network_resource_unavailable",
       cause instanceof Error ? cause.message : "The provider read-only probe failed.",
@@ -814,7 +809,12 @@ interface ReadProbeObservation {
   validation?: ReturnType<typeof validateReadOperationProbe>;
 }
 
-async function createProviderPage(port: string, url: string, signal?: AbortSignal): Promise<CdpPageTarget> {
+async function createProviderPage(
+  port: string,
+  url: string,
+  signal?: AbortSignal,
+  expectedOrigin?: string
+): Promise<CdpPageTarget> {
   const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent("about:blank")}`, { method: "PUT", signal });
   if (!response.ok) throw new Error(`CDP read-operation target creation failed: ${response.status}`);
   const page = await response.json() as CdpPageTarget;
@@ -824,23 +824,35 @@ async function createProviderPage(port: string, url: string, signal?: AbortSigna
     if (url === "about:blank") return page;
     const committedUrl = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.enable");
+      let blockedRedirect = false;
+      const stopIntercepting = expectedOrigin
+        ? await interceptProviderDocumentNavigation(client, expectedOrigin, () => { blockedRedirect = true; })
+        : () => undefined;
       void client.send("Page.navigate", { url }).catch(() => undefined);
-      const committedUrl = await waitForProviderPageCommit(client, signal);
-      if (!committedUrl) {
-        throw new ProviderPageCommitError("Created page did not commit the requested URL.");
+      try {
+        const committedUrl = await waitForProviderPageCommit(client, signal, () => blockedRedirect);
+        if (blockedRedirect) throw new ProviderOriginDriftError("A cross-origin bootstrap redirect was blocked before navigation.");
+        if (!committedUrl) throw new ProviderPageCommitError("Created page did not commit the requested URL.");
+        return committedUrl;
+      } finally {
+        stopIntercepting();
       }
-      return committedUrl;
     }, signal);
     return { ...page, url: committedUrl };
   } catch (cause) {
-    await closeProviderPage(port, page.id).catch(() => undefined);
+    await closeProviderPage(port, page.id, page.webSocketDebuggerUrl).catch(() => undefined);
     throw cause;
   }
 }
 
-async function waitForProviderPageCommit(client: CdpClient, signal?: AbortSignal): Promise<string | null> {
+async function waitForProviderPageCommit(
+  client: CdpClient,
+  signal?: AbortSignal,
+  shouldStop: () => boolean = () => false
+): Promise<string | null> {
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
+    if (shouldStop()) return null;
     signal?.throwIfAborted();
     let result: Record<string, unknown>;
     try {
@@ -856,7 +868,16 @@ async function waitForProviderPageCommit(client: CdpClient, signal?: AbortSignal
   return null;
 }
 
-async function closeProviderPage(port: string, targetId: string): Promise<void> {
+async function closeProviderPage(port: string, targetId: string, webSocketUrl?: string): Promise<void> {
+  if (webSocketUrl) {
+    try {
+      const signal = AbortSignal.timeout(1000);
+      await withCdp(webSocketUrl, (client) => client.send("Page.close", {}, 1000), signal);
+      return;
+    } catch {
+      // Fall back to the browser target endpoint when the page session cannot close itself.
+    }
+  }
   const response = await fetch(`http://127.0.0.1:${port}/json/close/${encodeURIComponent(targetId)}`, {
     signal: AbortSignal.timeout(1000)
   });
@@ -869,6 +890,27 @@ function isCommittedHttpPage(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+async function interceptProviderDocumentNavigation(
+  client: CdpClient,
+  expectedOrigin: string,
+  onBlocked: () => void
+): Promise<() => void> {
+  await client.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
+  return client.on("Fetch.requestPaused", (event) => {
+    const requestId = typeof event.requestId === "string" ? event.requestId : "";
+    const resourceType = event.resourceType;
+    const request = event.request as { url?: unknown } | undefined;
+    const url = typeof request?.url === "string" ? request.url : "";
+    if (!requestId) return;
+    if (shouldBlockReadOperationDocumentNavigation(resourceType, url, expectedOrigin)) {
+      onBlocked();
+      void client.send("Fetch.failRequest", { requestId, errorReason: "Aborted" }).catch(() => undefined);
+      return;
+    }
+    void client.send("Fetch.continueRequest", { requestId }).catch(() => undefined);
+  });
 }
 
 export function shouldBlockReadOperationDocumentNavigation(resourceType: unknown, value: string, expectedOrigin: string): boolean {
