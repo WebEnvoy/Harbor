@@ -461,11 +461,18 @@ test("correlates the official Vue Pinia search store without exposing store cont
     assert.equal(negative.pinia_ready, false);
   }
 
-  const empty = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [] }]]) } }, document, {
+  const empty = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [] }]]) } }, {
+    ...document,
+    querySelectorAll: () => []
+  }, {
     origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
   });
   assert.equal(empty.list_valid, false);
   assert.equal(empty.list_failure, "empty_result");
+  const staleRenderedResults = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [] }]]) } }, document, {
+    origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
+  });
+  assert.equal(staleRenderedResults.list_failure, "page_not_ready");
   const mismatch = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ id: "aaaaaaaaaaaaaaaaaaaaaaaa" }] }]]) } }, document, {
     origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
   });
@@ -512,7 +519,13 @@ test("correlates the official Vue Pinia search store without exposing store cont
     querySelector: () => null,
     querySelectorAll: () => [anchors[0]]
   }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
-  assert.equal(unsupportedFeed.list_failure, "empty_result");
+  assert.equal(unsupportedFeed.list_failure, "page_not_ready");
+  const malformedFeedWithoutTarget = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [{ noteCard: { id: "not-a-note" } }] }]]) } }, {
+    ...document,
+    querySelector: () => null,
+    querySelectorAll: () => []
+  }, { origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}` });
+  assert.equal(malformedFeedWithoutTarget.list_failure, "page_not_ready");
 
   const duplicateAnchor = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: [noteFeed(noteIds[0]!, 0)] }]]) } }, {
     ...document,
@@ -1165,9 +1178,35 @@ test("fails closed when the live probe lacks an operation-specific surface or re
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "?keyword=AI&keyword=AI" }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pinia_ready: false }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, operation_response_status: undefined }).status, "unavailable");
-  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "empty_result", note_count: 0, detail_urls: [] })), "empty_result");
-  const emptyXhs = validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "empty_result", note_count: 0, detail_urls: [] });
+  const hydratingXhs = validateReadOperationProbe(xhsInput, {
+    ...readyXhs,
+    list_valid: false,
+    list_failure: "empty_result",
+    note_count: 0,
+    detail_urls: []
+  });
+  assert.equal(failureClass(hydratingXhs), "page_not_ready");
+  if (hydratingXhs.status === "unavailable") assert.equal(hydratingXhs.retryable, true);
+  const emptyXhs = validateReadOperationProbe(xhsInput, {
+    ...readyXhs,
+    list_valid: false,
+    list_failure: "empty_result",
+    note_count: 0,
+    detail_urls: [],
+    xhs_response: summarizeXhsSearchResponse(JSON.stringify({ success: true, code: 0, data: { items: [] } }))
+  });
+  assert.equal(failureClass(emptyXhs), "empty_result");
   if (emptyXhs.status === "unavailable") assert.equal(emptyXhs.retryable, false);
+  const settlingEmptyXhs = validateReadOperationProbe(xhsInput, {
+    ...readyXhs,
+    list_valid: false,
+    list_failure: "page_not_ready",
+    note_count: 0,
+    detail_urls: [],
+    xhs_response: summarizeXhsSearchResponse(JSON.stringify({ success: true, code: 0, data: { items: [] } }))
+  });
+  assert.equal(failureClass(settlingEmptyXhs), "page_not_ready");
+  if (settlingEmptyXhs.status === "unavailable") assert.equal(settlingEmptyXhs.retryable, true);
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "page_not_ready", note_count: 0, detail_urls: [] })), "page_not_ready");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "site_changed" })), "site_changed");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, detail_urls: [] })), "site_changed");

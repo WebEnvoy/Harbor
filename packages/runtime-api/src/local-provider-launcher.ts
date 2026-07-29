@@ -909,6 +909,21 @@ export function validateReadOperationProbe(
     }
     const detailUrls = observation.detail_urls ?? [];
     const searchItems = observation.search_items ?? [];
+    if (!observation.xhs_response) {
+      return { status: "unavailable", failure_class: "network_resource_unavailable", message: "The Xiaohongshu search response summary is unavailable.", retryable: true };
+    }
+    if (observation.xhs_response.status === "unavailable") {
+      if (observation.xhs_response.failure_class !== "empty_result" || observation.list_failure === "empty_result") {
+        return observation.xhs_response;
+      }
+      if (observation.list_failure === "page_not_ready") {
+        return { status: "unavailable", failure_class: "page_not_ready", message: "The Xiaohongshu search page is still settling after an empty response.", retryable: true };
+      }
+      return { status: "unavailable", failure_class: "site_changed", message: "The Xiaohongshu search response and rendered page disagree about whether results exist.", retryable: false };
+    }
+    if (observation.list_failure === "empty_result") {
+      return { status: "unavailable", failure_class: "page_not_ready", message: "The Xiaohongshu search response has results while the rendered page is still hydrating.", retryable: true };
+    }
     if (observation.list_failure) {
       return { status: "unavailable", failure_class: observation.list_failure, message: "Xiaohongshu search did not expose a valid page-matched note list.", retryable: observation.list_failure === "page_not_ready" };
     }
@@ -918,9 +933,6 @@ export function validateReadOperationProbe(
     const resultLimit = input.limit ?? 15;
     if (!Number.isInteger(observation.note_count) || observation.note_count! < 1 || detailUrls.length !== observation.note_count || searchItems.length !== detailUrls.length || !validXhsSearchTargets(detailUrls)) {
       return { status: "unavailable", failure_class: "site_changed", message: "Xiaohongshu search note targets do not match the expected public shape.", retryable: false };
-    }
-    if (!observation.xhs_response || observation.xhs_response.status === "unavailable") {
-      return observation.xhs_response ?? { status: "unavailable", failure_class: "network_resource_unavailable", message: "The Xiaohongshu search response summary is unavailable.", retryable: true };
     }
     if (!validXhsSearchTargets(observation.xhs_response.detail_urls)) {
       return { status: "unavailable", failure_class: "site_changed", message: "The Xiaohongshu search response contains invalid detail navigation targets.", retryable: false };
@@ -1307,6 +1319,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
         : { kind: 'malformed' };
     };
     const candidates = boundedFeeds.map(noteCandidate);
+    const hasMalformedFeed = candidates.some((candidate) => candidate.kind === 'malformed');
     const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note').map((candidate) => candidate.id);
     const feedIds = Array.from(new Set(allFeedIds));
     const feedTokens = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.xsecToken).map((candidate) => [candidate.id, candidate.xsecToken]));
@@ -1347,7 +1360,11 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     // not evidence that the feed contract changed.
     // The feed can include promoted or non-note entries alongside valid note
     // cards. Only the canonical ids and targets consumed below are trusted.
-    const listFailure = feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 || searchItems.length !== detailUrls.length ? 'page_not_ready' : undefined;
+    const listFailure = hasMalformedFeed
+      ? 'page_not_ready'
+      : feedIds.length === 0
+      ? pageTargets.size === 0 ? 'empty_result' : 'page_not_ready'
+      : detailUrls.length === 0 || searchItems.length !== detailUrls.length ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";
     const challengeSurface = typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]')).some((element) => {
