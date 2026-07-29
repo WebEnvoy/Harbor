@@ -52,7 +52,7 @@ test("admits only the two pinned read-only operation identities", () => {
   if (typeof xiaohongshu === "string") throw new Error("Pinned Xiaohongshu operation was unexpectedly rejected.");
   assert.equal(xiaohongshu.entry.operation_mode, "read");
   assert.equal(xiaohongshu.entry.lock_ref, "lode://lock/site-capability/xiaohongshu/search-notes@0.1.0");
-  assert.equal(new URL(xiaohongshu.target_url).origin, "https://www.xiaohongshu.com");
+  assert.equal(xiaohongshu.target_url, "https://www.xiaohongshu.com/search_result?keyword=AI+tools&type=51");
 
   const boss = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", city_code: "101010100" });
   assert.equal(typeof boss === "string", false);
@@ -81,7 +81,10 @@ test("fails closed for invalid target URLs and cross-origin requests", () => {
       query: "AI tools",
       url
     });
-    assert.equal(typeof sourcedSearch === "string" ? sourcedSearch : sourcedSearch.target_url, url);
+    assert.equal(
+      typeof sourcedSearch === "string" ? sourcedSearch : sourcedSearch.target_url,
+      `https://www.xiaohongshu.com${pathname}?keyword=AI+tools&type=51&source=web_search_result_notes`
+    );
   }
   for (const suffix of ["source=forged", "source=web_search_result_notes&source=web_search_result_notes", "source=web_search_result_notes&extra=1"]) {
     assert.equal(
