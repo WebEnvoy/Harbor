@@ -670,7 +670,11 @@ function resolveTargetUrl(
       if (url.searchParams.get("source") === "web_search_result_notes") {
         sourced.searchParams.set("source", "web_search_result_notes");
       }
-      if (url.toString() === sourced.toString()) return { target_url: sourced.toString() };
+      const legacy = new URL(sourced);
+      legacy.searchParams.delete("type");
+      if (url.toString() === sourced.toString() || url.toString() === legacy.toString()) {
+        return { target_url: sourced.toString() };
+      }
     }
     if (!matchesTargetSchema(url, entry) || url.toString() !== derived) return "target_path_not_allowlisted";
   }
@@ -680,6 +684,7 @@ function resolveTargetUrl(
 function deriveTargetUrl(request: AllowlistedReadOperationRequest, entry: PinnedReadOperation): string {
   const url = new URL(entry.target_schema.pathname, entry.allowed_origin);
   url.searchParams.set(entry.target_schema.public_query_parameter, request.query!);
+  if (entry.operation_id === "xhs_search_notes") url.searchParams.set("type", "51");
   if (entry.target_schema.public_city_parameter) url.searchParams.set(entry.target_schema.public_city_parameter, request.city_code!);
   return url.toString();
 }
