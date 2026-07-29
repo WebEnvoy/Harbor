@@ -703,6 +703,29 @@ test("keeps a confirmed headed session trusted across separately released Core r
     assert.equal(admitted.body.failure_class, "evidence_refs_missing");
 
     await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, { control_owner: "core_task" });
+    const locked = await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/lock`, {
+      control_owner: "core_task",
+      holder_ref: "run-detail"
+    });
+    assert.equal(locked.lifecycle_state, "locked");
+    assert.deepEqual(locked.control_lock, {
+      owner: "core_task",
+      state: "held",
+      holder_ref: "run-detail",
+      updated_at: locked.control_lock.updated_at,
+      conflict_error: null
+    });
+    const lockedSiteFacts = await getJson(
+      `${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=boss&task_kind=job_search`
+    );
+    assert.equal(
+      lockedSiteFacts.resource_facts.find((fact: { key: string }) => fact.key === "runtime.execution_surface.available")?.state,
+      "available"
+    );
+    await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, {
+      control_owner: "core_task",
+      holder_ref: "run-detail"
+    });
     await postJson(`${running.url}/runtime/identity-environment-sessions`, {
       identity_environment_ref: "identity-env_local-provider-auth",
       url: "https://www.zhipin.com/web/geek/job",

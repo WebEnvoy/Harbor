@@ -419,7 +419,12 @@ function inferDefaultTaskKind(site_id?: string | null): string {
 }
 
 function isRuntimeReady(session: RuntimeSessionFacts): boolean {
-  return (session.lifecycle_state === "active" || session.lifecycle_state === "idle") && session.availability.cdp === "available";
+  const coreTaskLockHeld = session.lifecycle_state === "locked" &&
+    session.control_owner === "core_task" &&
+    session.control_lock.owner === "core_task" &&
+    session.control_lock.state === "held";
+  return (session.lifecycle_state === "active" || session.lifecycle_state === "idle" || coreTaskLockHeld) &&
+    session.availability.cdp === "available";
 }
 
 function safeOrigin(url?: string | null): string | null {
