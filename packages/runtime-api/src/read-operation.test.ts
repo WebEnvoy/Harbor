@@ -663,7 +663,7 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
     title: "公开标题",
     desc: "这是用于验证正文相关性的公开正文摘要",
     user: { nickname: "公开作者", userId: "author_123" },
-    interactInfo: { likedCount: 10, commentCount: 2, collectedCount: 3, shareCount: 0 },
+    interactInfo: { liked_count: 10, comment_count: 2, collected_count: 3, share_count: 0 },
     private: "must-not-return"
   };
   const pinia = { _s: new Map([["note", { $state: { noteDetailMap: { [piniaNote.noteId]: { note: piniaNote } } } }]]) };
@@ -845,8 +845,8 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
       : document.querySelector(selector)
   }, location);
   assert.equal(missingShareEverywhere.normalized.source_status, "partially_located");
-  assert.deepEqual(missingShareEverywhere.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "" });
-  assert.equal(validateReadOperationProbe({
+  assert.deepEqual(missingShareEverywhere.normalized.interaction_metrics, { likes: "10", comments: "2", collects: "3", shares: "未显示" });
+  const missingShareValidation = validateReadOperationProbe({
     site_id: "xiaohongshu",
     operation_id: "xhs_read_note_detail",
     detail_ref: opaqueRef("detail_ref"),
@@ -856,7 +856,8 @@ test("observes XHS detail Vue and note Pinia readiness without returning store c
     ...missingShareEverywhere,
     operation_response_status: 200,
     operation_response_url: `${location.origin}${location.pathname}`
-  }).status, "completed");
+  });
+  assert.equal(missingShareValidation.status, "completed");
 
   const withoutNoteStore = evaluate({ __PINIA__: { _s: new Map([["search", {}]]) } }, { ...document, querySelector: (selector: string) => selector === "#app" ? { __vue_app__: { config: { globalProperties: {} } } } : document.querySelector(selector) }, location);
   assert.equal(withoutNoteStore.vue_ready, true);
