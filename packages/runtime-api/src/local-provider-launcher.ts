@@ -916,6 +916,9 @@ export function validateReadOperationProbe(
       if (observation.xhs_response.failure_class !== "empty_result" || observation.list_failure === "empty_result") {
         return observation.xhs_response;
       }
+      if (observation.list_failure === "page_not_ready") {
+        return { status: "unavailable", failure_class: "page_not_ready", message: "The Xiaohongshu search page is still settling after an empty response.", retryable: true };
+      }
       return { status: "unavailable", failure_class: "site_changed", message: "The Xiaohongshu search response and rendered page disagree about whether results exist.", retryable: false };
     }
     if (observation.list_failure === "empty_result") {
@@ -1356,7 +1359,9 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     // not evidence that the feed contract changed.
     // The feed can include promoted or non-note entries alongside valid note
     // cards. Only the canonical ids and targets consumed below are trusted.
-    const listFailure = feedIds.length === 0 ? 'empty_result' : detailUrls.length === 0 || searchItems.length !== detailUrls.length ? 'page_not_ready' : undefined;
+    const listFailure = feedIds.length === 0
+      ? pageTargets.size === 0 ? 'empty_result' : 'page_not_ready'
+      : detailUrls.length === 0 || searchItems.length !== detailUrls.length ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";
     const challengeSurface = typeof document.querySelectorAll === 'function' && Array.from(document.querySelectorAll('[class*="captcha"], [id*="captcha"], [class*="challenge"], [id*="challenge"], [class*="security-check"], [id*="security-check"]')).some((element) => {
