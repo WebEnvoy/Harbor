@@ -759,8 +759,8 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
             validation.status === "unavailable" &&
             validation.failure_class === "page_not_ready" &&
             value.pathname === new URL(input.target_url).pathname &&
-            value.rendered_surface === true &&
-            isPendingXiaohongshuInitialization(value)
+            value.login_like === false &&
+            value.challenge_like === false
           ) {
             await new Promise((resolve) => setTimeout(resolve, 250));
             continue;
