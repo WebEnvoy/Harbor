@@ -1146,9 +1146,11 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
         return;
       }
       if (DelayedNavigationAckCdpWebSocket.detailMode) {
-        const ready = ++DelayedNavigationAckCdpWebSocket.detailEvaluationCount > 1 &&
+        const evaluationCount = ++DelayedNavigationAckCdpWebSocket.detailEvaluationCount;
+        const documentReady = evaluationCount > 1;
+        const ready = evaluationCount > 2 &&
           DelayedNavigationAckCdpWebSocket.detailRequestContinued;
-        if (DelayedNavigationAckCdpWebSocket.detailEvaluationCount === 1) {
+        if (evaluationCount === 1) {
           queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
             data: JSON.stringify({
               method: "Fetch.requestPaused",
@@ -1165,8 +1167,8 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
             value: {
               origin: "https://www.xiaohongshu.com",
               pathname: "/explore/0123456789abcdef01234567",
-              ready: true,
-              rendered_surface: true,
+              ready: documentReady,
+              rendered_surface: documentReady,
               login_like: false,
               challenge_like: false,
               vue_ready: ready,
@@ -1344,7 +1346,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
       assert.equal(detail.page.current_url, "https://www.xiaohongshu.com/explore/0123456789abcdef01234567");
       assert.equal(JSON.stringify(detail.page).includes("private-navigation-token"), false);
     }
-    assert.equal(DelayedNavigationAckCdpWebSocket.detailEvaluationCount, 2);
+    assert.equal(DelayedNavigationAckCdpWebSocket.detailEvaluationCount, 3);
     assert.equal(DelayedNavigationAckCdpWebSocket.detailRequestContinued, true);
     DelayedNavigationAckCdpWebSocket.detailMode = false;
 
