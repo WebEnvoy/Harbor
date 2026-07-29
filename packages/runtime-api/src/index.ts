@@ -85,6 +85,7 @@ import {
   type RuntimeSessionUnavailable,
   type ValidationRuntimeFacts
 } from "./runtime-session.js";
+import { isRuntimeSessionReadable } from "./runtime-session-types.js";
 import {
   appRuntimeStatusFixture,
   coreRuntimeFacts,
@@ -755,7 +756,7 @@ export class HarborRuntime {
       managedIdentity.site_binding.origin !== admission.entry.allowed_origin
     ) return "target_origin_not_allowed";
     if (
-      (session.facts.lifecycle_state !== "active" && session.facts.lifecycle_state !== "idle") ||
+      !isRuntimeSessionReadable(session.facts) ||
       session.facts.availability.cdp !== "available" ||
       session.facts.current_error
     ) return "session_not_ready";
@@ -1114,7 +1115,7 @@ function hasStableReadOperationController(session: RuntimeSessionRecord): boolea
     session.facts.control_lock.state === "held" &&
     session.facts.control_lock.owner === session.facts.control_owner &&
     Boolean(session.facts.control_lock.holder_ref) &&
-    session.facts.lifecycle_state === "active";
+    isRuntimeSessionReadable(session.facts);
 }
 
 function requestIdentity(input: { site_id: string; operation_id: string }): { site_id: string; operation_id: string } {
