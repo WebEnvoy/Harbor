@@ -487,6 +487,48 @@ test("correlates the official Vue Pinia search store without exposing store cont
   assert.equal(hydrating.list_valid, false);
   assert.equal(hydrating.list_failure, "page_not_ready");
 
+  const incompleteAndValid = evaluate({ __PINIA__: { _s: new Map([["search", {
+    searchValue: query,
+    feeds: [
+      { id: "aaaaaaaaaaaaaaaaaaaaaaaa", xsec_token: "opaque-navigation-token=", noteCard: { id: "aaaaaaaaaaaaaaaaaaaaaaaa" } },
+      noteFeed(noteIds[0]!, 0)
+    ]
+  }]]) } }, {
+    ...document,
+    querySelectorAll: (selector: string) => selector === 'a[href*="/explore/"]'
+      ? [{ getAttribute: () => "/explore/aaaaaaaaaaaaaaaaaaaaaaaa" }, anchors[0]]
+      : []
+  }, {
+    origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
+  });
+  assert.equal(incompleteAndValid.list_valid, true);
+  assert.deepEqual(incompleteAndValid.detail_urls, [`https://www.xiaohongshu.com/explore/${noteIds[0]}?xsec_token=opaque-navigation-token%3D&xsec_source=pc_search`]);
+  assert.deepEqual(incompleteAndValid.search_items, [publicItems[0]]);
+
+  const conflictingFeed = evaluate({ __PINIA__: { _s: new Map([["search", {
+    searchValue: query,
+    feeds: [{
+      id: noteIds[0],
+      xsec_token: "token-a",
+      noteCard: { id: noteIds[1], xsec_token: "token-b", displayTitle: "冲突笔记" }
+    }]
+  }]]) } }, document, {
+    origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
+  });
+  assert.equal(conflictingFeed.list_failure, "page_not_ready");
+
+  const conflictingToken = evaluate({ __PINIA__: { _s: new Map([["search", {
+    searchValue: query,
+    feeds: [{
+      id: noteIds[0],
+      xsec_token: "token-a",
+      noteCard: { id: noteIds[0], xsec_token: "token-b", displayTitle: "冲突笔记" }
+    }]
+  }]]) } }, document, {
+    origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
+  });
+  assert.equal(conflictingToken.list_failure, "page_not_ready");
+
   const mixedFeeds = [{ kind: "promoted-banner" }, noteFeed(noteIds[1]!, 1), { recommendation: true }, noteFeed(noteIds[0]!, 0)];
   const virtualSubset = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: mixedFeeds }]]) } }, {
     ...document,
@@ -1466,6 +1508,11 @@ test("summarizes only XHS note ids and private navigation targets from the bound
   assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"token","note_card":{"id":"fedcba987654321001234567"}}]}}')), "site_changed");
   assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","note_id":"fedcba987654321001234567","xsec_token":"token"}]}}')), "site_changed");
   assert.equal(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"","note_card":{"id":"0123456789abcdef01234567","xsec_token":"valid-token","display_title":"公开笔记"}}]}}').status, "completed");
+  assert.deepEqual(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaa","xsec_token":"placeholder-token","note_card":{"id":"aaaaaaaaaaaaaaaaaaaaaaaa"}},{"id":"0123456789abcdef01234567","xsec_token":"valid-token","note_card":{"id":"0123456789abcdef01234567","display_title":"公开笔记"}}]}}'), {
+    status: "completed",
+    detail_urls: ["https://www.xiaohongshu.com/explore/0123456789abcdef01234567?xsec_token=valid-token&xsec_source=pc_search"],
+    search_items: [{ title: "公开笔记" }]
+  });
   assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"invalid=token"}]}}')), "site_changed");
   assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"token-a","note_card":{"id":"0123456789abcdef01234567","xsec_token":"token-b"}}]}}')), "site_changed");
   assert.equal(failureClass(summarizeXhsSearchResponse('{"success":true,"code":0,"data":{"items":[{"id":"0123456789abcdef01234567","xsec_token":"token","note_card":{"id":"0123456789abcdef01234567"}}]}}')), "field_missing");

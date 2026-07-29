@@ -1312,9 +1312,11 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const noteCandidate = (feed) => {
       const card = unwrap(feed?.noteCard) || unwrap(feed?.note_card) || {};
       const values = [unwrap(feed?.id), unwrap(feed?.noteId), unwrap(feed?.note_id), unwrap(card?.id), unwrap(card?.noteId), unwrap(card?.note_id)];
-      const value = values.find((entry) => entry !== undefined && entry !== null && entry !== "");
+      const noteIds = values.filter((entry) => typeof entry === "string" && /^[a-f0-9]{24}$/i.test(entry)).map((entry) => entry.toLowerCase());
+      const value = noteIds[0];
       const tokenValues = [unwrap(feed?.xsecToken), unwrap(feed?.xsec_token), unwrap(card?.xsecToken), unwrap(card?.xsec_token)];
-      const xsecToken = tokenValues.find((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 512 && /^[A-Za-z0-9_-]+={0,2}$/.test(entry));
+      const tokens = tokenValues.filter((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 512 && /^[A-Za-z0-9_-]+={0,2}$/.test(entry));
+      const xsecToken = tokens[0];
       const user = unwrap(card?.user) || {};
       const interactions = unwrap(card?.interactInfo) || unwrap(card?.interact_info) || {};
       const title = clean(unwrap(card?.displayTitle) || unwrap(card?.display_title) || unwrap(card?.title), 200);
@@ -1326,13 +1328,14 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       const publicItem = title ? { title, ...(author ? { author_display_name: author } : {}), ...(Object.keys(interactionMetrics).length ? { interaction_metrics: interactionMetrics } : {}) } : undefined;
       const noteLike = Boolean(feed?.noteCard || feed?.note_card || values.some((entry) => entry !== undefined));
       if (!noteLike) return { kind: 'other' };
-      return typeof value === "string" && /^[a-f0-9]{24}$/i.test(value)
-        ? { kind: 'note', id: value.toLowerCase(), xsecToken, publicItem }
+      if (new Set(noteIds).size > 1 || new Set(tokens).size > 1) return { kind: 'malformed' };
+      return typeof value === "string"
+        ? { kind: 'note', id: value, xsecToken, publicItem }
         : { kind: 'malformed' };
     };
     const candidates = boundedFeeds.map(noteCandidate);
     const hasMalformedFeed = candidates.some((candidate) => candidate.kind === 'malformed');
-    const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note').map((candidate) => candidate.id);
+    const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note' && candidate.publicItem).map((candidate) => candidate.id);
     const feedIds = Array.from(new Set(allFeedIds));
     const feedTokens = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.xsecToken).map((candidate) => [candidate.id, candidate.xsecToken]));
     const feedPublicItems = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.publicItem).map((candidate) => [candidate.id, candidate.publicItem]));
@@ -1519,6 +1522,7 @@ export function summarizeXhsSearchResponse(body: string): XhsSearchResponseSumma
   if (data.items.length === 0) return xhsResponseFailure("empty_result", "Xiaohongshu search returned no notes.", false);
   const detail_urls: string[] = [];
   const search_items: XiaohongshuSearchPublicFields[] = [];
+  let missingPublicTitle = false;
   for (const item of data.items.slice(0, 60)) {
     if (!isPlainRecord(item)) continue;
     const card = isPlainRecord(item.note_card) ? item.note_card : isPlainRecord(item.noteCard) ? item.noteCard : {};
@@ -1533,7 +1537,10 @@ export function summarizeXhsSearchResponse(body: string): XhsSearchResponseSumma
     const token = tokens[0];
     if (typeof noteId !== "string" || typeof token !== "string") continue;
     const title = firstSafeSearchText([card.display_title, card.displayTitle, card.title], 200);
-    if (!title) return xhsResponseFailure("field_missing", "Xiaohongshu search item has no bounded public title.", false);
+    if (!title) {
+      missingPublicTitle = true;
+      continue;
+    }
     const user = isPlainRecord(card.user) ? card.user : {};
     const author = firstSafeSearchText([user.nickname, user.display_name, user.displayName, user.name], 100);
     const interactions = isPlainRecord(card.interact_info) ? card.interact_info : isPlainRecord(card.interactInfo) ? card.interactInfo : {};
@@ -1554,6 +1561,8 @@ export function summarizeXhsSearchResponse(body: string): XhsSearchResponseSumma
   }
   return detail_urls.length > 0
     ? { status: "completed", detail_urls, search_items }
+    : missingPublicTitle
+    ? xhsResponseFailure("field_missing", "Xiaohongshu search items have no bounded public title.", false)
     : xhsResponseFailure("site_changed", "Xiaohongshu search items have no valid detail navigation targets.", false);
 }
 
