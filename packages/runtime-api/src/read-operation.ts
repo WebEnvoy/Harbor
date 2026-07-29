@@ -667,12 +667,7 @@ function resolveTargetUrl(
     ) {
       const sourced = new URL(derived);
       sourced.pathname = url.pathname;
-      if (url.searchParams.get("source") === "web_search_result_notes") {
-        sourced.searchParams.set("source", "web_search_result_notes");
-      }
-      const legacy = new URL(sourced);
-      legacy.searchParams.delete("type");
-      if (url.toString() === sourced.toString() || url.toString() === legacy.toString()) {
+      if (url.toString() === sourced.toString()) {
         return { target_url: sourced.toString() };
       }
     }
@@ -684,7 +679,7 @@ function resolveTargetUrl(
 function deriveTargetUrl(request: AllowlistedReadOperationRequest, entry: PinnedReadOperation): string {
   const url = new URL(entry.target_schema.pathname, entry.allowed_origin);
   url.searchParams.set(entry.target_schema.public_query_parameter, request.query!);
-  if (entry.operation_id === "xhs_search_notes") url.searchParams.set("type", "51");
+  if (entry.operation_id === "xhs_search_notes") url.searchParams.set("source", "web_search_result_notes");
   if (entry.target_schema.public_city_parameter) url.searchParams.set(entry.target_schema.public_city_parameter, request.city_code!);
   return url.toString();
 }
