@@ -713,7 +713,7 @@ test("bounds provider version and page-list readback while preserving redirect f
         provider_ref: "provider_fake"
       });
       assert.ok(Date.now() - startedAt < 2000, `${path} readback must remain bounded`);
-      assert.equal(result.status, path === "/json/version" ? "unavailable" : "ready");
+      assert.equal(result.status, path === "/json/version" ? "unavailable" : "ready", JSON.stringify(result));
       if (path === "/json/list" && result.status === "ready") {
         assert.equal(result.page.status, "unavailable");
         assert.equal(result.page.error?.code, "cdp_unavailable");
@@ -816,6 +816,24 @@ test("bounds provider version and page-list readback while preserving redirect f
         await cdpTimeout.close();
       }
     }
+
+    const committedRedirectUrl = "https://www.zhipin.com/web/passport/zp/verify.html?code=35";
+    installFakeCdpWebSocket("Runtime.evaluate", committedRedirectUrl);
+    const committedRedirect = await launchLocalDedicatedProvider({
+      browser_path: browserPath,
+      headless: false,
+      timeout_ms: 500,
+      url: "https://www.zhipin.com/web/geek/job",
+      profile_ref: "profile_cdp-committed-redirect",
+      provider_ref: "provider_fake"
+    });
+    assert.equal(committedRedirect.status, "ready");
+    if (committedRedirect.status === "ready") {
+      const nextPage = await committedRedirect.openUrl("https://www.zhipin.com/web/geek/recommend");
+      assert.equal(nextPage.status, "ready");
+      assert.equal(nextPage.current_url, committedRedirectUrl);
+      await committedRedirect.close();
+    }
   } finally {
     globalThis.WebSocket = originalWebSocket;
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
@@ -838,9 +856,10 @@ test("bounds provider version and page-list readback while preserving redirect f
   }
 });
 
-function installFakeCdpWebSocket(ignoredMethod: string): void {
+function installFakeCdpWebSocket(ignoredMethod: string, redirectUrl?: string): void {
   class FakeCdpWebSocket extends EventTarget {
     readyState = 0;
+    private currentUrl = "about:blank";
 
     constructor(_url: string | URL) {
       super();
@@ -851,10 +870,16 @@ function installFakeCdpWebSocket(ignoredMethod: string): void {
     }
 
     send(payload: string): void {
-      const message = JSON.parse(payload) as { id: number; method: string };
+      const message = JSON.parse(payload) as { id: number; method: string; params?: { url?: string } };
       if (message.method === ignoredMethod) return;
+      if (message.method === "Page.navigate") this.currentUrl = redirectUrl ?? message.params?.url ?? this.currentUrl;
       queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
-        data: JSON.stringify({ id: message.id, result: {} })
+        data: JSON.stringify({
+          id: message.id,
+          result: message.method === "Page.getFrameTree"
+            ? { frameTree: { frame: { url: this.currentUrl } } }
+            : {}
+        })
       })));
     }
 
@@ -868,10 +893,13 @@ function installFakeCdpWebSocket(ignoredMethod: string): void {
 
 class DelayedNavigationAckCdpWebSocket extends EventTarget {
   static ignoreFrameTree = false;
+  static bootstrapRedirectUrl = "";
   static detailMode = false;
   static detailEvaluationCount = 0;
   static detailRequestContinued = false;
   static navigationUrl = "";
+  static navigationUrls: string[] = [];
+  static pageCloseCount = 0;
   static searchResponseFinished = false;
   static responseBodyRequestedBeforeFinished = false;
   readyState = 0;
@@ -889,13 +917,15 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
     if (message.method === "Page.navigate") {
       const url = message.params?.url ?? "https://www.xiaohongshu.com/search_result?keyword=AI";
       DelayedNavigationAckCdpWebSocket.navigationUrl = url;
+      DelayedNavigationAckCdpWebSocket.navigationUrls.push(url);
+      const documentUrl = DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl || url;
       queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
         data: JSON.stringify({
           method: "Fetch.requestPaused",
           params: {
             requestId: "navigation",
             resourceType: "Document",
-            request: { url }
+            request: { url: documentUrl }
           }
         })
       })));
@@ -1048,6 +1078,11 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
       this.respond(message.id, { data: Buffer.from("fake screenshot").toString("base64") });
       return;
     }
+    if (message.method === "Page.close") {
+      DelayedNavigationAckCdpWebSocket.pageCloseCount += 1;
+      this.respond(message.id, {});
+      return;
+    }
     this.respond(message.id, {});
   }
 
@@ -1073,6 +1108,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
   const dir = mkdtempSync(join(tmpdir(), "harbor-read-navigation-ack-"));
   const newUrlMarker = join(dir, "new-url");
   const previousRoot = process.env.HARBOR_PROFILE_STORAGE_ROOT;
+  const previousHangPath = process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
   const previousWebSocketUrl = process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
   const previousNewUrlMarker = process.env.HARBOR_FAKE_BROWSER_NEW_URL_MARKER;
   const originalWebSocket = globalThis.WebSocket;
@@ -1102,7 +1138,11 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     });
     const elapsed = Date.now() - startedAt;
     assert.ok(elapsed < 500, "read operation must not wait for the delayed navigation acknowledgement");
-    assert.equal(readFileSync(newUrlMarker, "utf8"), "https://www.xiaohongshu.com/explore");
+    assert.equal(readFileSync(newUrlMarker, "utf8"), "about:blank");
+    assert.deepEqual(DelayedNavigationAckCdpWebSocket.navigationUrls.slice(0, 2), [
+      "https://www.xiaohongshu.com/explore",
+      "https://www.xiaohongshu.com/search_result?keyword=AI"
+    ]);
     assert.equal(result.status, "completed");
     assert.equal(DelayedNavigationAckCdpWebSocket.responseBodyRequestedBeforeFinished, false);
     if (result.status === "completed") {
@@ -1131,6 +1171,21 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     assert.equal(DelayedNavigationAckCdpWebSocket.detailRequestContinued, true);
     DelayedNavigationAckCdpWebSocket.detailMode = false;
 
+    DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl = "https://example.com/cross-origin";
+    const drift = await provider.probeReadOperation({
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      query: "AI",
+      target_url: "https://www.xiaohongshu.com/search_result?keyword=AI",
+      expected_origin: "https://www.xiaohongshu.com"
+    });
+    assert.equal(drift.status, "unavailable");
+    if (drift.status === "unavailable") {
+      assert.equal(drift.failure_class, "origin_drift");
+      assert.equal(drift.retryable, false);
+    }
+    DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl = "";
+
     DelayedNavigationAckCdpWebSocket.ignoreFrameTree = true;
     const boundedStartedAt = Date.now();
     const unavailable = await provider.probeReadOperation({
@@ -1144,6 +1199,35 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     assert.ok(boundedElapsed < 5500, "XHS bootstrap commit readback must remain bounded");
     assert.equal(unavailable.status, "unavailable");
     if (unavailable.status === "unavailable") assert.equal(unavailable.failure_class, "page_not_ready");
+
+    DelayedNavigationAckCdpWebSocket.ignoreFrameTree = false;
+    DelayedNavigationAckCdpWebSocket.searchResponseFinished = false;
+    process.env.HARBOR_FAKE_BROWSER_HANG_PATH = "/json/close/fake-page";
+    const cleanupProvider = await launchLocalDedicatedProvider({
+      browser_path: writeFakeBrowserExecutable(dir),
+      headless: true,
+      timeout_ms: 5000,
+      url: "about:blank",
+      profile_ref: "profile_bounded-target-cleanup",
+      provider_ref: "provider_fake"
+    });
+    assert.equal(cleanupProvider.status, "ready", JSON.stringify(cleanupProvider));
+    if (cleanupProvider.status !== "ready") throw new Error("cleanup provider should be ready");
+    const pageCloseCount = DelayedNavigationAckCdpWebSocket.pageCloseCount;
+    const cleanupStartedAt = Date.now();
+    const cleanupResult = await cleanupProvider.probeReadOperation!({
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      query: "AI",
+      target_url: "https://www.xiaohongshu.com/search_result?keyword=AI",
+      expected_origin: "https://www.xiaohongshu.com"
+    });
+    const cleanupElapsed = Date.now() - cleanupStartedAt;
+    assert.ok(cleanupElapsed < 2000, `CDP target cleanup must not wait on the stalled HTTP fallback: ${cleanupElapsed}ms ${JSON.stringify(cleanupResult)}`);
+    assert.equal(cleanupResult.status, "completed");
+    assert.ok(DelayedNavigationAckCdpWebSocket.pageCloseCount > pageCloseCount);
+    await cleanupProvider.close();
+    delete process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
 
     DelayedNavigationAckCdpWebSocket.ignoreFrameTree = false;
     DelayedNavigationAckCdpWebSocket.detailMode = true;
@@ -1177,15 +1261,20 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     await runtime.close();
   } finally {
     DelayedNavigationAckCdpWebSocket.ignoreFrameTree = false;
+    DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl = "";
     DelayedNavigationAckCdpWebSocket.detailMode = false;
     DelayedNavigationAckCdpWebSocket.detailEvaluationCount = 0;
     DelayedNavigationAckCdpWebSocket.detailRequestContinued = false;
     DelayedNavigationAckCdpWebSocket.navigationUrl = "";
+    DelayedNavigationAckCdpWebSocket.navigationUrls = [];
+    DelayedNavigationAckCdpWebSocket.pageCloseCount = 0;
     DelayedNavigationAckCdpWebSocket.searchResponseFinished = false;
     DelayedNavigationAckCdpWebSocket.responseBodyRequestedBeforeFinished = false;
     globalThis.WebSocket = originalWebSocket;
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
+    if (previousHangPath === undefined) delete process.env.HARBOR_FAKE_BROWSER_HANG_PATH;
+    else process.env.HARBOR_FAKE_BROWSER_HANG_PATH = previousHangPath;
     if (previousWebSocketUrl === undefined) delete process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL;
     else process.env.HARBOR_FAKE_BROWSER_WEBSOCKET_URL = previousWebSocketUrl;
     if (previousNewUrlMarker === undefined) delete process.env.HARBOR_FAKE_BROWSER_NEW_URL_MARKER;
