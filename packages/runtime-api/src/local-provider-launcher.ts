@@ -72,11 +72,12 @@ export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInp
     const port = await waitForDevtoolsPort(profileStorage.profileDir, launchDeadline);
     const readbackSignal = AbortSignal.timeout(remainingLaunchTime(launchDeadline));
     const version = await fetchVersion(port, readbackSignal);
+    const initialPageUrl = providerConfiguration ? providerConfigurationPageUrl(input) : input.url;
     const configurationFacts = providerConfiguration
-      ? await applyAndReadbackProviderConfiguration(port, input.url, providerConfiguration, readbackSignal)
+      ? await applyAndReadbackProviderConfiguration(port, initialPageUrl, providerConfiguration, readbackSignal)
       : [];
-    const page = await readPageFacts(port, input.url, readbackSignal);
-    let currentUrl = page.current_url ?? input.url;
+    const page = await readPageFacts(port, initialPageUrl, readbackSignal);
+    let currentUrl = page.current_url ?? initialPageUrl;
     const evidence_ref = opaqueRef("validation");
     return {
       status: "ready",
@@ -176,6 +177,20 @@ export function providerLaunchArguments(
     ...(configuration?.viewport ? [`--window-size=${configuration.viewport.width},${configuration.viewport.height}`] : []),
     configuration ? "about:blank" : input.url
   ];
+}
+
+function providerConfigurationPageUrl(input: LocalProviderLaunchInput): string {
+  try {
+    const url = new URL(input.url);
+    if (
+      input.identity_environment?.site_binding.site_id === "xiaohongshu" &&
+      url.origin === "https://www.xiaohongshu.com" &&
+      ["/search_result", "/search_result/"].includes(url.pathname)
+    ) return "https://www.xiaohongshu.com/explore";
+  } catch {
+    // URL validation remains owned by the Runtime Session boundary.
+  }
+  return input.url;
 }
 
 const SITE_RESOURCE_PROBE_DEADLINE_MS = 3000;
@@ -441,7 +456,9 @@ async function applyAndReadbackProviderConfiguration(
   }
 
   const opened = await openProviderUrl(port, requestedUrl, signal);
-  if (opened.status !== "ready") throw new Error("Identity environment configuration could not open the requested page.");
+  if (opened.status !== "ready") {
+    throw new Error(`Identity environment configuration could not open the requested page: ${opened.error?.message ?? "unknown failure"}`);
+  }
   const page = await activePage(port, requestedUrl, signal);
   if (!page.webSocketDebuggerUrl) throw new Error("Identity environment configuration has no controlled CDP page target.");
   const observed = await withCdp(page.webSocketDebuggerUrl, async (client) => {
@@ -604,17 +621,55 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
     const observation = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.enable");
       await client.send("Runtime.enable");
-      await client.send("Network.enable");
+      await client.send("Network.enable", {
+        maxTotalBufferSize: 20_000_000,
+        maxResourceBufferSize: 5_000_000,
+        enableDurableMessages: true
+      });
+      await client.send("Network.setCacheDisabled", { cacheDisabled: true });
+      await client.send("Network.setBypassServiceWorker", { bypass: true });
       let blockedRedirect = false;
-      const stopIntercepting = await interceptProviderDocumentNavigation(
-        client,
-        input.expected_origin,
-        () => { blockedRedirect = true; }
-      );
+      let xhsFetchResponse: Promise<XhsSearchResponseSummary | XhsSearchResponseFailure> | null = null;
+      await client.send("Fetch.enable", {
+        patterns: [{ urlPattern: "*", requestStage: "Request" }]
+      });
+      const stopIntercepting = client.on("Fetch.requestPaused", (event) => {
+        const requestId = typeof event.requestId === "string" ? event.requestId : "";
+        const request = event.request as { url?: unknown; method?: unknown } | undefined;
+        const url = typeof request?.url === "string" ? request.url : "";
+        const method = typeof request?.method === "string" ? request.method : "";
+        if (!requestId) return;
+        if (shouldBlockReadOperationDocumentNavigation(event.resourceType, url, input.expected_origin)) {
+          blockedRedirect = true;
+          void client.send("Fetch.failRequest", { requestId, errorReason: "Aborted" }).catch(() => undefined);
+          return;
+        }
+        if (
+          typeof event.responseStatusCode === "number" &&
+          input.operation_id === "xhs_search_notes" &&
+          method === "POST" &&
+          isOperationReadNetworkUrl(input, url)
+        ) {
+          xhsFetchResponse = readXhsSearchResponseSummary(client, requestId, "Fetch")
+            .finally(() => client.send("Fetch.continueRequest", { requestId }).catch(() => undefined));
+          return;
+        }
+        if (input.operation_id === "xhs_search_notes" && method === "POST" && isOperationReadNetworkUrl(input, url)) {
+          void client.send("Fetch.continueRequest", { requestId, interceptResponse: true }).catch(() => undefined);
+          return;
+        }
+        void client.send("Fetch.continueRequest", { requestId }).catch(() => undefined);
+      });
       let navigationStarted = false;
       let operationResponse: { requestId: string; status: number; url: string } | null = null;
       let bossDetailResponse: { requestId: string; status: number; url: string } | null = null;
+      const requestMethods = new Map<string, string>();
       const completedResponseRequests = new Set<string>();
+      const stopObservingRequests = client.on("Network.requestWillBeSent", (event) => {
+        const requestId = typeof event.requestId === "string" ? event.requestId : "";
+        const request = event.request as { method?: unknown } | undefined;
+        if (requestId && typeof request?.method === "string") requestMethods.set(requestId, request.method);
+      });
       const stopObservingResponses = client.on("Network.responseReceived", (event) => {
         const response = event.response as { url?: unknown; status?: unknown } | undefined;
         const status = typeof response?.status === "number" ? response.status : null;
@@ -626,18 +681,21 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           status !== null &&
           status >= 200 &&
           status < 300 &&
-          requestId && isOperationReadNetworkUrl(input, response?.url)
+          requestId &&
+          (input.operation_id !== "xhs_search_notes" || requestMethods.get(requestId) === "POST") &&
+          isOperationReadNetworkUrl(input, response?.url)
         ) operationResponse = { requestId, status, url: response!.url as string };
       });
       const stopObservingLoading = client.on("Network.loadingFinished", (event) => {
         if (typeof event.requestId === "string") completedResponseRequests.add(event.requestId);
       });
       const stopObservingNetwork = () => {
+        stopObservingRequests();
         stopObservingResponses();
         stopObservingLoading();
       };
       navigationStarted = true;
-      void client.send("Page.navigate", { url: input.target_url }).catch(() => undefined);
+      await navigateProviderPage(client, input.target_url);
       for (let attempt = 0; attempt < 20; attempt++) {
         if (blockedRedirect) {
           stopObservingNetwork();
@@ -678,7 +736,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         }
         if (value?.origin && value.ready && observedResponse !== null && operationBodyReady && bossDetailBodyReady) {
           const xhsResponse = input.operation_id === "xhs_search_notes"
-            ? await readXhsSearchResponseSummary(client, observedResponse.requestId)
+            ? await (xhsFetchResponse ?? readXhsSearchResponseSummary(client, observedResponse.requestId))
             : null;
           const bossResponse = input.operation_id === "boss_job_search"
             ? await readBossJobSearchResponseSummary(client, observedResponse.requestId)
@@ -828,7 +886,7 @@ async function createProviderPage(
       const stopIntercepting = expectedOrigin
         ? await interceptProviderDocumentNavigation(client, expectedOrigin, () => { blockedRedirect = true; })
         : () => undefined;
-      void client.send("Page.navigate", { url }).catch(() => undefined);
+      await navigateProviderPage(client, url);
       try {
         const committedUrl = await waitForProviderPageCommit(client, signal, () => blockedRedirect);
         if (blockedRedirect) throw new ProviderOriginDriftError("A cross-origin bootstrap redirect was blocked before navigation.");
@@ -843,6 +901,14 @@ async function createProviderPage(
     await closeProviderPage(port, page.id, page.webSocketDebuggerUrl).catch(() => undefined);
     throw cause;
   }
+}
+
+async function navigateProviderPage(client: CdpClient, url: string): Promise<void> {
+  await client.send("Runtime.enable");
+  void client.send("Runtime.evaluate", {
+    expression: `location.assign(${JSON.stringify(url)})`,
+    returnByValue: true
+  }).catch(() => undefined);
 }
 
 async function waitForProviderPageCommit(
@@ -1190,7 +1256,7 @@ function validPublicProfileUrl(value: string, authorId: string): boolean {
 
 function validMetrics(value: XiaohongshuNoteDetailPublicSummary["interaction_metrics"]): boolean {
   return [value.likes, value.comments, value.collects, value.shares].every((entry) =>
-    typeof entry === "string" && entry.length <= 40 && entry.trim() === entry && !/[\u0000-\u001f\u007f]/.test(entry)
+    typeof entry === "string" && entry.length > 0 && entry.length <= 40 && entry.trim() === entry && !/[\u0000-\u001f\u007f]/.test(entry)
   );
 }
 
@@ -1268,15 +1334,15 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       return details.some((detail) => {
         const storeAuthor = unwrap(detail.author) || unwrap(detail.user) || {};
         const storeMetrics = unwrap(detail.interaction_metrics) || unwrap(detail.interactInfo) || unwrap(detail.metrics) || {};
-        const metric = (primary, fallback) => {
-          const value = unwrap(primary) ?? unwrap(fallback);
+        const metric = (...values) => {
+          const value = values.map(unwrap).find((entry) => entry !== undefined && entry !== null);
           return typeof value === "number" && Number.isFinite(value) ? String(value).slice(0, 40) : clean(value, 40);
         };
         const metrics = {
-          likes: metric(storeMetrics.likes, storeMetrics.likedCount),
-          comments: metric(storeMetrics.comments, storeMetrics.commentCount),
-          collects: metric(storeMetrics.collects, storeMetrics.collectedCount),
-          shares: metric(storeMetrics.shares, storeMetrics.shareCount)
+          likes: metric(storeMetrics.likes, storeMetrics.likedCount, storeMetrics.liked_count),
+          comments: metric(storeMetrics.comments, storeMetrics.commentCount, storeMetrics.comment_count),
+          collects: metric(storeMetrics.collects, storeMetrics.collectedCount, storeMetrics.collected_count),
+          shares: metric(storeMetrics.shares, storeMetrics.shareCount, storeMetrics.share_count)
         };
         const matches = clean(unwrap(detail.note_id) || unwrap(detail.noteId) || unwrap(detail.id), 64) === noteId &&
           clean(unwrap(detail.title), 200) === title && sameBoundedBody(body, clean(unwrap(detail.body_summary) || unwrap(detail.desc) || unwrap(detail.description) || unwrap(detail.body), 2000)) &&
@@ -1291,9 +1357,15 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const piniaReady = noteStores.length > 0;
     const storeMatched = noteStores.some(matchesStore);
     const interactionMetrics = matchedMetrics ? { likes: likes || matchedMetrics.likes, comments: comments || matchedMetrics.comments, collects: collects || matchedMetrics.collects, shares: shares || matchedMetrics.shares } : undefined;
+    const publicInteractionMetrics = interactionMetrics ? {
+      likes: interactionMetrics.likes || "未显示",
+      comments: interactionMetrics.comments || "未显示",
+      collects: interactionMetrics.collects || "未显示",
+      shares: interactionMetrics.shares || "未显示"
+    } : undefined;
     const metricsLocated = Boolean(likes && comments && collects && shares);
     const normalizedTitle = title || clean(body, 200);
-    const normalized = storeMatched && normalizedTitle && body && author && authorId && profileUrl && interactionMetrics && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title: normalizedTitle, summary: clean(body, 500), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: interactionMetrics, source_status: metricsLocated ? "located" : "partially_located" } : undefined;
+    const normalized = storeMatched && normalizedTitle && body && author && authorId && profileUrl && publicInteractionMetrics && /^[A-Za-z0-9]+$/.test(noteId) ? { kind: "xiaohongshu_note_detail", canonical_url: canonicalUrl, note_id: noteId, title: normalizedTitle, summary: clean(body, 500), body_summary: body, author: { display_name: author, author_id: authorId, profile_url: profileUrl }, interaction_metrics: publicInteractionMetrics, source_status: metricsLocated ? "located" : "partially_located" } : undefined;
     return { origin: location.origin, pathname: location.pathname, ready: document.readyState !== 'loading', rendered_surface: rendered, login_like: login, challenge_like: challenge, vue_ready: Boolean(vue), pinia_ready: piniaReady, normalized };`
       : `
     const title = pick('.job-name, .job-detail-box h1, [class*="job-title"]', 200);
@@ -1574,9 +1646,13 @@ type BossJobSearchResponseFailure = {
 const MAX_BOSS_RESPONSE_BYTES = 512 * 1024;
 const MAX_XHS_RESPONSE_BYTES = 512 * 1024;
 
-async function readXhsSearchResponseSummary(client: CdpClient, requestId: string): Promise<XhsSearchResponseSummary | XhsSearchResponseFailure> {
+async function readXhsSearchResponseSummary(
+  client: CdpClient,
+  requestId: string,
+  domain: "Network" | "Fetch" = "Network"
+): Promise<XhsSearchResponseSummary | XhsSearchResponseFailure> {
   try {
-    const response = await client.send("Network.getResponseBody", { requestId });
+    const response = await client.send(`${domain}.getResponseBody`, { requestId });
     const encoded = typeof response.body === "string" ? response.body : "";
     const bytes = response.base64Encoded === true ? Buffer.from(encoded, "base64") : Buffer.from(encoded, "utf8");
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_XHS_RESPONSE_BYTES) return xhsResponseFailure("network_resource_unavailable", "Xiaohongshu search response is empty or exceeds the summary read limit.", true);
