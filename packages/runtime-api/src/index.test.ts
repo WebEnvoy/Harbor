@@ -872,6 +872,8 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
   static detailEvaluationCount = 0;
   static detailRequestContinued = false;
   static navigationUrl = "";
+  static searchResponseFinished = false;
+  static responseBodyRequestedBeforeFinished = false;
   readyState = 0;
 
   constructor(_url: string | URL) {
@@ -921,6 +923,11 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
       return;
     }
     if (message.method === "Network.getResponseBody" && message.params?.requestId === "search-response") {
+      if (!DelayedNavigationAckCdpWebSocket.searchResponseFinished) {
+        DelayedNavigationAckCdpWebSocket.responseBodyRequestedBeforeFinished = true;
+        this.respondError(message.id, -32000, "No resource with given identifier found");
+        return;
+      }
       this.respond(message.id, {
         body: JSON.stringify({
           success: true,
@@ -998,6 +1005,17 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
         });
         return;
       }
+      if (!DelayedNavigationAckCdpWebSocket.searchResponseFinished) {
+        setTimeout(() => {
+          DelayedNavigationAckCdpWebSocket.searchResponseFinished = true;
+          this.dispatchEvent(new MessageEvent("message", {
+            data: JSON.stringify({
+              method: "Network.loadingFinished",
+              params: { requestId: "search-response" }
+            })
+          }));
+        }, 10);
+      }
       this.respond(message.id, {
       result: {
         value: {
@@ -1043,6 +1061,12 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
       data: JSON.stringify({ id, result })
     })));
   }
+
+  private respondError(id: number, code: number, message: string): void {
+    queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
+      data: JSON.stringify({ id, error: { code, message } })
+    })));
+  }
 }
 
 test("bootstraps XHS reads through the canonical explore page without waiting for navigation acknowledgement", async () => {
@@ -1080,6 +1104,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     assert.ok(elapsed < 500, "read operation must not wait for the delayed navigation acknowledgement");
     assert.equal(readFileSync(newUrlMarker, "utf8"), "https://www.xiaohongshu.com/explore");
     assert.equal(result.status, "completed");
+    assert.equal(DelayedNavigationAckCdpWebSocket.responseBodyRequestedBeforeFinished, false);
     if (result.status === "completed") {
       assert.deepEqual(result.search_items, [{
         title: "公开搜索笔记",
@@ -1156,6 +1181,8 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     DelayedNavigationAckCdpWebSocket.detailEvaluationCount = 0;
     DelayedNavigationAckCdpWebSocket.detailRequestContinued = false;
     DelayedNavigationAckCdpWebSocket.navigationUrl = "";
+    DelayedNavigationAckCdpWebSocket.searchResponseFinished = false;
+    DelayedNavigationAckCdpWebSocket.responseBodyRequestedBeforeFinished = false;
     globalThis.WebSocket = originalWebSocket;
     if (previousRoot === undefined) delete process.env.HARBOR_PROFILE_STORAGE_ROOT;
     else process.env.HARBOR_PROFILE_STORAGE_ROOT = previousRoot;
