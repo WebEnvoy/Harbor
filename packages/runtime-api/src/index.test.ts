@@ -902,6 +902,7 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
   static ignoreFrameTree = false;
   static bootstrapRedirectUrl = "";
   static bootstrapRedirectMethod = "";
+  static bootstrapRedirectOnNavigation = 0;
   static detailMode = false;
   static detailEvaluationCount = 0;
   static detailRequestContinued = false;
@@ -937,9 +938,13 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
     const assignedUrl = assignedLocation(message);
     if (assignedUrl) {
       const url = assignedUrl;
+      const navigationIndex = DelayedNavigationAckCdpWebSocket.navigationUrls.length + 1;
       DelayedNavigationAckCdpWebSocket.navigationUrl = url;
       DelayedNavigationAckCdpWebSocket.navigationUrls.push(url);
-      const documentUrl = DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl || url;
+      const redirectApplies = Boolean(DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl) &&
+        (DelayedNavigationAckCdpWebSocket.bootstrapRedirectOnNavigation === 0 ||
+          DelayedNavigationAckCdpWebSocket.bootstrapRedirectOnNavigation === navigationIndex);
+      const documentUrl = redirectApplies ? DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl : url;
       queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
         data: JSON.stringify({
           method: "Fetch.requestPaused",
@@ -948,7 +953,7 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
             resourceType: "Document",
             request: {
               url: documentUrl,
-              ...(DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod
+              ...(redirectApplies && DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod
                 ? { method: DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod }
                 : {})
             }
@@ -1345,6 +1350,8 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
 
     DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl = "https://so.xiaohongshu.com/api/sns/web/v2/search/notes";
     DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod = "POST";
+    DelayedNavigationAckCdpWebSocket.bootstrapRedirectOnNavigation =
+      DelayedNavigationAckCdpWebSocket.navigationUrls.length + 2;
     const drift = await provider.probeReadOperation({
       site_id: "xiaohongshu",
       operation_id: "xhs_search_notes",
@@ -1359,6 +1366,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     }
     DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl = "";
     DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod = "";
+    DelayedNavigationAckCdpWebSocket.bootstrapRedirectOnNavigation = 0;
 
     DelayedNavigationAckCdpWebSocket.ignoreFrameTree = true;
     const boundedStartedAt = Date.now();
@@ -1440,6 +1448,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     DelayedNavigationAckCdpWebSocket.ignoreFrameTree = false;
     DelayedNavigationAckCdpWebSocket.bootstrapRedirectUrl = "";
     DelayedNavigationAckCdpWebSocket.bootstrapRedirectMethod = "";
+    DelayedNavigationAckCdpWebSocket.bootstrapRedirectOnNavigation = 0;
     DelayedNavigationAckCdpWebSocket.detailMode = false;
     DelayedNavigationAckCdpWebSocket.detailEvaluationCount = 0;
     DelayedNavigationAckCdpWebSocket.detailRequestContinued = false;
