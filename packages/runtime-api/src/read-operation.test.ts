@@ -542,6 +542,17 @@ test("correlates the official Vue Pinia search store without exposing store cont
   });
   assert.equal(conflictingToken.list_failure, "page_not_ready");
 
+  const conflictingTokensAcrossFeeds = evaluate({ __PINIA__: { _s: new Map([["search", {
+    searchValue: query,
+    feeds: [
+      { ...noteFeed(noteIds[0]!, 0), xsec_token: "token-a" },
+      { ...noteFeed(noteIds[0]!, 0), xsec_token: "token-b" }
+    ]
+  }]]) } }, document, {
+    origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
+  });
+  assert.equal(conflictingTokensAcrossFeeds.list_failure, "page_not_ready");
+
   const mixedFeeds = [{ kind: "promoted-banner" }, noteFeed(noteIds[1]!, 1), { recommendation: true }, noteFeed(noteIds[0]!, 0)];
   const virtualSubset = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: mixedFeeds }]]) } }, {
     ...document,
