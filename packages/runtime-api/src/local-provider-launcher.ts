@@ -623,7 +623,8 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       let navigationStarted = false;
       let operationResponse: { requestId: string; status: number; url: string } | null = null;
       let bossDetailResponse: { requestId: string; status: number; url: string } | null = null;
-      const stopObservingNetwork = client.on("Network.responseReceived", (event) => {
+      const completedResponseRequests = new Set<string>();
+      const stopObservingResponses = client.on("Network.responseReceived", (event) => {
         const response = event.response as { url?: unknown; status?: unknown } | undefined;
         const status = typeof response?.status === "number" ? response.status : null;
         const requestId = typeof event.requestId === "string" ? event.requestId : "";
@@ -637,6 +638,13 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
           requestId && isOperationReadNetworkUrl(input, response?.url)
         ) operationResponse = { requestId, status, url: response!.url as string };
       });
+      const stopObservingLoading = client.on("Network.loadingFinished", (event) => {
+        if (typeof event.requestId === "string") completedResponseRequests.add(event.requestId);
+      });
+      const stopObservingNetwork = () => {
+        stopObservingResponses();
+        stopObservingLoading();
+      };
       navigationStarted = true;
       void client.send("Page.navigate", { url: input.target_url }).catch(() => undefined);
       for (let attempt = 0; attempt < 20; attempt++) {
@@ -668,12 +676,16 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
         } } | undefined)?.value;
         const observedResponse = operationResponse as { requestId: string; status: number; url: string } | null;
         const observedBossDetailResponse = bossDetailResponse as { requestId: string; status: number; url: string } | null;
+        const operationBodyReady = input.operation_id !== "xhs_search_notes" && input.operation_id !== "boss_job_search" ||
+          observedResponse !== null && completedResponseRequests.has(observedResponse.requestId);
+        const bossDetailBodyReady = input.operation_id !== "boss_read_job_detail" ||
+          observedBossDetailResponse !== null && completedResponseRequests.has(observedBossDetailResponse.requestId);
         if (value?.origin && (value.challenge_like || value.login_like)) {
           stopObservingNetwork();
           stopIntercepting();
           return { validation: validateReadOperationProbe(input, value) };
         }
-        if (value?.origin && value.ready && observedResponse !== null && (input.operation_id !== "boss_read_job_detail" || observedBossDetailResponse !== null)) {
+        if (value?.origin && value.ready && observedResponse !== null && operationBodyReady && bossDetailBodyReady) {
           const xhsResponse = input.operation_id === "xhs_search_notes"
             ? await readXhsSearchResponseSummary(client, observedResponse.requestId)
             : null;
