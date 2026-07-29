@@ -19,6 +19,7 @@ import {
 } from "./index.js";
 import { classifyLaunchFailure } from "./provider-management.js";
 import { resolveRuntimeProviderBinding } from "./local-provider-launcher.js";
+import { trustLocalProviderReadProbe } from "./read-operation-probe-trust.js";
 
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const cloakPath = "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium";
@@ -1625,6 +1626,102 @@ test("reuses, locks, releases, and stops identity environment sessions", async (
   assert.equal(stopped.lifecycle_state, "closed");
   assert.equal(stopped.control_lock.state, "closed");
   assert.equal(detailTargets.consume({ detail_ref: stopRef, runtime_session_ref: opened.runtime_session_ref, site_id: "boss", operation_id: "boss_read_job_detail", now: 4_000 }), "detail_ref_expired");
+});
+
+test("executes a detail read while a reused session is locked by Core", async () => {
+  let probeCalls = 0;
+  const launcher = capturingLauncher([]);
+  const runtime = new HarborRuntime(async (input) => {
+    const launched = await launcher(input);
+    if (launched.status === "unavailable") return launched;
+    return {
+      ...launched,
+      execution_surface: "local_provider",
+      probeReadOperation: trustLocalProviderReadProbe(async (probe) => {
+        probeCalls += 1;
+        return {
+          status: "unavailable",
+          failure_class: "page_not_ready",
+          message: "Fixture probe reached.",
+          retryable: true,
+          page: {
+            current_url: probe.target_url,
+            title: "Fixture note",
+            status: "ready",
+            facts: [{ key: "page.status", source: "validation_evidence", value: "operation_probe_ready" }]
+          }
+        };
+      })
+    };
+  });
+  runtime.createLocalIdentityEnvironment({
+    ...providerFixture({ [chromePath]: { executable: true } }),
+    identity_environment_ref: "identity-env_xhs-locked-read",
+    execution_identity_ref: "execution-identity_xhs-locked-read",
+    profile_ref: "profile_xhs-locked-read",
+    profile_storage_ref: "profile-storage_xhs-locked-read",
+    site: {
+      site_id: "xiaohongshu",
+      origin: "https://www.xiaohongshu.com",
+      display_name: "小红书"
+    },
+    login_state: "logged_in",
+    storage_state: "present"
+  });
+  const opened = await runtime.openManagedIdentityEnvironmentSession({
+    identity_environment_ref: "identity-env_xhs-locked-read",
+    url: "https://www.xiaohongshu.com/search_result?keyword=%E7%BE%8E%E9%A3%9F&source=web_search_result_notes",
+    control_owner: "core_task",
+    holder_ref: "search_run",
+    headless: false
+  });
+  assert.equal("status" in opened, false);
+  if ("status" in opened) throw new Error("managed Core session should open");
+  const detailTargets = (runtime as unknown as { detailReadTargets: {
+    register: (input: {
+      runtime_session_ref: string;
+      site_id: "xiaohongshu";
+      search_operation_id: "xhs_search_notes";
+      targets: { canonical_url: string }[];
+    }) => string[];
+  } }).detailReadTargets;
+  const [detailRef] = detailTargets.register({
+    runtime_session_ref: opened.runtime_session_ref,
+    site_id: "xiaohongshu",
+    search_operation_id: "xhs_search_notes",
+    targets: [{ canonical_url: "https://www.xiaohongshu.com/explore/0123456789abcdef01234567" }]
+  });
+  const released = runtime.releaseSession(opened.runtime_session_ref, { control_owner: "core_task" });
+  assert.equal("status" in released, false);
+  const locked = runtime.lockSession(opened.runtime_session_ref, {
+    control_owner: "core_task",
+    holder_ref: "detail_run"
+  });
+  assert.equal("status" in locked, false);
+  if ("status" in locked) throw new Error("Core should lock the released session");
+  assert.equal(locked.lifecycle_state, "locked");
+
+  const mismatched = await runtime.executeAllowlistedReadOperation(opened.runtime_session_ref, {
+    site_id: "xiaohongshu",
+    operation_id: "xhs_read_note_detail",
+    detail_ref: detailRef,
+    holder_ref: "other_detail_run"
+  });
+  assert.equal(mismatched.status, "unavailable");
+  if (mismatched.status !== "unavailable") throw new Error("a different Core holder must fail closed");
+  assert.equal(mismatched.failure_class, "session_user_controlled");
+  assert.equal(probeCalls, 0);
+
+  const result = await runtime.executeAllowlistedReadOperation(opened.runtime_session_ref, {
+    site_id: "xiaohongshu",
+    operation_id: "xhs_read_note_detail",
+    detail_ref: detailRef,
+    holder_ref: "detail_run"
+  });
+  assert.equal(result.status, "unavailable");
+  if (result.status !== "unavailable") throw new Error("fixture probe should return its page readiness state");
+  assert.equal(result.failure_class, "page_not_ready");
+  assert.equal(probeCalls, 1);
 });
 
 test("replaces visibility-incompatible identity sessions without leaking viewer or control state", async () => {

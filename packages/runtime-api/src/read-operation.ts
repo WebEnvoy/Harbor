@@ -70,6 +70,7 @@ export interface AllowlistedReadOperationRequest {
   limit?: number;
   detail_ref?: string;
   url?: string;
+  holder_ref?: string;
 }
 
 export interface PinnedReadOperation {
@@ -625,7 +626,7 @@ function isOpaqueRef(value: string): boolean {
 
 function parseRequest(input: unknown): AllowlistedReadOperationRequest | ReadOperationFailureClass {
   if (!isRecord(input)) return "invalid_request";
-  const allowedKeys = new Set(["site_id", "operation_id", "query", "city_code", "limit", "detail_ref", "url"]);
+  const allowedKeys = new Set(["site_id", "operation_id", "query", "city_code", "limit", "detail_ref", "url", "holder_ref"]);
   if (Object.keys(input).some((key) => !allowedKeys.has(key))) return "invalid_request";
   if (!isSiteId(input.site_id) || !isOperationId(input.operation_id)) return "invalid_request";
   const detail = input.operation_id === "xhs_read_note_detail" || input.operation_id === "boss_read_job_detail";
@@ -636,6 +637,7 @@ function parseRequest(input: unknown): AllowlistedReadOperationRequest | ReadOpe
   if (input.limit !== undefined && (typeof input.limit !== "number" || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 15)) return "invalid_request";
   if (input.operation_id !== "xhs_search_notes" && input.limit !== undefined) return "invalid_request";
   if (input.url !== undefined && (!isPublicText(input.url) || input.url.length > 2048)) return "invalid_request";
+  if (input.holder_ref !== undefined && (!isPublicText(input.holder_ref) || input.holder_ref.length > 200)) return "invalid_request";
   return {
     site_id: input.site_id,
     operation_id: input.operation_id,
@@ -643,7 +645,8 @@ function parseRequest(input: unknown): AllowlistedReadOperationRequest | ReadOpe
     city_code: typeof input.city_code === "string" ? input.city_code : undefined,
     limit: typeof input.limit === "number" ? input.limit : undefined,
     detail_ref: typeof input.detail_ref === "string" ? input.detail_ref : undefined,
-    url: input.url
+    url: input.url,
+    holder_ref: typeof input.holder_ref === "string" ? input.holder_ref : undefined
   };
 }
 
