@@ -604,7 +604,6 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
       await client.send("Page.enable");
       await client.send("Runtime.enable");
       await client.send("Network.enable");
-      if (input.site_id === "xiaohongshu" && !await waitForProviderPageCommit(client, bootstrapUrl)) return null;
       await client.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
       let blockedRedirect = false;
       const stopIntercepting = client.on("Fetch.requestPaused", (event) => {
@@ -819,25 +818,27 @@ async function createProviderPage(port: string, url: string, signal?: AbortSigna
   const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent("about:blank")}`, { method: "PUT", signal });
   if (!response.ok) throw new Error(`CDP read-operation target creation failed: ${response.status}`);
   const page = await response.json() as CdpPageTarget;
-  if (url === "about:blank") return page;
   if (!page.id) throw new Error("Created page has no target id.");
   try {
     if (!page.webSocketDebuggerUrl) throw new Error("Created page has no CDP websocket.");
-    await withCdp(page.webSocketDebuggerUrl, async (client) => {
+    if (url === "about:blank") return page;
+    const committedUrl = await withCdp(page.webSocketDebuggerUrl, async (client) => {
       await client.send("Page.enable");
       void client.send("Page.navigate", { url }).catch(() => undefined);
-      if (!await waitForProviderPageCommit(client, url, signal)) {
+      const committedUrl = await waitForProviderPageCommit(client, signal);
+      if (!committedUrl) {
         throw new ProviderPageCommitError("Created page did not commit the requested URL.");
       }
+      return committedUrl;
     }, signal);
-    return { ...page, url };
+    return { ...page, url: committedUrl };
   } catch (cause) {
     await closeProviderPage(port, page.id).catch(() => undefined);
     throw cause;
   }
 }
 
-async function waitForProviderPageCommit(client: CdpClient, targetUrl: string, signal?: AbortSignal): Promise<boolean> {
+async function waitForProviderPageCommit(client: CdpClient, signal?: AbortSignal): Promise<string | null> {
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
     signal?.throwIfAborted();
@@ -849,15 +850,25 @@ async function waitForProviderPageCommit(client: CdpClient, targetUrl: string, s
       continue;
     }
     const frame = (result.frameTree as { frame?: { url?: unknown } } | undefined)?.frame;
-    if (typeof frame?.url === "string" && urlsReferToSamePage(frame.url, targetUrl)) return true;
+    if (typeof frame?.url === "string" && isCommittedHttpPage(frame.url)) return frame.url;
     await abortableDelay(Math.min(250, Math.max(1, deadline - Date.now())), signal);
   }
-  return false;
+  return null;
 }
 
 async function closeProviderPage(port: string, targetId: string): Promise<void> {
-  const response = await fetch(`http://127.0.0.1:${port}/json/close/${encodeURIComponent(targetId)}`);
+  const response = await fetch(`http://127.0.0.1:${port}/json/close/${encodeURIComponent(targetId)}`, {
+    signal: AbortSignal.timeout(1000)
+  });
   if (!response.ok) throw new Error(`CDP read-operation target cleanup failed: ${response.status}`);
+}
+
+function isCommittedHttpPage(value: string): boolean {
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
 }
 
 export function shouldBlockReadOperationDocumentNavigation(resourceType: unknown, value: string, expectedOrigin: string): boolean {
