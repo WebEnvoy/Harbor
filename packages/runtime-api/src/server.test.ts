@@ -694,6 +694,13 @@ test("keeps a confirmed headed session trusted across separately released Core r
       reuse_existing: true
     });
     assert.equal(reused.runtime_session_ref, session.runtime_session_ref);
+    const lockedSiteFacts = await getJson(
+      `${running.url}/runtime/sessions/${session.runtime_session_ref}/site-resource-facts?site_id=boss&task_kind=job_search`
+    );
+    assert.equal(
+      lockedSiteFacts.resource_facts.find((fact: { key: string }) => fact.key === "runtime.execution_surface.available")?.state,
+      "available"
+    );
     const admitted = await postReadOperation(`${running.url}/runtime/sessions/${session.runtime_session_ref}/read-operations`, {
       site_id: "boss",
       operation_id: "boss_job_search",
