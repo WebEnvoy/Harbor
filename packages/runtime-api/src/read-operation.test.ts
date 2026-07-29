@@ -52,7 +52,7 @@ test("admits only the two pinned read-only operation identities", () => {
   if (typeof xiaohongshu === "string") throw new Error("Pinned Xiaohongshu operation was unexpectedly rejected.");
   assert.equal(xiaohongshu.entry.operation_mode, "read");
   assert.equal(xiaohongshu.entry.lock_ref, "lode://lock/site-capability/xiaohongshu/search-notes@0.1.0");
-  assert.equal(xiaohongshu.target_url, "https://www.xiaohongshu.com/search_result?keyword=AI+tools&type=51");
+  assert.equal(xiaohongshu.target_url, "https://www.xiaohongshu.com/search_result?keyword=AI+tools&source=web_search_result_notes");
 
   const boss = admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", city_code: "101010100" });
   assert.equal(typeof boss === "string", false);
@@ -83,7 +83,7 @@ test("fails closed for invalid target URLs and cross-origin requests", () => {
     });
     assert.equal(
       typeof sourcedSearch === "string" ? sourcedSearch : sourcedSearch.target_url,
-      `https://www.xiaohongshu.com${pathname}?keyword=AI+tools&type=51&source=web_search_result_notes`
+      `https://www.xiaohongshu.com${pathname}?keyword=AI+tools&source=web_search_result_notes`
     );
   }
   for (const suffix of ["source=forged", "source=web_search_result_notes&source=web_search_result_notes", "source=web_search_result_notes&extra=1"]) {
@@ -97,6 +97,15 @@ test("fails closed for invalid target URLs and cross-origin requests", () => {
       "target_path_not_allowlisted"
     );
   }
+  assert.equal(
+    admitAllowlistedReadOperation({
+      site_id: "xiaohongshu",
+      operation_id: "xhs_search_notes",
+      query: "美食",
+      url: "https://www.xiaohongshu.com/search_result?keyword=%25E7%25BE%258E%25E9%25A3%259F&source=web_search_result_notes"
+    }),
+    "target_path_not_allowlisted"
+  );
   assert.equal(
     admitAllowlistedReadOperation({ site_id: "boss", operation_id: "boss_job_search", query: "AI tools", city_code: "101010100", url: "http://www.zhipin.com/web/geek/jobs" }),
     "target_url_invalid"
