@@ -505,6 +505,19 @@ test("correlates the official Vue Pinia search store without exposing store cont
   assert.deepEqual(incompleteAndValid.detail_urls, [`https://www.xiaohongshu.com/explore/${noteIds[0]}?xsec_token=opaque-navigation-token%3D&xsec_source=pc_search`]);
   assert.deepEqual(incompleteAndValid.search_items, [publicItems[0]]);
 
+  const nonstandardAndValid = evaluate({ __PINIA__: { _s: new Map([["search", {
+    searchValue: query,
+    feeds: [{ noteCard: { id: "not-a-note" } }, noteFeed(noteIds[0]!, 0)]
+  }]]) } }, {
+    ...document,
+    querySelectorAll: (selector: string) => selector === 'a[href*="/explore/"]' ? [anchors[0]] : []
+  }, {
+    origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
+  });
+  assert.equal(nonstandardAndValid.list_valid, true);
+  assert.deepEqual(nonstandardAndValid.detail_urls, [`https://www.xiaohongshu.com/explore/${noteIds[0]}?xsec_token=opaque-navigation-token%3D&xsec_source=pc_search`]);
+  assert.deepEqual(nonstandardAndValid.search_items, [publicItems[0]]);
+
   const conflictingFeed = evaluate({ __PINIA__: { _s: new Map([["search", {
     searchValue: query,
     feeds: [{
@@ -528,6 +541,17 @@ test("correlates the official Vue Pinia search store without exposing store cont
     origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
   });
   assert.equal(conflictingToken.list_failure, "page_not_ready");
+
+  const conflictingTokensAcrossFeeds = evaluate({ __PINIA__: { _s: new Map([["search", {
+    searchValue: query,
+    feeds: [
+      { ...noteFeed(noteIds[0]!, 0), xsec_token: "token-a" },
+      { ...noteFeed(noteIds[0]!, 0), xsec_token: "token-b" }
+    ]
+  }]]) } }, document, {
+    origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
+  });
+  assert.equal(conflictingTokensAcrossFeeds.list_failure, "page_not_ready");
 
   const mixedFeeds = [{ kind: "promoted-banner" }, noteFeed(noteIds[1]!, 1), { recommendation: true }, noteFeed(noteIds[0]!, 0)];
   const virtualSubset = evaluate({ __PINIA__: { _s: new Map([["search", { searchValue: query, feeds: mixedFeeds }]]) } }, {

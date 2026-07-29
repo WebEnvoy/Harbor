@@ -1331,13 +1331,17 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       if (new Set(noteIds).size > 1 || new Set(tokens).size > 1) return { kind: 'malformed' };
       return typeof value === "string"
         ? { kind: 'note', id: value, xsecToken, publicItem }
-        : { kind: 'malformed' };
+        : { kind: 'nonstandard' };
     };
     const candidates = boundedFeeds.map(noteCandidate);
     const hasMalformedFeed = candidates.some((candidate) => candidate.kind === 'malformed');
+    const hasNonstandardFeed = candidates.some((candidate) => candidate.kind === 'nonstandard');
     const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note' && candidate.publicItem).map((candidate) => candidate.id);
     const feedIds = Array.from(new Set(allFeedIds));
-    const feedTokens = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.xsecToken).map((candidate) => [candidate.id, candidate.xsecToken]));
+    const feedTokenEntries = candidates.filter((candidate) => candidate.kind === 'note' && candidate.xsecToken).map((candidate) => [candidate.id, candidate.xsecToken]);
+    const hasCrossFeedTokenConflict = feedTokenEntries.some(([id, token], index) =>
+      feedTokenEntries.slice(0, index).some(([previousId, previousToken]) => previousId === id && previousToken !== token));
+    const feedTokens = new Map(feedTokenEntries);
     const feedPublicItems = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.publicItem).map((candidate) => [candidate.id, candidate.publicItem]));
     const anchors = typeof document.querySelectorAll === "function" ? Array.from(document.querySelectorAll('a[href*="/explore/"]')).slice(0, 60) : [];
     const pageTargets = new Map();
@@ -1375,10 +1379,10 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     // not evidence that the feed contract changed.
     // The feed can include promoted or non-note entries alongside valid note
     // cards. Only the canonical ids and targets consumed below are trusted.
-    const listFailure = hasMalformedFeed
+    const listFailure = hasMalformedFeed || hasCrossFeedTokenConflict
       ? 'page_not_ready'
       : feedIds.length === 0
-      ? pageTargets.size === 0 ? 'empty_result' : 'page_not_ready'
+      ? !hasNonstandardFeed && pageTargets.size === 0 ? 'empty_result' : 'page_not_ready'
       : detailUrls.length === 0 || searchItems.length !== detailUrls.length ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";
