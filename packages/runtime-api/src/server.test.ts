@@ -722,6 +722,16 @@ test("keeps a confirmed headed session trusted across separately released Core r
       lockedSiteFacts.resource_facts.find((fact: { key: string }) => fact.key === "runtime.execution_surface.available")?.state,
       "available"
     );
+    assert.match(lockedSiteFacts.snapshot_ref, /^snapshot_/);
+    assert.equal(lockedSiteFacts.evidence_refs.length > 0, true);
+    assert.equal(
+      lockedSiteFacts.resource_facts.find((fact: { key: string }) => fact.key === "source.refs.available")?.state,
+      "available"
+    );
+    assert.equal(
+      lockedSiteFacts.resource_facts.find((fact: { key: string }) => fact.key === "evidence.snapshot_ref.available")?.state,
+      "available"
+    );
     await postJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/release`, {
       control_owner: "core_task",
       holder_ref: "run-detail"

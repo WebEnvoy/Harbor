@@ -1,4 +1,9 @@
 import { opaqueRef } from "./refs.js";
+import {
+  isRuntimeSessionReadable,
+  type LifecycleState,
+  type RuntimeSessionFacts
+} from "./runtime-session-types.js";
 
 export const HARBOR_PAGE_SCENE_REFS_SCHEMA = "harbor-page-scene-refs/v0";
 export const HARBOR_EVIDENCE_STATUS_FIXTURE_SCHEMA = "harbor-evidence-status-fixture/v0";
@@ -27,7 +32,9 @@ export interface PageSceneSessionFacts {
   runtime_session_ref: string;
   profile_ref: string;
   provider_ref: string;
-  lifecycle_state: string;
+  lifecycle_state: LifecycleState;
+  control_owner?: RuntimeSessionFacts["control_owner"];
+  control_lock?: RuntimeSessionFacts["control_lock"];
 }
 
 export interface EvidenceCapturePolicy {
@@ -211,7 +218,7 @@ export class PageSceneStore {
     if (input.evidence_policy?.capture === "deny") {
       return unavailableScene("capture_denied", "Evidence policy denied snapshot capture for this Runtime Session.", false);
     }
-    if (session.lifecycle_state !== "active" && session.lifecycle_state !== "idle") {
+    if (!isRuntimeSessionReadable(session)) {
       return unavailableScene("source_unavailable", "Runtime Session is not readable for snapshot capture.", true);
     }
 

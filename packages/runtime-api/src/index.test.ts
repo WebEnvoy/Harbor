@@ -1312,6 +1312,12 @@ test("reuses, locks, releases, and stops identity environment sessions", async (
   if ("status" in userLocked) throw new Error("released session should be lockable by user");
   assert.equal(userLocked.lifecycle_state, "locked");
   assert.equal(userLocked.control_owner, "user");
+  assert.deepEqual(runtime.captureSnapshot(opened.runtime_session_ref), {
+    status: "unavailable",
+    failure_class: "source_unavailable",
+    message: "Runtime Session is not readable for snapshot capture.",
+    retryable: true
+  });
 
   const conflict = await runtime.openIdentityEnvironmentSession({
     identity_environment,

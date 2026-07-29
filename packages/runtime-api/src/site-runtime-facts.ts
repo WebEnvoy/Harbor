@@ -1,6 +1,9 @@
 import type { SnapshotCaptureResult } from "./page-scene.js";
-import type { RuntimeSessionFacts } from "./runtime-session-types.js";
-import type { LocalProviderSiteResourceProbeResult } from "./runtime-session-types.js";
+import {
+  isRuntimeSessionReadable,
+  type LocalProviderSiteResourceProbeResult,
+  type RuntimeSessionFacts
+} from "./runtime-session-types.js";
 
 export const HARBOR_SITE_RESOURCE_FACTS_SCHEMA = "harbor-site-resource-facts/v0";
 
@@ -419,12 +422,7 @@ function inferDefaultTaskKind(site_id?: string | null): string {
 }
 
 function isRuntimeReady(session: RuntimeSessionFacts): boolean {
-  const coreTaskLockHeld = session.lifecycle_state === "locked" &&
-    session.control_owner === "core_task" &&
-    session.control_lock.owner === "core_task" &&
-    session.control_lock.state === "held";
-  return (session.lifecycle_state === "active" || session.lifecycle_state === "idle" || coreTaskLockHeld) &&
-    session.availability.cdp === "available";
+  return isRuntimeSessionReadable(session) && session.availability.cdp === "available";
 }
 
 function safeOrigin(url?: string | null): string | null {
