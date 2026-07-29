@@ -107,6 +107,20 @@ export interface RuntimeSessionFacts {
   facts: RuntimeFact[];
 }
 
+export function isRuntimeSessionReadable(
+  session: Pick<RuntimeSessionFacts, "lifecycle_state"> &
+    Partial<Pick<RuntimeSessionFacts, "control_owner" | "control_lock">>
+): boolean {
+  return session.lifecycle_state === "active" ||
+    session.lifecycle_state === "idle" ||
+    (
+      session.lifecycle_state === "locked" &&
+      session.control_owner === "core_task" &&
+      session.control_lock?.owner === "core_task" &&
+      session.control_lock.state === "held"
+    );
+}
+
 export interface ValidationRuntimeFacts {
   schema_version: typeof HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA;
   runtime_session_ref: string;

@@ -13,6 +13,7 @@ import {
 import {
   HARBOR_RUNTIME_FACTS_SCHEMA,
   HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA,
+  isRuntimeSessionReadable,
   type CreateRuntimeSessionInput,
   type LocalProviderLauncher,
   type LocalProviderPageFacts,
@@ -596,8 +597,8 @@ export class RuntimeSessionStore {
   }
 
   isReadable(runtime_session_ref: string): boolean {
-    const lifecycle = this.records.get(runtime_session_ref)?.facts.lifecycle_state;
-    return lifecycle === "active" || lifecycle === "idle";
+    const session = this.records.get(runtime_session_ref)?.facts;
+    return session ? isRuntimeSessionReadable(session) : false;
   }
 
   async probeReadOperation(
