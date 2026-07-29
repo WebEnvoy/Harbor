@@ -766,7 +766,7 @@ export class HarborRuntime {
         managedIdentity.login_state.manual_authentication_state !== "not_required") ||
       managedIdentity.login_state.recovery_required
     ) return "not_logged_in";
-    if (!hasStableReadOperationController(session)) return "session_user_controlled";
+    if (!hasStableReadOperationController(session, admission.request.holder_ref)) return "session_user_controlled";
     return isChallengeLike(session.facts.current_page.current_url, session.facts.current_page.title) ? "safety_challenge" : null;
   }
 
@@ -1109,12 +1109,13 @@ function sameManagedIdentity(session: RuntimeSessionRecord, identity: LocalIdent
     session.identity_binding.profile_storage_ref === identity.browser_storage.profile_storage_ref;
 }
 
-function hasStableReadOperationController(session: RuntimeSessionRecord): boolean {
+function hasStableReadOperationController(session: RuntimeSessionRecord, holderRef?: string): boolean {
   return session.read_operation_user_handoff &&
     session.facts.control_owner === "core_task" &&
     session.facts.control_lock.state === "held" &&
     session.facts.control_lock.owner === session.facts.control_owner &&
     Boolean(session.facts.control_lock.holder_ref) &&
+    (session.facts.lifecycle_state !== "locked" || holderRef === session.facts.control_lock.holder_ref) &&
     isRuntimeSessionReadable(session.facts);
 }
 

@@ -1701,10 +1701,22 @@ test("executes a detail read while a reused session is locked by Core", async ()
   if ("status" in locked) throw new Error("Core should lock the released session");
   assert.equal(locked.lifecycle_state, "locked");
 
+  const mismatched = await runtime.executeAllowlistedReadOperation(opened.runtime_session_ref, {
+    site_id: "xiaohongshu",
+    operation_id: "xhs_read_note_detail",
+    detail_ref: detailRef,
+    holder_ref: "other_detail_run"
+  });
+  assert.equal(mismatched.status, "unavailable");
+  if (mismatched.status !== "unavailable") throw new Error("a different Core holder must fail closed");
+  assert.equal(mismatched.failure_class, "session_user_controlled");
+  assert.equal(probeCalls, 0);
+
   const result = await runtime.executeAllowlistedReadOperation(opened.runtime_session_ref, {
     site_id: "xiaohongshu",
     operation_id: "xhs_read_note_detail",
-    detail_ref: detailRef
+    detail_ref: detailRef,
+    holder_ref: "detail_run"
   });
   assert.equal(result.status, "unavailable");
   if (result.status !== "unavailable") throw new Error("fixture probe should return its page readiness state");
