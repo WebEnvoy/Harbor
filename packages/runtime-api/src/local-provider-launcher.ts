@@ -909,6 +909,18 @@ export function validateReadOperationProbe(
     }
     const detailUrls = observation.detail_urls ?? [];
     const searchItems = observation.search_items ?? [];
+    if (!observation.xhs_response) {
+      return { status: "unavailable", failure_class: "network_resource_unavailable", message: "The Xiaohongshu search response summary is unavailable.", retryable: true };
+    }
+    if (observation.xhs_response.status === "unavailable") {
+      if (observation.xhs_response.failure_class !== "empty_result" || observation.list_failure === "empty_result") {
+        return observation.xhs_response;
+      }
+      return { status: "unavailable", failure_class: "site_changed", message: "The Xiaohongshu search response and rendered page disagree about whether results exist.", retryable: false };
+    }
+    if (observation.list_failure === "empty_result") {
+      return { status: "unavailable", failure_class: "page_not_ready", message: "The Xiaohongshu search response has results while the rendered page is still hydrating.", retryable: true };
+    }
     if (observation.list_failure) {
       return { status: "unavailable", failure_class: observation.list_failure, message: "Xiaohongshu search did not expose a valid page-matched note list.", retryable: observation.list_failure === "page_not_ready" };
     }
@@ -918,9 +930,6 @@ export function validateReadOperationProbe(
     const resultLimit = input.limit ?? 15;
     if (!Number.isInteger(observation.note_count) || observation.note_count! < 1 || detailUrls.length !== observation.note_count || searchItems.length !== detailUrls.length || !validXhsSearchTargets(detailUrls)) {
       return { status: "unavailable", failure_class: "site_changed", message: "Xiaohongshu search note targets do not match the expected public shape.", retryable: false };
-    }
-    if (!observation.xhs_response || observation.xhs_response.status === "unavailable") {
-      return observation.xhs_response ?? { status: "unavailable", failure_class: "network_resource_unavailable", message: "The Xiaohongshu search response summary is unavailable.", retryable: true };
     }
     if (!validXhsSearchTargets(observation.xhs_response.detail_urls)) {
       return { status: "unavailable", failure_class: "site_changed", message: "The Xiaohongshu search response contains invalid detail navigation targets.", retryable: false };

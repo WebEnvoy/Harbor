@@ -1165,8 +1165,24 @@ test("fails closed when the live probe lacks an operation-specific surface or re
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, search: "?keyword=AI&keyword=AI" }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, pinia_ready: false }).status, "unavailable");
   assert.equal(validateReadOperationProbe(xhsInput, { ...readyXhs, operation_response_status: undefined }).status, "unavailable");
-  assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "empty_result", note_count: 0, detail_urls: [] })), "empty_result");
-  const emptyXhs = validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "empty_result", note_count: 0, detail_urls: [] });
+  const hydratingXhs = validateReadOperationProbe(xhsInput, {
+    ...readyXhs,
+    list_valid: false,
+    list_failure: "empty_result",
+    note_count: 0,
+    detail_urls: []
+  });
+  assert.equal(failureClass(hydratingXhs), "page_not_ready");
+  if (hydratingXhs.status === "unavailable") assert.equal(hydratingXhs.retryable, true);
+  const emptyXhs = validateReadOperationProbe(xhsInput, {
+    ...readyXhs,
+    list_valid: false,
+    list_failure: "empty_result",
+    note_count: 0,
+    detail_urls: [],
+    xhs_response: summarizeXhsSearchResponse(JSON.stringify({ success: true, code: 0, data: { items: [] } }))
+  });
+  assert.equal(failureClass(emptyXhs), "empty_result");
   if (emptyXhs.status === "unavailable") assert.equal(emptyXhs.retryable, false);
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "page_not_ready", note_count: 0, detail_urls: [] })), "page_not_ready");
   assert.equal(failureClass(validateReadOperationProbe(xhsInput, { ...readyXhs, list_valid: false, list_failure: "site_changed" })), "site_changed");
