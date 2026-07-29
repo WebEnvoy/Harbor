@@ -1331,10 +1331,11 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
       if (new Set(noteIds).size > 1 || new Set(tokens).size > 1) return { kind: 'malformed' };
       return typeof value === "string"
         ? { kind: 'note', id: value, xsecToken, publicItem }
-        : { kind: 'malformed' };
+        : { kind: 'nonstandard' };
     };
     const candidates = boundedFeeds.map(noteCandidate);
     const hasMalformedFeed = candidates.some((candidate) => candidate.kind === 'malformed');
+    const hasNonstandardFeed = candidates.some((candidate) => candidate.kind === 'nonstandard');
     const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note' && candidate.publicItem).map((candidate) => candidate.id);
     const feedIds = Array.from(new Set(allFeedIds));
     const feedTokens = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.xsecToken).map((candidate) => [candidate.id, candidate.xsecToken]));
@@ -1378,7 +1379,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     const listFailure = hasMalformedFeed
       ? 'page_not_ready'
       : feedIds.length === 0
-      ? pageTargets.size === 0 ? 'empty_result' : 'page_not_ready'
+      ? !hasNonstandardFeed && pageTargets.size === 0 ? 'empty_result' : 'page_not_ready'
       : detailUrls.length === 0 || searchItems.length !== detailUrls.length ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
     const text = document.body?.innerText || "";

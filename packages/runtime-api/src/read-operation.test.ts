@@ -505,6 +505,19 @@ test("correlates the official Vue Pinia search store without exposing store cont
   assert.deepEqual(incompleteAndValid.detail_urls, [`https://www.xiaohongshu.com/explore/${noteIds[0]}?xsec_token=opaque-navigation-token%3D&xsec_source=pc_search`]);
   assert.deepEqual(incompleteAndValid.search_items, [publicItems[0]]);
 
+  const nonstandardAndValid = evaluate({ __PINIA__: { _s: new Map([["search", {
+    searchValue: query,
+    feeds: [{ noteCard: { id: "not-a-note" } }, noteFeed(noteIds[0]!, 0)]
+  }]]) } }, {
+    ...document,
+    querySelectorAll: (selector: string) => selector === 'a[href*="/explore/"]' ? [anchors[0]] : []
+  }, {
+    origin: "https://www.xiaohongshu.com", pathname: "/search_result", search: `?keyword=${encodeURIComponent(query)}`
+  });
+  assert.equal(nonstandardAndValid.list_valid, true);
+  assert.deepEqual(nonstandardAndValid.detail_urls, [`https://www.xiaohongshu.com/explore/${noteIds[0]}?xsec_token=opaque-navigation-token%3D&xsec_source=pc_search`]);
+  assert.deepEqual(nonstandardAndValid.search_items, [publicItems[0]]);
+
   const conflictingFeed = evaluate({ __PINIA__: { _s: new Map([["search", {
     searchValue: query,
     feeds: [{
