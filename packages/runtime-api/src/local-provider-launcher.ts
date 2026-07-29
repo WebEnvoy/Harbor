@@ -1319,6 +1319,7 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
         : { kind: 'malformed' };
     };
     const candidates = boundedFeeds.map(noteCandidate);
+    const hasMalformedFeed = candidates.some((candidate) => candidate.kind === 'malformed');
     const allFeedIds = candidates.filter((candidate) => candidate.kind === 'note').map((candidate) => candidate.id);
     const feedIds = Array.from(new Set(allFeedIds));
     const feedTokens = new Map(candidates.filter((candidate) => candidate.kind === 'note' && candidate.xsecToken).map((candidate) => [candidate.id, candidate.xsecToken]));
@@ -1359,7 +1360,9 @@ export function readProbeExpression(siteId: LocalProviderReadProbeInput["site_id
     // not evidence that the feed contract changed.
     // The feed can include promoted or non-note entries alongside valid note
     // cards. Only the canonical ids and targets consumed below are trusted.
-    const listFailure = feedIds.length === 0
+    const listFailure = hasMalformedFeed
+      ? 'page_not_ready'
+      : feedIds.length === 0
       ? pageTargets.size === 0 ? 'empty_result' : 'page_not_ready'
       : detailUrls.length === 0 || searchItems.length !== detailUrls.length ? 'page_not_ready' : undefined;
     const listValid = listFailure === undefined && detailUrls.length > 0;
