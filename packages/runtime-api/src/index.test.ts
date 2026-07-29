@@ -841,6 +841,7 @@ test("bounds provider version and page-list readback while preserving redirect f
 function installFakeCdpWebSocket(ignoredMethod: string): void {
   class FakeCdpWebSocket extends EventTarget {
     readyState = 0;
+    private currentUrl = "about:blank";
 
     constructor(_url: string | URL) {
       super();
@@ -851,10 +852,16 @@ function installFakeCdpWebSocket(ignoredMethod: string): void {
     }
 
     send(payload: string): void {
-      const message = JSON.parse(payload) as { id: number; method: string };
+      const message = JSON.parse(payload) as { id: number; method: string; params?: { url?: string } };
       if (message.method === ignoredMethod) return;
+      if (message.method === "Page.navigate") this.currentUrl = message.params?.url ?? this.currentUrl;
       queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
-        data: JSON.stringify({ id: message.id, result: {} })
+        data: JSON.stringify({
+          id: message.id,
+          result: message.method === "Page.getFrameTree"
+            ? { frameTree: { frame: { url: this.currentUrl } } }
+            : {}
+        })
       })));
     }
 
@@ -872,6 +879,7 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
   static detailEvaluationCount = 0;
   static detailRequestContinued = false;
   static navigationUrl = "";
+  static navigationUrls: string[] = [];
   static searchResponseFinished = false;
   static responseBodyRequestedBeforeFinished = false;
   readyState = 0;
@@ -889,6 +897,7 @@ class DelayedNavigationAckCdpWebSocket extends EventTarget {
     if (message.method === "Page.navigate") {
       const url = message.params?.url ?? "https://www.xiaohongshu.com/search_result?keyword=AI";
       DelayedNavigationAckCdpWebSocket.navigationUrl = url;
+      DelayedNavigationAckCdpWebSocket.navigationUrls.push(url);
       queueMicrotask(() => this.dispatchEvent(new MessageEvent("message", {
         data: JSON.stringify({
           method: "Fetch.requestPaused",
@@ -1102,7 +1111,11 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     });
     const elapsed = Date.now() - startedAt;
     assert.ok(elapsed < 500, "read operation must not wait for the delayed navigation acknowledgement");
-    assert.equal(readFileSync(newUrlMarker, "utf8"), "https://www.xiaohongshu.com/explore");
+    assert.equal(readFileSync(newUrlMarker, "utf8"), "about:blank");
+    assert.deepEqual(DelayedNavigationAckCdpWebSocket.navigationUrls.slice(0, 2), [
+      "https://www.xiaohongshu.com/explore",
+      "https://www.xiaohongshu.com/search_result?keyword=AI"
+    ]);
     assert.equal(result.status, "completed");
     assert.equal(DelayedNavigationAckCdpWebSocket.responseBodyRequestedBeforeFinished, false);
     if (result.status === "completed") {
@@ -1181,6 +1194,7 @@ test("bootstraps XHS reads through the canonical explore page without waiting fo
     DelayedNavigationAckCdpWebSocket.detailEvaluationCount = 0;
     DelayedNavigationAckCdpWebSocket.detailRequestContinued = false;
     DelayedNavigationAckCdpWebSocket.navigationUrl = "";
+    DelayedNavigationAckCdpWebSocket.navigationUrls = [];
     DelayedNavigationAckCdpWebSocket.searchResponseFinished = false;
     DelayedNavigationAckCdpWebSocket.responseBodyRequestedBeforeFinished = false;
     globalThis.WebSocket = originalWebSocket;

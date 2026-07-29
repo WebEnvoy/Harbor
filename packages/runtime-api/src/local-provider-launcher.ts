@@ -41,6 +41,8 @@ import type {
 type CdpPageTarget = { id?: string; type?: string; webSocketDebuggerUrl?: string; url?: string; title?: string };
 type ObservedDetailPublicSummary = Omit<XiaohongshuNoteDetailPublicSummary, "source_citation"> | Omit<BossJobDetailPublicSummary, "detail_ref" | "source_citation">;
 
+class ProviderPageCommitError extends Error {}
+
 export async function launchLocalDedicatedProvider(input: LocalProviderLaunchInput): Promise<LocalProviderLaunchResult> {
   const explicitBrowserPath = input.browser_path || process.env.HARBOR_BROWSER_PATH || "";
   const providerBinding = explicitBrowserPath
@@ -587,9 +589,7 @@ function compatibleBrowserVersion(observed: string, target: string): boolean {
 
 async function openProviderUrl(port: string, url: string, signal?: AbortSignal): Promise<LocalProviderPageFacts> {
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT", signal });
-    if (!response.ok) throw new Error(`CDP open-url probe failed: ${response.status}`);
-    return readTargetPageFacts(await response.json() as CdpPageTarget, url, signal);
+    return readTargetPageFacts(await createProviderPage(port, url, signal), url, signal);
   } catch (cause) {
     return unavailablePageFacts("url_unreachable", url, cause);
   }
@@ -767,7 +767,7 @@ async function probeProviderReadOperation(port: string, input: LocalProviderRead
     };
   } catch (cause) {
     return probeUnavailable(
-      "network_resource_unavailable",
+      cause instanceof ProviderPageCommitError ? "page_not_ready" : "network_resource_unavailable",
       cause instanceof Error ? cause.message : "The provider read-only probe failed.",
       true
     );
@@ -815,24 +815,42 @@ interface ReadProbeObservation {
   validation?: ReturnType<typeof validateReadOperationProbe>;
 }
 
-async function createProviderPage(port: string, url: string): Promise<CdpPageTarget> {
-  const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });
+async function createProviderPage(port: string, url: string, signal?: AbortSignal): Promise<CdpPageTarget> {
+  const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent("about:blank")}`, { method: "PUT", signal });
   if (!response.ok) throw new Error(`CDP read-operation target creation failed: ${response.status}`);
-  return await response.json() as CdpPageTarget;
+  const page = await response.json() as CdpPageTarget;
+  if (url === "about:blank") return page;
+  if (!page.id) throw new Error("Created page has no target id.");
+  try {
+    if (!page.webSocketDebuggerUrl) throw new Error("Created page has no CDP websocket.");
+    await withCdp(page.webSocketDebuggerUrl, async (client) => {
+      await client.send("Page.enable");
+      void client.send("Page.navigate", { url }).catch(() => undefined);
+      if (!await waitForProviderPageCommit(client, url, signal)) {
+        throw new ProviderPageCommitError("Created page did not commit the requested URL.");
+      }
+    }, signal);
+    return { ...page, url };
+  } catch (cause) {
+    await closeProviderPage(port, page.id).catch(() => undefined);
+    throw cause;
+  }
 }
 
-async function waitForProviderPageCommit(client: CdpClient, targetUrl: string): Promise<boolean> {
+async function waitForProviderPageCommit(client: CdpClient, targetUrl: string, signal?: AbortSignal): Promise<boolean> {
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
+    signal?.throwIfAborted();
     let result: Record<string, unknown>;
     try {
       result = await client.send("Page.getFrameTree", {}, Math.min(500, Math.max(1, deadline - Date.now())));
     } catch {
+      signal?.throwIfAborted();
       continue;
     }
     const frame = (result.frameTree as { frame?: { url?: unknown } } | undefined)?.frame;
     if (typeof frame?.url === "string" && urlsReferToSamePage(frame.url, targetUrl)) return true;
-    await abortableDelay(Math.min(250, Math.max(1, deadline - Date.now())));
+    await abortableDelay(Math.min(250, Math.max(1, deadline - Date.now())), signal);
   }
   return false;
 }
