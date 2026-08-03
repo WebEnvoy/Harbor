@@ -208,6 +208,7 @@ function readinessBody(): object {
       "/runtime/identity-environments/{identity_environment_ref}",
       "/runtime/identity-environment-sessions",
       "/runtime/sessions/{runtime_session_ref}",
+      "/runtime/sessions/{runtime_session_ref}/runtime-facts",
       "/runtime/sessions/{runtime_session_ref}/manual-authentication-completed",
       "/runtime/sessions/{runtime_session_ref}/read-operations",
       "/runtime/sessions/{runtime_session_ref}/site-resource-facts",
@@ -319,6 +320,11 @@ async function routeSession(
   request: IncomingMessage,
   response: ServerResponse
 ): Promise<void> {
+  if (action === "runtime-facts" && method === "GET") {
+    const facts = runtime.getCoreRuntimeFacts(runtimeSessionRef);
+    writeJson(response, "status" in facts && facts.failure_class === "session_missing" ? 404 : 200, facts);
+    return;
+  }
   if (!action && method === "GET") {
     const session = runtime.getSession(runtimeSessionRef);
     const unavailable = sessionReadUnavailable(runtimeSessionRef, session?.current_error);
@@ -332,7 +338,7 @@ async function routeSession(
     request.once("aborted", abort);
     response.once("close", abort);
     try {
-      const facts = await runtime.getSiteResourceFacts(runtimeSessionRef, siteResourceFactsInput(requestUrl), controller.signal);
+      const facts = await runtime.getLegacySiteResourceFacts(runtimeSessionRef, siteResourceFactsInput(requestUrl), controller.signal);
       if (!response.destroyed) writeJson(response, 200, facts);
     } finally {
       request.removeListener("aborted", abort);
@@ -346,7 +352,7 @@ async function routeSession(
   }
   if (action === "read-operations" && method === "POST") {
     if (!authorizeCoreControl(manualAuthenticationAuthorizer, request, response)) return;
-    const result = await runtime.executeAllowlistedReadOperation(runtimeSessionRef, await readJson<unknown>(request));
+    const result = await runtime.executeLegacyReadOperation(runtimeSessionRef, await readJson<unknown>(request));
     writeJson(response, readOperationStatusCode(result), result);
     return;
   }

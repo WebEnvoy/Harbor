@@ -17,6 +17,7 @@ import {
   type LocalProviderLauncher,
   type LocalProviderLaunchInput
 } from "./index.js";
+import * as HarborRuntimeApi from "./index.js";
 import { classifyLaunchFailure } from "./provider-management.js";
 import { resolveRuntimeProviderBinding } from "./local-provider-launcher.js";
 import { trustLocalProviderReadProbe } from "./read-operation-probe-trust.js";
@@ -26,6 +27,14 @@ const cloakPath = "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.
 const testProfileRoot = mkdtempSync(join(tmpdir(), "harbor-index-profiles-"));
 process.env.HARBOR_PROFILE_STORAGE_ROOT = testProfileRoot;
 after(() => rmSync(testProfileRoot, { recursive: true, force: true }));
+
+test("keeps legacy site adapters behind explicit namespaces", () => {
+  assert.equal("LODE_262_ALLOWLIST_PIN" in HarborRuntimeApi, false);
+  assert.equal("LODE_268_DETAIL_PIN" in HarborRuntimeApi, false);
+  assert.equal("public_summary" in HarborRuntimeApi, false);
+  assert.equal(typeof HarborRuntimeApi.legacyReadOperation.admitAllowlistedReadOperation, "function");
+  assert.equal(typeof HarborRuntimeApi.legacySiteRuntimeFacts.createSiteResourceFacts, "function");
+});
 
 function providerFixture(paths: Record<string, { executable?: boolean; text?: string }>) {
   return {

@@ -53,6 +53,30 @@ test("serves readiness and provider facts as JSON", async () => {
   }
 });
 
+test("serves canonical owner runtime facts separately from legacy business adapters", async () => {
+  const runtime = new HarborRuntime(createFixtureLauncher("ready"));
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    const session = await runtime.createSession({ url: "https://example.test/runtime-facts", control_owner: "core_task", holder_ref: "owner-facts" });
+    const ownerFacts = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/runtime-facts`);
+    assert.equal(ownerFacts.schema_version, "harbor-core-runtime-facts/v0");
+    assert.equal(ownerFacts.fact_refs.session, session.runtime_session_ref);
+    assert.equal(ownerFacts.fact_refs.viewer, session.viewer_ref);
+    const ownerJson = JSON.stringify(ownerFacts).toLowerCase();
+    for (const forbidden of ["public_summary", "normalized", "lode_pin", "xiaohongshu", "boss", "cookie", "token", "raw_dom", "raw_har"]) {
+      assert.equal(ownerJson.includes(forbidden), false, `canonical owner facts leaked ${forbidden}`);
+    }
+
+    const missingResponse = await fetch(`${running.url}/runtime/sessions/session_missing/runtime-facts`);
+    assert.equal(missingResponse.status, 404);
+    const missing = await missingResponse.json() as Record<string, unknown>;
+    assert.equal(missing.status, "unavailable");
+    assert.equal(missing.failure_class, "session_missing");
+  } finally {
+    await running.close();
+  }
+});
+
 test("serves identity, session, and evidence endpoint plumbing", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime });

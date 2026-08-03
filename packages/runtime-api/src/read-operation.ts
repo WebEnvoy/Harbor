@@ -3,8 +3,10 @@ import { opaqueRef } from "./refs.js";
 import type { DetailReadFailureClass } from "./detail-read-target.js";
 import type { AllowlistedReadOperationId, AllowlistedReadOperationSite, LocalProviderReadProbePublicSummary } from "./runtime-session-types.js";
 
+/** @deprecated Compatibility-only adapter schema; Core owns new admission. */
 export const HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA = "harbor-allowlisted-read-operation/v0";
 
+/** @deprecated Lode pin retained only inside the bounded compatibility adapter. */
 export const LODE_262_ALLOWLIST_PIN = {
   repository: "WebEnvoy/Lode",
   commit: "e36a4a7",
@@ -21,6 +23,7 @@ export const LODE_262_ALLOWLIST_PIN = {
   }
 } as const;
 
+/** @deprecated Lode pin retained only inside the bounded compatibility adapter. */
 export const LODE_268_DETAIL_PIN = {
   repository: "WebEnvoy/Lode",
   issue: "#268",

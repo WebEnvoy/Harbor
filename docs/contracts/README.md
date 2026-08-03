@@ -12,6 +12,15 @@ This directory indexes Stage 2 accepted Harbor contract truth. It does not dupli
 | Runtime architecture baseline | [ADR 0008](../adr/0008-harbor-runtime-architecture-baseline.md) | TypeScript/Node/Playwright/CDP/SQLite defaults, module/storage boundaries, page-scene refs, viewer/control ownership, smoke-test minimums, and rejected/deferred runtime scope. |
 | Browser provider lifecycle | [ADR 0009](../adr/0009-provider-lifecycle-management.md) | Managed/system/external provider ownership, detection, installation, update, repair, launch verification, integrity, progress, and recoverable failures. |
 
+## Runtime API ownership boundary
+
+`GET /runtime/sessions/{runtime_session_ref}/runtime-facts` is the canonical
+owner-clean Harbor surface and returns `harbor-core-runtime-facts/v0`. The
+legacy `/site-resource-facts` and `/read-operations` routes remain bounded
+rollback adapters until Core #342/#343 provide exact cutover evidence. Their
+site admission, Lode pins, `public_summary`, and normalized result fields are
+compatibility payloads only, not Harbor-owned facts.
+
 ## Required read order for later skeletons
 
 Provider, session, evidence, or viewer implementation PRs must read ADR 0008 first, then the narrower accepted contract:
