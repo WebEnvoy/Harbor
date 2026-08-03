@@ -63,6 +63,8 @@ Harbor 不负责理解具体网站业务，也不决定一个任务应该怎样�
 
 Harbor 负责的是浏览器账号和运行环境：这个账号用哪个 Profile、哪个代理、哪个浏览器、哪个会话，Agent 如何连接，人类如何接管，执行后留下哪些证据。具体网站任务由 WebEnvoy Core 执行，normalized result schema 由 Lode 定义。Harbor 只提供 raw_payload_ref、source_trace 和 evidence_ref，不解释站点业务字段。
 
+Runtime API 的 owner-clean 读取入口是 `GET /runtime/sessions/{runtime_session_ref}/runtime-facts`，返回现有 `harbor-core-runtime-facts/v0` provider/session/viewer/control facts 与 refs。旧的 `/site-resource-facts` 和 `/read-operations` 路径仍保留为显式兼容适配，供迁移和回滚使用；其中的 XHS/BOSS admission、Lode pin、`public_summary` 和 normalized output 不是 Harbor owner truth，待 Core #342/#343 的兼容证据完成后再退役。
+
 ## 本仓库包含什么
 
 本仓库承载 Harbor 的浏览器身份和运行时能力。这里的模块说明是实现视角，用来帮助开发者理解代码边界：

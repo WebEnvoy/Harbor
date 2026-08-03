@@ -48,8 +48,6 @@ import {
 import { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-provider-launcher.js";
 import {
   admitAllowlistedReadOperation,
-  HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA,
-  LODE_262_ALLOWLIST_PIN,
   ReadOperationObservationStore,
   readOperationUnavailable,
   type AdmittedReadOperation,
@@ -60,7 +58,6 @@ import {
 } from "./read-operation.js";
 import {
   createSiteResourceFacts,
-  HARBOR_SITE_RESOURCE_FACTS_SCHEMA,
   missingSiteRuntimeSession,
   siteResourceElements,
   type SiteResourceFacts,
@@ -129,7 +126,13 @@ export {
   HARBOR_IDENTITY_PROVIDER_BINDING_SCHEMA
 } from "./provider-management.js";
 export { createFixtureLauncher, launchLocalDedicatedProvider } from "./local-provider-launcher.js";
+/** @deprecated Use `legacyReadOperation` only for the bounded pre-cutover adapter. */
+export * as legacyReadOperation from "./read-operation.js";
+/** @deprecated Use `legacySiteRuntimeFacts` only for the bounded pre-cutover adapter. */
+export * as legacySiteRuntimeFacts from "./site-runtime-facts.js";
+/** @deprecated Compatibility schema; new consumers must use the owner-clean runtime-facts route. */
 export { HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA, LODE_262_ALLOWLIST_PIN, LODE_268_DETAIL_PIN } from "./read-operation.js";
+/** @deprecated Compatibility schema; new consumers must use the owner-clean runtime-facts route. */
 export { HARBOR_SITE_RESOURCE_FACTS_SCHEMA } from "./site-runtime-facts.js";
 export { HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA, HARBOR_WRITE_PRECHECK_FACTS_SCHEMA } from "./runtime-fixtures.js";
 export { HARBOR_RUNTIME_FACTS_SCHEMA, HARBOR_VALIDATION_RUNTIME_FACTS_SCHEMA } from "./runtime-session.js";
@@ -159,24 +162,6 @@ export type {
   SourceTrace,
   StorageScope
 } from "./page-scene.js";
-export type {
-  SiteResourceFact,
-  SiteResourceFactSeverity,
-  SiteResourceFactSource,
-  SiteResourceFactState,
-  SiteResourceFacts,
-  SiteResourceFactsInput,
-  SiteResourceFactsUnavailable,
-  SiteRuntimeId
-} from "./site-runtime-facts.js";
-export type {
-  AllowlistedReadOperationRequest,
-  CompletedReadOperation,
-  ReadOperationFailureClass,
-  ReadOperationObservationRecord,
-  ReadOperationRef,
-  ReadOperationUnavailable
-} from "./read-operation.js";
 export type {
   FormInputStateField,
   InputExportPolicy,
@@ -262,6 +247,31 @@ export type {
   ManagedProviderOperationKind
 } from "./managed-provider-lifecycle.js";
 export type {
+  /** @deprecated Compatibility-only site read-operation request. */
+  AllowlistedReadOperationRequest,
+  /** @deprecated Compatibility-only normalized read-operation output. */
+  CompletedReadOperation,
+  /** @deprecated Compatibility-only failure taxonomy. */
+  ReadOperationFailureClass,
+  /** @deprecated Compatibility-only observation record. */
+  ReadOperationObservationRecord,
+  /** @deprecated Compatibility-only ref shape. */
+  ReadOperationRef,
+  /** @deprecated Compatibility-only unavailable shape. */
+  ReadOperationUnavailable
+} from "./read-operation.js";
+/** @deprecated These site/provider probe types are retained only for rollback compatibility. */
+export type {
+  SiteResourceFact,
+  SiteResourceFactSeverity,
+  SiteResourceFactSource,
+  SiteResourceFactState,
+  SiteResourceFacts,
+  SiteResourceFactsInput,
+  SiteResourceFactsUnavailable,
+  SiteRuntimeId
+} from "./site-runtime-facts.js";
+export type {
   AvailabilityState,
   CreateRuntimeSessionInput,
   FactSource,
@@ -270,12 +280,18 @@ export type {
   LocalProviderLaunchInput,
   LocalProviderLaunchResult,
   LocalProviderPageFacts,
+  /** @deprecated Provider-specific read probe input retained for legacy adapter compatibility. */
   LocalProviderReadProbeInput,
+  /** @deprecated Provider-specific normalized read summary retained for legacy adapter compatibility. */
   LocalProviderReadProbePublicSummary,
+  /** @deprecated Provider-specific read probe result retained for legacy adapter compatibility. */
   LocalProviderReadProbeResult,
   LocalProviderScreenshotFacts,
+  /** @deprecated Provider-specific site readiness probe input retained for legacy adapter compatibility. */
   LocalProviderSiteResourceProbeInput,
+  /** @deprecated Provider-specific site readiness key retained for legacy adapter compatibility. */
   LocalProviderSiteResourceReadinessFactKey,
+  /** @deprecated Provider-specific site readiness probe result retained for legacy adapter compatibility. */
   LocalProviderSiteResourceProbeResult,
   OpenIdentityEnvironmentSessionInput,
   ProviderMode,
@@ -658,7 +674,15 @@ export class HarborRuntime {
     return result;
   }
 
+  /** @deprecated Use the namespaced `legacyReadOperation` adapter and migrate callers to Core-owned admission. */
   async executeAllowlistedReadOperation(
+    runtime_session_ref: string,
+    input: unknown
+  ): Promise<CompletedReadOperation | ReadOperationUnavailable> {
+    return this.executeLegacyReadOperation(runtime_session_ref, input);
+  }
+
+  async executeLegacyReadOperation(
     runtime_session_ref: string,
     input: unknown
   ): Promise<CompletedReadOperation | ReadOperationUnavailable> {
@@ -1005,7 +1029,12 @@ export class HarborRuntime {
     return this.getWritePrecheckFacts(runtime_session_ref, input);
   }
 
+  /** @deprecated Site-specific resource facts remain only as a bounded compatibility adapter. */
   async getSiteResourceFacts(runtime_session_ref: string, input: SiteResourceFactsInput = {}, signal?: AbortSignal): Promise<SiteResourceFacts | SiteResourceFactsUnavailable> {
+    return this.getLegacySiteResourceFacts(runtime_session_ref, input, signal);
+  }
+
+  async getLegacySiteResourceFacts(runtime_session_ref: string, input: SiteResourceFactsInput = {}, signal?: AbortSignal): Promise<SiteResourceFacts | SiteResourceFactsUnavailable> {
     const record = this.runtimeSessions.getRecord(runtime_session_ref);
     if (!record) return missingSiteRuntimeSession(runtime_session_ref, input);
     const capture = this.captureSnapshot(runtime_session_ref, {

@@ -5,6 +5,7 @@ import {
   type RuntimeSessionFacts
 } from "./runtime-session-types.js";
 
+/** @deprecated Compatibility-only site resource schema; Core owns new admission facts. */
 export const HARBOR_SITE_RESOURCE_FACTS_SCHEMA = "harbor-site-resource-facts/v0";
 
 export type SiteRuntimeId = "xiaohongshu" | "boss";

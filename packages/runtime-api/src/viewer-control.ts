@@ -1,4 +1,5 @@
 import { opaqueRef } from "./refs.js";
+import type { RuntimeErrorFact } from "./runtime-session-types.js";
 
 export const HARBOR_VIEWER_CONTROL_FACTS_SCHEMA = "harbor-viewer-control-facts/v0";
 export const HARBOR_CORE_RUNTIME_FACTS_SCHEMA = "harbor-core-runtime-facts/v0";
@@ -31,6 +32,8 @@ export type ViewerTransport = "not_applicable" | "local_window" | "remote_vnc" |
 
 export interface ViewerControlSessionFacts {
   runtime_session_ref: string;
+  identity_environment_ref?: string;
+  execution_identity_ref?: string;
   profile_ref: string;
   provider_ref: string;
   provider_mode: string;
@@ -49,7 +52,7 @@ export interface ViewerControlSessionFacts {
     snapshot: string;
     evidence: string;
   };
-  current_error: unknown;
+  current_error: RuntimeErrorFact | null;
   facts: unknown[];
 }
 
@@ -112,6 +115,8 @@ export interface ViewerControlUnavailable {
 export interface CoreRuntimeFacts {
   schema_version: typeof HARBOR_CORE_RUNTIME_FACTS_SCHEMA;
   runtime_session_ref: string;
+  identity_environment_ref?: string;
+  execution_identity_ref?: string;
   profile_ref: string;
   provider_ref: string;
   provider_mode: string;
@@ -119,7 +124,7 @@ export interface CoreRuntimeFacts {
   availability: ViewerControlSessionFacts["availability"];
   viewer: Pick<ViewerRefFacts, "viewer_ref" | "availability" | "access_mode" | "expires_at">;
   control: Pick<ControlOwnerFacts, "owner" | "handoff_reason" | "takeover" | "updated_at">;
-  current_error: unknown;
+  current_error: RuntimeErrorFact | null;
   fact_refs: {
     session: string;
     viewer: string;
@@ -237,6 +242,8 @@ export function coreRuntimeFacts(
   return {
     schema_version: HARBOR_CORE_RUNTIME_FACTS_SCHEMA,
     runtime_session_ref: session.runtime_session_ref,
+    ...(session.identity_environment_ref === undefined ? {} : { identity_environment_ref: session.identity_environment_ref }),
+    ...(session.execution_identity_ref === undefined ? {} : { execution_identity_ref: session.execution_identity_ref }),
     profile_ref: session.profile_ref,
     provider_ref: session.provider_ref,
     provider_mode: session.provider_mode,
@@ -254,7 +261,7 @@ export function coreRuntimeFacts(
       takeover: clone(viewerControl.control.takeover),
       updated_at: viewerControl.control.updated_at
     },
-    current_error: clone(session.current_error),
+    current_error: publicRuntimeError(session.current_error),
     fact_refs: {
       session: session.runtime_session_ref,
       viewer: viewerControl.viewer.viewer_ref
@@ -316,6 +323,15 @@ function unavailableControl(
   retryable: boolean
 ): ViewerControlUnavailable {
   return { status: "unavailable", failure_class, message, retryable };
+}
+
+function publicRuntimeError(current_error: RuntimeErrorFact | null): RuntimeErrorFact | null {
+  if (!current_error) return null;
+  return {
+    code: current_error.code,
+    message: "Runtime Session is unavailable.",
+    retryable: current_error.retryable
+  };
 }
 
 function clone<T>(value: T): T {

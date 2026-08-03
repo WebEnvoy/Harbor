@@ -135,6 +135,12 @@ try {
   }, true);
   assert.equal(session.lifecycle_state, "active");
 
+  const ownerFacts = await getJson(startup.url, `/runtime/sessions/${session.runtime_session_ref}/runtime-facts`);
+  assert.equal(ownerFacts.schema_version, "harbor-core-runtime-facts/v0");
+  assert.equal(ownerFacts.fact_refs.session, session.runtime_session_ref);
+  assert.equal(JSON.stringify(ownerFacts).includes("public_summary"), false);
+  assert.equal(JSON.stringify(ownerFacts).includes("normalized"), false);
+
   const snapshot = await postJson(startup.url, `/runtime/sessions/${session.runtime_session_ref}/snapshot`, {}, true);
   assert.equal(snapshot.status, "captured");
   assert.equal(snapshot.evidence_refs.length > 0, true);
