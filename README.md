@@ -1,3 +1,5 @@
+> **Canonical product entry**：Harbor 的产品代码、PR 和新的执行 Work Item 统一进入 [WebEnvoy/WebEnvoy `services/harbor`](https://github.com/WebEnvoy/WebEnvoy/tree/main/services/harbor)。本仓仅保留历史、现有 backlog locator 与回滚依据；仓库未归档，不接受新的实现。credential、cookie、token、profile、raw DOM、HAR、screenshot 仍由 Harbor 独占且不迁移；Lode、站点策略和结果归一化不进入 Harbor。
+
 # Harbor
 
 Harbor 让 Agent 可以长期、稳定、可接管地使用真实浏览器账号。
