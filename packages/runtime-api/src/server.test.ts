@@ -77,6 +77,61 @@ test("serves canonical owner runtime facts separately from legacy business adapt
   }
 });
 
+test("redacts provider error details from canonical runtime facts", async () => {
+  const leakedMessage = "Authorization: Bearer secret-token /private/path/profile";
+  const runtime = new HarborRuntime(async (input) => ({
+    status: "ready",
+    execution_surface: "fixture",
+    cdp_ref: opaqueRef("cdp"),
+    viewer_entry: {
+      availability: "unsupported",
+      access_mode: "none",
+      transport: "not_applicable",
+      input_capabilities: [],
+      unavailable_reason: "unsupported"
+    },
+    page: {
+      current_url: input.url,
+      title: null,
+      status: "unavailable",
+      error: { code: "cdp_unavailable", message: leakedMessage, retryable: true },
+      facts: []
+    },
+    facts: [],
+    openUrl: async (url) => ({
+      current_url: url,
+      title: null,
+      status: "unavailable",
+      error: { code: "cdp_unavailable", message: leakedMessage, retryable: true },
+      facts: []
+    }),
+    captureScreenshot: async () => ({ code: "cdp_unavailable", message: leakedMessage, retryable: true }),
+    close: async () => {}
+  }));
+  const session = await runtime.createSession({ url: "https://example.test/runtime-error" });
+  const direct = runtime.getCoreRuntimeFacts(session.runtime_session_ref);
+  assert.equal("status" in direct, false);
+  if ("status" in direct) throw new Error("core facts should be readable");
+  assert.deepEqual(direct.current_error, {
+    code: "cdp_unavailable",
+    message: "Runtime Session is unavailable.",
+    retryable: true
+  });
+  assert.equal(JSON.stringify(direct).includes(leakedMessage), false);
+
+  const running = await startHarborRuntimeServer({ port: 0, runtime });
+  try {
+    const response = await fetch(`${running.url}/runtime/sessions/${session.runtime_session_ref}/runtime-facts`);
+    assert.equal(response.status, 200);
+    const body = await response.json() as Record<string, any>;
+    assert.deepEqual(body.current_error, direct.current_error);
+    assert.equal(JSON.stringify(body).includes(leakedMessage), false);
+    assert.equal(JSON.stringify(body).includes("/private/path"), false);
+  } finally {
+    await running.close();
+  }
+});
+
 test("serves identity, session, and evidence endpoint plumbing", async () => {
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime });

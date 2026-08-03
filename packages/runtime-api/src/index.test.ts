@@ -29,8 +29,8 @@ process.env.HARBOR_PROFILE_STORAGE_ROOT = testProfileRoot;
 after(() => rmSync(testProfileRoot, { recursive: true, force: true }));
 
 test("keeps legacy site adapters behind explicit namespaces", () => {
-  assert.equal("LODE_262_ALLOWLIST_PIN" in HarborRuntimeApi, false);
-  assert.equal("LODE_268_DETAIL_PIN" in HarborRuntimeApi, false);
+  assert.equal(HarborRuntimeApi.LODE_262_ALLOWLIST_PIN.repository, "WebEnvoy/Lode");
+  assert.equal(HarborRuntimeApi.LODE_268_DETAIL_PIN.repository, "WebEnvoy/Lode");
   assert.equal("public_summary" in HarborRuntimeApi, false);
   assert.equal(typeof HarborRuntimeApi.legacyReadOperation.admitAllowlistedReadOperation, "function");
   assert.equal(typeof HarborRuntimeApi.legacySiteRuntimeFacts.createSiteResourceFacts, "function");

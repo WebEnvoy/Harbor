@@ -131,7 +131,7 @@ export * as legacyReadOperation from "./read-operation.js";
 /** @deprecated Use `legacySiteRuntimeFacts` only for the bounded pre-cutover adapter. */
 export * as legacySiteRuntimeFacts from "./site-runtime-facts.js";
 /** @deprecated Compatibility schema; new consumers must use the owner-clean runtime-facts route. */
-export { HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA } from "./read-operation.js";
+export { HARBOR_ALLOWLISTED_READ_OPERATION_SCHEMA, LODE_262_ALLOWLIST_PIN, LODE_268_DETAIL_PIN } from "./read-operation.js";
 /** @deprecated Compatibility schema; new consumers must use the owner-clean runtime-facts route. */
 export { HARBOR_SITE_RESOURCE_FACTS_SCHEMA } from "./site-runtime-facts.js";
 export { HARBOR_PREVIEW_EVIDENCE_STATUS_FIXTURE_SCHEMA, HARBOR_REDACTED_PREVIEW_EXPORT_FIXTURE_SCHEMA, HARBOR_WRITE_PRECHECK_FACTS_SCHEMA } from "./runtime-fixtures.js";
