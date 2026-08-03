@@ -57,9 +57,17 @@ test("serves canonical owner runtime facts separately from legacy business adapt
   const runtime = new HarborRuntime(createFixtureLauncher("ready"));
   const running = await startHarborRuntimeServer({ port: 0, runtime });
   try {
-    const session = await runtime.createSession({ url: "https://example.test/runtime-facts", control_owner: "core_task", holder_ref: "owner-facts" });
+    const session = await runtime.createSession({
+      url: "https://example.test/runtime-facts",
+      control_owner: "core_task",
+      holder_ref: "owner-facts",
+      identity_environment_ref: "identity-env_runtime-facts",
+      execution_identity_ref: "execution-identity_runtime-facts"
+    });
     const ownerFacts = await getJson(`${running.url}/runtime/sessions/${session.runtime_session_ref}/runtime-facts`);
     assert.equal(ownerFacts.schema_version, "harbor-core-runtime-facts/v0");
+    assert.equal(ownerFacts.identity_environment_ref, session.identity_environment_ref);
+    assert.equal(ownerFacts.execution_identity_ref, session.execution_identity_ref);
     assert.equal(ownerFacts.fact_refs.session, session.runtime_session_ref);
     assert.equal(ownerFacts.fact_refs.viewer, session.viewer_ref);
     const ownerJson = JSON.stringify(ownerFacts).toLowerCase();

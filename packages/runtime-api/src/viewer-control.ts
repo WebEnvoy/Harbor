@@ -32,6 +32,8 @@ export type ViewerTransport = "not_applicable" | "local_window" | "remote_vnc" |
 
 export interface ViewerControlSessionFacts {
   runtime_session_ref: string;
+  identity_environment_ref?: string;
+  execution_identity_ref?: string;
   profile_ref: string;
   provider_ref: string;
   provider_mode: string;
@@ -113,6 +115,8 @@ export interface ViewerControlUnavailable {
 export interface CoreRuntimeFacts {
   schema_version: typeof HARBOR_CORE_RUNTIME_FACTS_SCHEMA;
   runtime_session_ref: string;
+  identity_environment_ref?: string;
+  execution_identity_ref?: string;
   profile_ref: string;
   provider_ref: string;
   provider_mode: string;
@@ -238,6 +242,8 @@ export function coreRuntimeFacts(
   return {
     schema_version: HARBOR_CORE_RUNTIME_FACTS_SCHEMA,
     runtime_session_ref: session.runtime_session_ref,
+    ...(session.identity_environment_ref === undefined ? {} : { identity_environment_ref: session.identity_environment_ref }),
+    ...(session.execution_identity_ref === undefined ? {} : { execution_identity_ref: session.execution_identity_ref }),
     profile_ref: session.profile_ref,
     provider_ref: session.provider_ref,
     provider_mode: session.provider_mode,
